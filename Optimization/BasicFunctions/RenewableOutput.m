@@ -1,10 +1,10 @@
-function Ren= RenewableOutput(Gen,Date,Time,str)
+function Ren= RenewableOutput(Gen,Date,str)
 %Date is the start date
 %Time is the Time vector in hours
 %str chooses between forecast and actual data
-A = datevec(Date);
+A = datevec(Date(1));
 B = datenum(A(1),1,1);
-RenTimestamp = ((Date-B):1/96:(Date-B+Time(end)/24+1/96))';%the data for the renewable power is recorded in 15 min intervals starting at Jan 1st
+RenTimestamp = ((Date(1)-B):1/96:(Date(end) - B + 1/96))';%the data for the renewable power is recorded in 15 min intervals starting at Jan 1st
 if strcmp(str,'Actual')%% Actual Renewable Generation        
     if strcmp(Gen.Type,'Solar') 
         if strcmp(Gen.Tracking,'fixed')
@@ -13,7 +13,7 @@ if strcmp(str,'Actual')%% Actual Renewable Generation
             Power = Gen.Sizem2*(Gen.Irrad/1000).*cosd(Gen.SunZen-Gen.Tilt)*Gen.Eff;
         else Power = Gen.Sizem2*(Gen.Irrad/1000)*Gen.Eff; %Dual axis
         end
-        Ren = interp1(RenTimestamp+B,Power(round(RenTimestamp*96+1)),Date+Time/24);
+        Ren = interp1(RenTimestamp+B,Power(round(RenTimestamp*96+1)),Date);
     elseif strcmp(Gen.Type,'Wind')
         %% need to add wind
     end
@@ -45,5 +45,5 @@ elseif strcmp(str,'Predict')
     elseif strcmp(Gen.Type,'Wind')
         %% need to add wind
     end
-    Ren = interp1(RenTimestamp+B, AveragedDays, Date+Time/24);
+    Ren = interp1(RenTimestamp+B, AveragedDays, Date);
 end

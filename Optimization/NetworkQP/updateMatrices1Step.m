@@ -1,4 +1,4 @@
-function QP = updateMatrices1Step(QP,Demand,Renewable,scaleCost,dt,EC,StorPower,MinPower,MaxPower)
+function QP = updateMatrices1Step(QP,Forecast,Renewable,scaleCost,dt,EC,StorPower,MinPower,MaxPower)
 % update the equalities with the correct demand, and scale fuel and electric costs
 % EC is the expected end condition at this time stamp (can be empty)
 % StorPower is the expected output/input of any energy storage at this timestep (can be empty)
@@ -12,30 +12,40 @@ networkNames = networkNames(~strcmp('Equipment',networkNames));
 
 %% update demands and storage self-discharge
 for net = 1:1:length(networkNames)
-    if strcmp(networkNames{net},'Electrical')
-        out = 'E';
-        if Plant.optimoptions.SpinReserve
-            QP.b(QP.Organize.SpinReserve) = -Plant.optimoptions.SpinReservePerc/100*sum(Demand.E,2);% -shortfall + SRancillary - SR generators - SR storage <= -SR target
-        end
-    elseif strcmp(networkNames{net},'DistrictHeat')
-        out = 'H';
-    elseif strcmp(networkNames{net},'DistrictCool')
-        out = 'C';
-    end
-    for i = 1:1:length(Plant.subNet.(networkNames{net}))
-        equip = Plant.subNet.(networkNames{net})(i).Equipment;
-        eq = QP.Organize.Balance.(networkNames{net})(i);
-        loads = QP.Organize.Demand.(networkNames{net})(i);
-        QP.beq(eq) = sum(Demand.(out)(:,loads),2); %multile demands can be at the same node
-        for j = 1:1:length(equip)
-            k = equip(j);
-            if strcmp(networkNames{net},'Electrical') && strcmp(Plant.Generator(k).Source,'Renewable')% subtract renewable generation 
-                QP.beq(eq) = QP.beq(eq) - Renewable(k); %put renewable generation into energy balance at correct node
+    if strcmp(networkNames{net},'Hydro')
+        %don't do a water balance, since it depends on multiple time steps.
+        %Any extra power at this time step is subtracted from the expected
+        %power at the next step (same SOC and flows up river).
+    else
+        if strcmp(networkNames{net},'Electrical')
+            out = 'E';
+            if Plant.optimoptions.SpinReserve
+                QP.b(QP.Organize.SpinReserve) = -Plant.optimoptions.SpinReservePerc/100*sum(Forecast.E,2);% -shortfall + SRancillary - SR generators - SR storage <= -SR target
             end
-            if ~isempty(strfind(Plant.Generator(k).Type,'Storage'))
-                if (strcmp(Plant.Generator(k).Source,'Electricity') && strcmp(networkNames{net},'Electrical')) || (strcmp(Plant.Generator(k).Source,'Heat') && strcmp(networkNames{net},'DistrictHeat')) || (strcmp(Plant.Generator(k).Source,'Cooling') && strcmp(networkNames{net},'DistrictCool'))
-                    loss = dt*(Plant.Generator(k).OpMatA.Stor.SelfDischarge*Plant.Generator(k).OpMatA.Stor.UsableSize);
-                    QP.beq(eq) = QP.beq(eq) - loss; %account for self-discharge losses
+        elseif strcmp(networkNames{net},'DistrictHeat')
+            out = 'H';
+        elseif strcmp(networkNames{net},'DistrictCool')
+            out = 'C';
+        end
+        for i = 1:1:length(Plant.subNet.(networkNames{net}))
+            equip = Plant.subNet.(networkNames{net})(i).Equipment;
+            eq = QP.Organize.Balance.(networkNames{net})(i);
+            loads = nonzeros(QP.Organize.Demand.(networkNames{net})(i));
+            QP.beq(eq) = sum(Forecast.(out)(:,loads),2); %multile demands can be at the same node
+            for j = 1:1:length(equip)
+                k = equip(j);
+                if strcmp(networkNames{net},'Electrical') && strcmp(Plant.Generator(k).Source,'Renewable')% subtract renewable generation 
+                    QP.beq(eq) = QP.beq(eq) - Renewable(k); %put renewable generation into energy balance at correct node
+                end
+                if ~isempty(strfind(Plant.Generator(k).Type,'Storage'))
+                    if isfield(Plant.Generator(k).OpMatA.output,out)
+                        if length(StorPower(:,1))==1 ||isfield(Plant.Generator(k).OpMatA.output,'W')%hydro storage shows up in both electrical energy balance and water mass balance, but loss only in mass balance
+                            loss = 0;
+                        else
+                            loss = dt*(Plant.Generator(k).OpMatA.Stor.SelfDischarge*Plant.Generator(k).OpMatA.Stor.UsableSize);
+                        end
+                        QP.beq(eq) = QP.beq(eq) - StorPower(k) - loss; %%remove expected storage output from beq & account for self-discharge losses
+                    end
                 end
             end
         end
@@ -87,7 +97,10 @@ H = diag(QP.H);%convert to vector
 for i = 1:1:nG
     if ~isempty(QP.Organize.States{i})
         states = QP.Organize.States{i}; %states of this generator
-        if isempty(strfind(Plant.Generator(i).Type,'Storage'))%all generators and utilities
+        if strcmp(Plant.Generator(i).Type,'Utility') && strcmp(Plant.Generator(i).Source,'Electricity') && Plant.Generator(i).VariableStruct.SellBackRate>0
+            QP.f(states(1)) = QP.f(states(1))*scaleCost(i)*dt;
+            QP.f(states(2)) = QP.f(states(2))*min(0.9999*scaleCost(i),Plant.Generator(i).VariableStruct.SellBackRate)*dt; %make sure sellback rate is less than purchase rate
+        elseif isempty(strfind(Plant.Generator(i).Type,'Storage'))%all generators and utilities
             H(states) = H(states)*scaleCost(i)*dt;
             QP.f(states) = QP.f(states)*scaleCost(i)*dt;
         else
@@ -99,9 +112,6 @@ for i = 1:1:nG
                 type = 'DistrictCool';
             elseif strcmp(Plant.Generator(i).Source,'Water')
                 type = 'Hydro';
-            end
-            if ~isempty(StorPower)%remove expected storage output from beq
-                QP.beq(QP.Organize.StorageEquality(i)) = QP.beq(QP.Organize.StorageEquality(i)) - StorPower(i);
             end
             %penalize deviations from the expected storage output
             %don't penalize spinning reserve state
@@ -130,9 +140,9 @@ if Plant.optimoptions.SpinReserve
     SRshort = QP.Organize.SpinReserveStates(1,nG+1);%cumulative spinning reserve shortfall at t = 1 --> nS
     SRancillary = QP.Organize.SpinReserveStates(1,nG+2);%Ancillary spinning reserve value (negative cost) at t = 1 --> nS
     if Plant.optimoptions.SpinReservePerc>5 %more than 5% spinning reserve
-        SpinCost = 2*dt./(Plant.optimoptions.SpinReservePerc/100*sum(Demand.(Outs{s}),2));% -shortfall + SRancillary - SR generators - SR storage <= -SR target
+        SpinCost = 2*dt./(Plant.optimoptions.SpinReservePerc/100*sum(Forecast.(Outs{s}),2));% -shortfall + SRancillary - SR generators - SR storage <= -SR target
     else
-        SpinCost = 2*dt./(0.05*sum(Demand.(Outs{s}),2));% -shortfall + SRancillary - SR generators - SR storage <= -SR target
+        SpinCost = 2*dt./(0.05*sum(Forecast.(Outs{s}),2));% -shortfall + SRancillary - SR generators - SR storage <= -SR target
     end
     H(SRshort) = SpinCost;%effectively $2 per kWh at point where shortfall = spin reserve percent*demand or $2 at 5%
     QP.f(SRshort) = 0.05*dt; % $0.05 per kWh

@@ -1,46 +1,22 @@
 function calculateHistoricalFit
 global Plant
 h=waitbar(0,'Recalculating surface fit');
+
+Plant.Data.HistProf.Temperature = TypicalDay(h,Plant.Data.Timestamp,Plant.Data.Temperature);
+if isfield(RealTimeData,'Hydro')
+%spill, outflow, inflow, and source/sink by node
+    Plant.Data.HistProf.Hydro.SpillFlow = TypicalDay(h,Plant.Data.Hydro.Timestamp,Plant.Data.Hydro.SpillFlow);
+    Plant.Data.HistProf.Hydro.OutFlow = TypicalDay(h,Plant.Data.Hydro.Timestamp,Plant.Data.Hydro.OutFlow);
+    Plant.Data.HistProf.Hydro.InFlow = TypicalDay(h,Plant.Data.Hydro.Timestamp,Plant.Data.Hydro.InFlow);
+    Plant.Data.HistProf.Hydro.SourceSink = TypicalDay(h,Plant.Data.Hydro.Timestamp,Plant.Data.Hydro.SourceSink);
+end
 Steps = round(1/(Plant.Data.Timestamp(2)-Plant.Data.Timestamp(1)));%points in 1 day of data
 Resolution =24/Steps;
-[~,m,~,hour,minutes] = datevec(Plant.Data.Timestamp(2:end-1));%avoid checking month 1st and last point if starting or ending at 00
+[~,m,~,hour,minutes,~] = datevec(Plant.Data.Timestamp(2:end-1));%avoid checking month 1st and last point if starting or ending at 00
 m = [m(1); m; m(end)];%make m the same length as data
-hour = [max(0,floor(hour(1)-Resolution)); hour; min(24,hour(end)+floor((minutes(end)+60*Resolution)/60))];%make hour the same lenght as data
-minutes = [max(0,minutes(1)-60*Resolution); minutes; mod(minutes(end)+60*Resolution,60)];%make hour the same lenght as data
+hour = [max(0,floor(hour(1)-Resolution)); hour; min(24,hour(end)+floor((minutes(end)+60*Resolution)/60))];%make hour the same length as data
+minutes = [max(0,minutes(1)-60*Resolution); minutes; mod(minutes(end)+60*Resolution,60)];%make the same length as data
 months = sort(unique(m));
-
-%% fit temperature data
-Z = ones(12,24);
-for i = 1:1:length(months)
-    waitbar(i/length(months),h,'Calculating Temperature fit');
-    Total = zeros(24,1);
-    points = zeros(24,1);
-    for j = 1:1:24
-        X = (m==i) & (hour == j-1);
-        Total(j) = sum(Plant.Data.Temperature(X));
-        points(j) = nnz(Plant.Data.Temperature(X));
-    end
-    Z(months(i),:) = (Total./points)';
-end
-if length(months)<12
-    if nnz(months==1)==1 && nnz(months==12)==1
-        j =1;
-        for i= 2:1:11
-            if nnz(months==i)==1
-                j=j+1;
-            else Z(i,:) = Z(j,:);
-            end
-        end
-    else
-        for i= 1:1:min(months)-1
-            Z(i,:) = Z(min(months),:);
-        end
-        for i= max(months)+1:1:12
-            Z(i,:) = Z(max(months),:);
-        end
-    end
-end
-Plant.Data.HistProf.Temperature = Z;
 
 monthNames = cellstr({'Jan';'Feb';'Mar';'Apr';'May';'Jun';'Jul';'Aug';'Sep';'Oct';'Nov';'Dec';});
 dateDay = round(Plant.Data.Timestamp);
@@ -114,3 +90,42 @@ for s = 1:1:length(Outs)
     end
 end
 close(h)
+
+function Z = TypicalDay(h,Timestamp,Data)
+Steps = round(1/(Timestamp(2)-Timestamp(1)));%points in 1 day of data
+Resolution =24/Steps;
+[~,m,~,hour,minutes] = datevec(Timestamp(2:end-1));%avoid checking month 1st and last point if starting or ending at 00
+m = [m(1); m; m(end)];%make m the same length as data
+hour = [max(0,floor(hour(1)-Resolution)); hour; min(24,hour(end)+floor((minutes(end)+60*Resolution)/60))];%make hour the same length as data
+months = sort(unique(m));
+%% fit temperature data
+Z = ones(12,24);
+for i = 1:1:length(months)
+    waitbar(i/length(months),h,'Calculating Temperature fit');
+    Total = zeros(24,1);
+    points = zeros(24,1);
+    for j = 1:1:24
+        X = (m==i) & (hour == j-1);
+        Total(j) = sum(Data(X));
+        points(j) = nnz(Data(X));
+    end
+    Z(months(i),:) = (Total./points)';
+end
+if length(months)<12
+    if nnz(months==1)==1 && nnz(months==12)==1
+        j =1;
+        for i= 2:1:11
+            if nnz(months==i)==1
+                j=j+1;
+            else Z(i,:) = Z(j,:);
+            end
+        end
+    else
+        for i= 1:1:min(months)-1
+            Z(i,:) = Z(min(months),:);
+        end
+        for i= max(months)+1:1:12
+            Z(i,:) = Z(max(months),:);
+        end
+    end
+end

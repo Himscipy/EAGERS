@@ -1,5 +1,4 @@
 function [dX_dt, SS_1] = RampRateCalc(SS,LB,UB,Hratio)
-global scaleTime
 SS = SS(1,:);
 if isfield(SS,'Dt')
     Dt = SS.Dt;
@@ -40,4 +39,4 @@ tRise = t(find(y(:,1)>(.95*u(1)),1,'first'))/3600; %rise time in hours
 if isempty(tRise)
     tRise = 4;
 end
-dX_dt = (UB.*(0.95)./tRise)./scaleTime;
+dX_dt = (UB.*(0.95)./tRise);

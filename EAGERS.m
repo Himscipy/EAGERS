@@ -6,7 +6,6 @@ if isempty(strfind(p,dir1))% && isempty(strfind(p,'Plant'))
     SubPaths2Add = {fullfile(Model_dir);
                     fullfile(Model_dir,'data','solarData');
                     fullfile(Model_dir,'data');
-                    fullfile(Model_dir,'Calibration_Testing');
                     fullfile(Model_dir,'Design');
                     fullfile(Model_dir,'Design','ClimateZonesByState');
                     fullfile(Model_dir,'DesignProjects');
@@ -53,7 +52,6 @@ if isempty(strfind(p,dir1))% && isempty(strfind(p,'Plant'))
                     fullfile(Model_dir,'System Library','Control');
                     fullfile(Model_dir,'System Library','Economic');
                     fullfile(Model_dir,'System Library','Grid');
-                    fullfile(Model_dir,'System Library','HighTempStor');
                     fullfile(Model_dir,'System Library','HotStor');
                     fullfile(Model_dir,'System Library','HVAC');
                     fullfile(Model_dir,'System Library','ICE');

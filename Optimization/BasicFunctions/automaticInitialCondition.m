@@ -1,14 +1,19 @@
 function IC = automaticInitialCondition(Data_t0)
-global Plant DateSim
+global Plant DateSim OnOff CurrentState
 nG = length(Plant.Generator);
 scaleCost = updateGeneratorCost(DateSim);%% All costs were assumed to be 1 when building matrices, update Generator costs for the given time
-Data_t0.Demand.Renewable = zeros(1,length(Plant.Generator));
+Data_t0.Renewable = zeros(1,length(Plant.Generator));
 for i = 1:1:length(Plant.Generator)
     if strcmp(Plant.Generator(i).Source,'Renewable') && Plant.Generator(i).Enabled
-        Data_t0.Demand.Renewable(i) = RenewableOutput(Plant.Generator(i).VariableStruct,DateSim,0,'Actual');
+        Data_t0.Renewable(i) = RenewableOutput(Plant.Generator(i).VariableStruct,DateSim,'Actual');
     end
 end
-IC = StepByStepDispatch(Data_t0.Demand,scaleCost,Plant.optimoptions.Resolution,[],'',[]);
+if isfield(Plant.Network,'Hydro') 
+    %skip initialization because there are no other generators
+else
+    tic
+    IC = StepByStepDispatch(Data_t0,scaleCost,Plant.optimoptions.Resolution,[],'',[]);
+end
 for i=1:1:nG
     if isfield(Plant.Generator(i).OpMatA,'Stor') && Plant.Generator(i).Enabled
         IC(i) = 0.5*Plant.Generator(i).OpMatA.Stor.UsableSize; % IC = halfway charged energy storage
@@ -21,7 +26,7 @@ end
 if isfield(Plant.Network,'Hydro')
     NodeNames = cell(length(Plant.Network),1);
     for i = 1:1:length(Plant.Network)
-        NodeNames(i) = Plant.Network(i).name;
+        NodeNames(i) = {Plant.Network(i).name};
     end
     networkNames = fieldnames(Plant.Network);
     networkNames = networkNames(~strcmp('name',networkNames));
@@ -31,12 +36,35 @@ if isfield(Plant.Network,'Hydro')
     end
     nLcum = 0; %cumulative line #
     for net = 1:1:length(networkNames)
-        if ~strcmp(networkNames{net},'Hydro')
-            nLcum = nLcum+nLinet(net); %all hydro lines have initial state
-        else
+        if strcmp(networkNames{net},'Hydro') %all hydro lines have initial state
             for i = 1:1:nLinet(net) 
-                IC(nG+nLcum+i) = getHydroFlows(DateSim,i);
+                %find name of upstream node
+                name = Plant.subNet.lineNames.Hydro{i};
+                r = strfind(name,'_');
+                I = find(strcmp(name(1:r(1)-1),Plant.Data.Hydro.Nodes));
+                if strcmp(name(r(1)+1:r(2)-1),'Hydro')
+                    IC(nG+nLcum+i) = Data_t0.Hydro.OutFlow(I);
+                else IC(nG+nLcum+i) = Data_t0.Hydro.SpillFlow(I);
+                end
             end
+        end
+        nLcum = nLcum+nLinet(net);
+    end
+end
+
+OnOff = true(1,nG);
+for i = 1:1:nG
+    if isempty(strfind(Plant.Generator(i).Type,'Storage')) && isempty(strfind(Plant.Generator(i).Type,'Utility'))
+        states = Plant.Generator(i).OpMatB.states;
+        LB = 0;
+        for j = 1:1:length(states);
+            LB = LB + Plant.Generator(i).OpMatB.(states{j}).lb;
+        end
+        if IC(i)<LB
+            OnOff(i) = false;
         end
     end
 end
+
+CurrentState.Generators=IC(1:nG);
+CurrentState.Lines=IC(nG+1:end);

@@ -8,11 +8,13 @@ nG = length(Plant.Generator);
 GenSSindex = [];
 gen = [];
 nCHP = 0;
-for i=1:1:nG
-    if ~isempty(SSi) && ~isempty(SSi(i).A)
-        gen(end+1) = i;
-        if isfield(Plant.Generator(i).OpMatB.output,'H') && isfield(Plant.Generator(i).OpMatB.output,'E')
-            nCHP = nCHP+1;
+if ~isempty(SSi)
+    for i=1:1:length(SSi)
+        if ~isempty(SSi(i).A)
+            gen(end+1) = i;
+            if isfield(Plant.Generator(i).OpMatB.output,'H') && isfield(Plant.Generator(i).OpMatB.output,'E')
+                nCHP = nCHP+1;
+            end
         end
     end
 end

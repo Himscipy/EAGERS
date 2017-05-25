@@ -1,17 +1,18 @@
 function GenDisp = FilterGenerators(QP,FirstDisp,Locked,Timestamp)
-global OnOff dX_dt Plant
+global Plant OnOff
 dt = (Timestamp(2:end) - Timestamp(1:end-1))*24;
 nS = length(dt);
 dGen = find(QP.Organize.Dispatchable==1);
 %% load parameters
-dX = dt*dX_dt;
 nG = length(Plant.Generator);
+dX = zeros(nS,nG);
 UB = zeros(nG,1);
 for i = 1:1:nG
     states = Plant.Generator(i).OpMatB.states;
     for j = 1:1:length(states);
         UB(i) = UB(i) + Plant.Generator(i).OpMatB.(states{j}).ub;
     end
+    dX(:,i) = dt*Plant.Generator(i).VariableStruct.dX_dt;
 end
 %% current best guess
 GenDisp = FirstDisp;

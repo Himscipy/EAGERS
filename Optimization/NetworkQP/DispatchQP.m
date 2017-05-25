@@ -1,6 +1,6 @@
 function [GenDisp,cost,Feasible] = DispatchQP(QP,Locked)
 [m,n] = size(QP.organize);
-nG = length(QP.Organize.IC);
+nG = length(QP.constCost);
 nS = m-1;
 QP = disableGenerators(QP,Locked,[]);%Disable generators here
 if nnz(QP.H)==0
@@ -28,6 +28,9 @@ else
         end
     end
     for i = nG+1:1:n %Transmission lines
+        if ~isempty(QP.organize{1,i})
+            GenDisp(1,i) = GenSetting(QP.organize{1,i});%%put solution back into recognizable format
+        end
         for t = 2:1:nS+1
             GenDisp(t,i) = GenSetting(QP.organize{t,i});%%put solution back into recognizable format
         end

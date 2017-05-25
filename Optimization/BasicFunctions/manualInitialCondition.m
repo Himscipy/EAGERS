@@ -1,5 +1,5 @@
 function IC = manualInitialCondition
-global Plant;
+global Plant OnOff CurrentState
 nG = length(Plant.Generator);
 [~,n] = size(Plant.OneStep.organize);
 nL = n-nG;
@@ -56,3 +56,20 @@ for net = 1:1:length(networkNames)
         end
     end
 end
+
+OnOff = true(1,nG);
+for i = 1:1:nG
+    if isempty(strfind(Plant.Generator(i).Type,'Storage')) && isempty(strfind(Plant.Generator(i).Type,'Utility'))
+        states = Plant.Generator(i).OpMatB.states;
+        LB = 0;
+        for j = 1:1:length(states);
+            LB = LB + Plant.Generator(i).OpMatB.(states{j}).lb;
+        end
+        if IC(i)<LB
+            OnOff(i) = false;
+        end
+    end
+end
+
+CurrentState.Generators=IC(1:nG);
+CurrentState.Lines=IC(nG+1:end);

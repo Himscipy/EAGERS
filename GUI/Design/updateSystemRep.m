@@ -1,49 +1,14 @@
 function updateSystemRep(hObject, eventdata, handles)
 %% System representation (pushbuttons need to appear/disappear if they exist)
-global Plant
-
+global testSystems SYSINDEX
+list = {'pushbuttonHeaterInSys';'textAirHeater_H1';'pushbuttonTES1';'textTES1_H1';'pushbuttonHeatingDemands';'pushbuttonICE_mGT';'textICE_mGT_E';'textICE_mGT_H1';'textICE_mGT_H2';'textICE_mGT_H3';'pushbuttonSolarThermalInSys';...
+        'textSolarThermal_H2';'pushbuttonWaterHeaterInSys';'textWaterHeater_H2';'pushbuttonTES2';'textTES2_H2';'pushbuttonFuelCell';'textFuelCell_E';'textFuelCell_H1';'textFuelCell_H2';'pushbuttonHotWaterDemands';...
+        'pushbuttonAbChillerInSys';'textAbChill_E';'textAbChill_C1';'textAbChill_C2';'pushbuttonChillerInSys';'textChill_E';'textChill_C1';'textChill_C2';'pushbuttonTES3';'textTES3_C1';'pushbuttonBatteryInSys';...
+        'textBattery_E';'pushbuttonCoolingDemands';'pushbuttonWindInSys';'textWind_E';'pushbuttonSolarSterlingInSys';'pushbuttonSolarPVInSys';'textSolarPV_E';'pushbuttonGrid';'textGrid';};
 % Hide everything except grid and AC/DC conversion
-set(handles.pushbuttonHeaterInSys,'Visible','off')
-set(handles.textAirHeater_H1,'Visible','off')
-set(handles.pushbuttonTES1,'Visible','off')
-set(handles.textTES1_H1,'Visible','off')
-set(handles.pushbuttonHeatingDemands,'Visible','off')
-set(handles.pushbuttonICE_mGT,'Visible','off')
-set(handles.textICE_mGT_E,'Visible','off')
-set(handles.textICE_mGT_H1,'Visible','off')
-set(handles.textICE_mGT_H2,'Visible','off')
-set(handles.textICE_mGT_H3,'Visible','off')
-set(handles.pushbuttonSolarThermalInSys,'Visible','off')
-set(handles.textSolarThermal_H2,'Visible','off')
-set(handles.pushbuttonWaterHeaterInSys,'Visible','off')
-set(handles.textWaterHeater_H2,'Visible','off')
-set(handles.pushbuttonTES2,'Visible','off')
-set(handles.textTES2_H2,'Visible','off')
-set(handles.pushbuttonFuelCell,'Visible','off')
-set(handles.textFuelCell_E,'Visible','off')
-set(handles.textFuelCell_H1,'Visible','off')
-set(handles.textFuelCell_H2,'Visible','off')
-set(handles.pushbuttonHotWaterDemands,'Visible','off')
-set(handles.pushbuttonAbChillerInSys,'Visible','off')
-set(handles.textAbChill_E,'Visible','off')
-set(handles.textAbChill_C1,'Visible','off')
-set(handles.textAbChill_C2,'Visible','off')
-set(handles.pushbuttonChillerInSys,'Visible','off')
-set(handles.textChill_E,'Visible','off')
-set(handles.textChill_C1,'Visible','off')
-set(handles.textChill_C2,'Visible','off')
-set(handles.pushbuttonTES3,'Visible','off')
-set(handles.textTES3_C1,'Visible','off')
-set(handles.pushbuttonBatteryInSys,'Visible','off')
-set(handles.textBattery_E,'Visible','off')
-set(handles.pushbuttonCoolingDemands,'Visible','off')
-set(handles.pushbuttonWindInSys,'Visible','off')
-set(handles.textWind_E,'Visible','off')
-set(handles.pushbuttonSolarSterlingInSys,'Visible','off')
-set(handles.pushbuttonSolarPVInSys,'Visible','off')
-set(handles.textSolarPV_E,'Visible','off')
-set(handles.pushbuttonGrid,'Visible','off')
-set(handles.textGrid,'Visible','off')
+for i = 1:1:length(list)
+    set(handles.(list{i}),'Visible','off')
+end
 % Show AC/DC conversion by default
 set(handles.pushbuttonACDC,'Visible','on')
 set(handles.textACDC_E,'Visible','on')
@@ -55,9 +20,9 @@ set(handles.textACDC_E,'Visible','on')
 %   Solar Thermal
 %   TES 1
 %   Wind
-nG = length(Plant.Generator);
+nG = length(testSystems(SYSINDEX).Generator);
 for i = 1:1:nG
-    sys = Plant.Generator(i);
+    sys = testSystems(SYSINDEX).Generator(i);
     switch sys.Type
         case 'Utility'
             set(handles.pushbuttonGrid,'Visible','on')

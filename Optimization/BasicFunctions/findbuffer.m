@@ -3,7 +3,7 @@ global Plant
 nG = length(Plant.Generator);
 BuffPerc = Plant.optimoptions.Buffer; % percentage for buffer on storage
 for j = 1:1:nG
-    if isfield(Plant.Generator(j).OpMatA,'Stor')
+    if isfield(Plant.Generator(j).OpMatA,'Stor') && any(strcmp(Plant.Generator(j).OpMatA.states,'W'))%storage with a buffer state
         Out = fieldnames(Plant.Generator(j).OpMatA.output);
         if any(strcmp('W',Out))
             %hydro

@@ -1,16 +1,19 @@
 function EditSystem(handles)
-%EditSystem(handles)
-
-global Plant SYSINDEX
-
+% This function updates the parameter options for the selected generator
+% The user can then make changes to this particular generator and save
+% those changes.
+global testSystems SYSINDEX GENINDEX
+set(handles.uipanelLibrary,'Visible','off');
+set(handles.uipanelGenSpec,'Visible','on');
+set(handles.Library,'Visible','on');
 uiElmts = {'textEdit1';'textEdit1Units';'compText1';'textEdit2'; ...
     'textEdit2Units';'compText2';'textEdit3';'compText3';'textEdit4'; ...
     'compText4';'textFuel';'CompFuel';'textEff';'uitableEffCurve'; ...
     'EffCurve';'textResponse';'ResponseRate';};
-if SYSINDEX > 0
-    Gen = Plant.Generator(SYSINDEX);
+if GENINDEX > 0
+    Gen = testSystems(SYSINDEX).Generator(GENINDEX);
 else
-    switch SYSINDEX
+    switch GENINDEX
         case 0
             Gen = struct('Type', 'None', ...
                 'Name', 'None');
@@ -217,8 +220,6 @@ switch Gen.Type
         end
 end
 
-end
-
 function plotGenEfficiency(Gen,handles)
 axes(handles.EffCurve)
 hold off
@@ -279,10 +280,7 @@ set(get(AX(2),'Ylabel'),'String','Cost Curve Shape')
 xlabel('% of Capacity')
 legend(str);
 title('Efficiency / Cost')
-
 set(handles.EffCurve,'UserData',AX)
-
-end
 
 function plotResponse(Gen,handles)
 A = Gen.VariableStruct.StateSpace.A;
@@ -328,8 +326,6 @@ legend(Names)
 
 set(handles.ResponseRate,'UserData',RR)
 
-end
-
 function clearGenAxes(handles)
 AX_eff = get(handles.EffCurve,'UserData');
 AX_res = get(handles.ResponseRate,'UserData');
@@ -341,6 +337,4 @@ if ~isempty(AX_eff)
 end
 if ~isempty(AX_res)
     set(AX_res,'Visible','off')
-end
-
 end

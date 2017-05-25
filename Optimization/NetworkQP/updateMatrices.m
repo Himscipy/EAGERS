@@ -1,4 +1,4 @@
-function QP = updateMatrices(QP,IC,Date,Time,scaleCost,marginCost,Demand,EC)
+function QP = updateMatrices(QP,IC,Date,scaleCost,marginCost,Forecast,EC)
 % QP is the set of optimization matrices 
 % IC is the intial condition
 % Time is the vector of time steps
@@ -9,9 +9,8 @@ function QP = updateMatrices(QP,IC,Date,Time,scaleCost,marginCost,Demand,EC)
 % EC is the end condition for the threshold optimization
 global Plant
 nG = length(Plant.Generator);
-nS = length(Time);
-dt = Time - [0; Time(1:end-1)];
-QP.Renewable = Demand.Renewable;
+nS = length(Date)-1;
+dt = (Date(2:end) - Date(1:end-1))*24;
 networkNames = fieldnames(Plant.Network);
 networkNames = networkNames(~strcmp('name',networkNames));
 networkNames = networkNames(~strcmp('Equipment',networkNames));
@@ -25,7 +24,7 @@ for net = 1:1:length(networkNames)
     if strcmp(networkNames{net},'Electrical')
         out = 'E';
         if Plant.optimoptions.SpinReserve
-            QP.b(QP.Organize.SpinReserve) = -Plant.optimoptions.SpinReservePerc/100*sum(Demand.E,2);% -shortfall + SRancillary - SR generators - SR storage <= -SR target
+            QP.b(QP.Organize.SpinReserve) = -Plant.optimoptions.SpinReservePerc/100*sum(Forecast.Demand.E,2);% -shortfall + SRancillary - SR generators - SR storage <= -SR target
         end
     elseif strcmp(networkNames{net},'DistrictHeat')
         out = 'H';
@@ -37,15 +36,17 @@ for net = 1:1:length(networkNames)
     for i = 1:1:length(Plant.subNet.(networkNames{net})) %run through all the nodes in this network
         equip = Plant.subNet.(networkNames{net})(i).Equipment; %equipment at this node
         eq = QP.Organize.Balance.(networkNames{net})(i,:);%balance at this node
-        loads = QP.Organize.Demand.(networkNames{net})(i); %load at this node
-        QP.beq(eq) = sum(Demand.(out)(:,loads),2); %multiple demands can be at the same node, or none
+        load = QP.Organize.Demand.(networkNames{net})(i); %load at this node
+        if load~=0
+            QP.beq(eq) = sum(Forecast.Demand.(out)(:,load),2); %multiple demands can be at the same node, or none
+        end
         for j = 1:1:length(equip)
             k = equip(j);
             if strcmp(networkNames{net},'Electrical') && any(QP.Renewable(:,k))% subtract renewable generation 
                 QP.beq(eq) = QP.beq(eq) - QP.Renewable(:,k); %put renewable generation into energy balance at correct node
             end
             if ~isempty(strfind(Plant.Generator(k).Type,'Storage'))
-                if (strcmp(Plant.Generator(k).Source,'Electricity') && strcmp(networkNames{net},'Electrical')) || (strcmp(Plant.Generator(k).Source,'Heat') && strcmp(networkNames{net},'DistrictHeat')) || (strcmp(Plant.Generator(k).Source,'Cooling') && strcmp(networkNames{net},'DistrictCool')) || (strcmp(Plant.Generator(k).Source,'Water') && strcmp(networkNames{net},'Hydro'))
+                if isfield(Plant.Generator(k).OpMatA.output,out)
                     loss = dt*(Plant.Generator(k).OpMatA.Stor.SelfDischarge*Plant.Generator(k).OpMatA.Stor.UsableSize);
                     QP.beq(eq) = QP.beq(eq) - loss; %account for self-discharge losses
                 end
@@ -53,28 +54,20 @@ for net = 1:1:length(networkNames)
         end
     end
     if strcmp(networkNames{net},'Hydro')
-        downriver = {};
-        downLines = [];
-        for i = 1:1:length(Plant.subNet.lineNames.Hydro)
-            name = Plant.subNet.lineNames.Hydro{i};
-            k = strfind(name,'_');
-            if strcmp(name(k(1)+1:k(2)-1),'Hydro')
-                downriver(end+1) = {name(k(2)+1:end)};% node names of the downriver node
-                downLines(end+1) = i;
-            end
-        end
         for i = 1:1:length(Plant.subNet.Hydro) %run through all the nodes in this network
             %% Node inflows (source/sink terms and upstream flow at time t-T ago if t<T)
             %need to be able to forecast sink/source
+            I = find(strcmp(Plant.subNet.Hydro(i).nodes{1},Plant.Data.Hydro.Nodes));%column index of this node in the stored matrices of Data.Hydro.SourceSink and Data.Hydro.Inflow
             eq = QP.Organize.Balance.Hydro(i,:);%mass balance at this node
-            SourceSink = getHydroSourceSink(Date+Time,node);
-            QP.beq(eq)= QP.beq(eq) - SourceSink./(12.1*dt); %source/sink term converted from 1000 ft^3/s to acre-ft (1000 acre-ft = 12.1 x 1000 ft^3/s * 1 hr)
-            K = downLines(strcmp(Plant.subNet.Hydro(i).nodes,downriver));%lines entering this node, i.e. this node is the downriver node
+            QP.beq(eq)= QP.beq(eq) - Forecast.Hydro.SourceSink(I)./(12.1*dt); %source/sink term converted from 1000 ft^3/s to acre-ft (1000 acre-ft = 12.1 x 1000 ft^3/s * 1 hr)
+            K = Plant.subNet.Hydro(i).UpRiverSegments;%lines entering this node, i.e. this node is the downriver node
             for j = 1:1:length(K)
-                Date2 = Date+Time-Plant.subNet.lineTime.Hydro(K(j));
-                n = nnz(Date2<Date);
-                InFlow = getHydroFlows(Date2(1:n),K(j));%river segments flowing into this node
-                QP.beq(eq(1:n))= QP.beq(eq(1:n)) - InFlow./(12.1*dt(1:n)); % Qupriver, conversion factor is from 1000 ft^3/s to 1000 acre ft (1000 acre-ft = 12.1 x 1000 ft^3/s * 1 hr)
+                Date2 = Date(2:end) - Plant.subNet.lineTime.Hydro(K(j))/24;
+                n = nnz(Date2<Date(1));
+                if n > 0 %if river segment is shorter than 1st time step, it doesn't need these constants, it uses initial condition & 1st step.
+                    InFlow = getHydroFlows(Date2(1:n),K(j));%river segments flowing into this node from time before forecast.
+                    QP.beq(eq(1:n))= QP.beq(eq(1:n)) - InFlow./(12.1*dt(1:n)); % Qupriver, conversion factor is from 1000 ft^3/s to 1000 acre ft (1000 acre-ft = 12.1 x 1000 ft^3/s * 1 hr)
+                end
             end
         end
     end
@@ -95,11 +88,14 @@ for i = 1:1:nG
     if ~isempty(QP.Organize.States{i})
         states = QP.Organize.States{i};
         nt = length(states)/nS; %number of states per timestep
-        if isempty(strfind(Plant.Generator(i).Type,'Storage'))%all generators and utilities
+        if strcmp(Plant.Generator(i).Type,'Utility') && strcmp(Plant.Generator(i).Source,'Electricity') && Plant.Generator(i).VariableStruct.SellBackRate>0
+            QP.f(states(1:2:end)) = QP.f(states(1:2:end)).*scaleCost(:,i).*dt;
+            QP.f(states(2:2:end)) = QP.f(states(2:2:end)).*min(0.9999*scaleCost(:,i),Plant.Generator(i).VariableStruct.SellBackRate).*dt; %make sure sellback rate is less than purchase rate
+        elseif isempty(strfind(Plant.Generator(i).Type,'Storage'))%all generators and utilities
             for t = 1:1:nS
                 Xn = states((t-1)*nt+1:t*nt);
-                H(Xn) = H(Xn)*scaleCost(t,i); 
-                QP.f(Xn) = QP.f(Xn)*scaleCost(t,i); 
+                H(Xn) = H(Xn)*scaleCost(t,i)*dt(t); 
+                QP.f(Xn) = QP.f(Xn)*scaleCost(t,i)*dt(t); 
             end          
         else % storage systems
             if strcmp(Plant.Generator(i).Source,'Electricity')
@@ -114,7 +110,10 @@ for i = 1:1:nG
              %% update storage costs
             s_end = states(end)-nt+1; %final state of charge
             StorSize = Plant.Generator(i).OpMatA.X.ub;
-            BuffSize = Plant.Generator(i).OpMatA.W.ub;
+            if isfield(Plant.Generator(i).OpMatA,'W') %has buffer
+                BuffSize = Plant.Generator(i).OpMatA.W.ub;
+            else BuffSize = 0;
+            end
             if isempty(EC)
                 if strcmp(Plant.Generator(i).Source,'Heat')
                     Max = 0.8*marginCost.DistrictHeat.Max;
@@ -145,7 +144,7 @@ for i = 1:1:nG
                 rows = QP.Organize.Inequalities{i};
                 nr = length(states)/nS;
                 PeakChargePower = Plant.Generator(i).OpMatA.Ramp.b(1);
-                dSOC_10perc = .1*PeakChargePower*Time(end); %energy (kWh) if charging at 10%
+                dSOC_10perc = .1*PeakChargePower*(Date(end)-Date(1)); %energy (kWh) if charging at 10%
                 H(s_end) = -2*marginCost.(type).Min/dSOC_10perc;%quadratic final value term loaded into SOC(t=nS)  %factor of 2 because its solving C = 0.5*x'*H*x + f'*x
                 QP.f(s_end) = -marginCost.(type).Min;%linear final value term loaded into SOC(t=nS)
                 nIC = nnz(QP.Organize.IC(1:i)); %order in IC
@@ -166,9 +165,9 @@ if Plant.optimoptions.SpinReserve
     SRshort = QP.Organize.SpinReserveStates(:,nG+1);%cumulative spinning reserve shortfall at t = 1 --> nS
     SRancillary = QP.Organize.SpinReserveStates(:,nG+2);%Ancillary spinning reserve value (negative cost) at t = 1 --> nS
     if Plant.optimoptions.SpinReservePerc>5 %more than 5% spinning reserve
-        SpinCost = 2*dt./(Plant.optimoptions.SpinReservePerc/100*sum(Demand.E,2));% -shortfall + SRancillary - SR generators - SR storage <= -SR target
+        SpinCost = 2*dt./(Plant.optimoptions.SpinReservePerc/100*sum(Forecast.Demand.E,2));% -shortfall + SRancillary - SR generators - SR storage <= -SR target
     else
-        SpinCost = 2*dt./(0.05*sum(Demand.E,2));% -shortfall + SRancillary - SR generators - SR storage <= -SR target
+        SpinCost = 2*dt./(0.05*sum(Forecast.Demand.E,2));% -shortfall + SRancillary - SR generators - SR storage <= -SR target
     end
     H(SRshort) = SpinCost;%effectively $2 per kWh at point where shortfall = spin reserve percent*demand or $2 at 5%
     QP.f(SRshort) = 0.05*dt; % $0.05 per kWh

@@ -11,10 +11,10 @@ if strcmp(method,'Dispatch')
         if strcmp(Plant.Generator(i).Type,'Electric Generator') || strcmp(Plant.Generator(i).Type,'CHP Generator')
             eff = Plant.Generator(i).Output.Electricity;
         elseif strcmp(Plant.Generator(i).Type,'Chiller') 
-            eff = Plant.Generator(i).Output.Cooling;
-            if ~Plant.optimoptions.sequential && ~isfield(Plant.Generator(i).OpMatA.output,'E')%don't include cost if it shows up in generator demand
+%             eff = Plant.Generator(i).Output.Cooling;
+%             if ~Plant.optimoptions.sequential && ~isfield(Plant.Generator(i).OpMatA.output,'E')%don't include cost if it shows up in generator demand
                 skip = true;
-            end
+%             end
         elseif strcmp(Plant.Generator(i).Type,'Heater')
             eff = Plant.Generator(i).Output.Heat;    
         else skip = true;
@@ -49,7 +49,7 @@ if strcmp(method,'Dispatch')
     %             %renewable
     %         end
     %     end
-    % end
+    % end  
 elseif strcmp(method,'Input')
     Input = Var1;
     Dispatch = 0*Input;

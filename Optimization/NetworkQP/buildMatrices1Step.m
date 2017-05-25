@@ -21,7 +21,6 @@ nL = sum(nLinet);
 Organize.States = cell(1,nG);
 Organize.Equalities = cell(1,nG);
 Organize.Inequalities = cell(1,nG);
-Organize.StorageEquality = zeros(1,nG); %row of Aeq coresponding to energy balance that includes this storage device (expected storage output shows up as negative in beq)
 Organize.Dispatchable = zeros(1,nG);
 Organize.SpinReserveStates = zeros(1,nG+2);
 Organize.Transmission = cell(1,nL);
@@ -72,30 +71,29 @@ for i = 1:1:nG
             xL = xL + s + 1;
         else xL = xL + s;
         end
-        
-        
     end
 end
 %states for transmission lines
 nLcum = 0; %cumulative line #
 for net = 1:1:length(networkNames)
-    for i = 1:1:nLinet(net) 
-        nLcum = nLcum+1;
-        if strcmp(networkNames{net},'Hydro')
-            
-        else 
-            eff = Plant.subNet.lineEff.(networkNames{net});
-            limit = Plant.subNet.lineLimit.(networkNames{net}); 
-            QP.organize{1,nG+nLcum} = xL+1; %line state 
+    if strcmp(networkNames{net},'Hydro')
+        %don't do a mass balance (it depends on time and cant be done in
+        %step by step
+    else
+        eff = Plant.subNet.lineEff.(networkNames{net});
+        limit = Plant.subNet.lineLimit.(networkNames{net}); 
+        minimum = zeros(nLinet(net),1);
+        for i = 1:1:nLinet(net) 
+            QP.organize{1,nG+nLcum+i} = xL+1; %line state 
             if length(eff(i,:))==1 || eff(i,2)==0 %uni-directional transfer, 1 state for each line
-                Organize.States(nG+nLcum)= {xL+1};
+                Organize.States(nG+nLcum+i)= {xL+1};
                 H(end+1:end+3) = 0;
                 f(end+1:end+3) = 0;
-                lb(end+1:end+3) = 0;
+                lb(end+1:end+3) = minimum(i);
                 ub(end+1:end+3) = limit(i,1);
                 xL = xL + 1;
             else% bi-directional transfer, 3 states for each line (state of the line and penalty term in each direction)
-                Organize.States(nG+nLcum)= {[xL+1, xL+2, xL+3]};
+                Organize.States(nG+nLcum+i)= {[xL+1, xL+2, xL+3]};
                 H(end+1:end+3) = [0 0 0];
                 f(end+1:end+3) = [0 0 0];
                 lb(end+1:end+3) = [-limit(i,2),0,0];
@@ -104,8 +102,10 @@ for net = 1:1:length(networkNames)
             end
         end
     end
+    nLcum = nLcum + nLinet(net);
 end
 
+Organize.HeatVented = [];
 if any(strcmp('DistrictHeat',networkNames)) && Plant.optimoptions.excessHeat == 1
     %%assume heat can be lost any any node in the network that has a device producing heat
     n = length(Plant.subNet.('DistrictHeat'));
@@ -147,17 +147,21 @@ end
 % Any generator link equalities (linking states within a generator)
 req = 0; % row index of the Aeq matrix and beq vector
 beq = [];
+Aeq = [];
 
 % The following puts together the energy balance equations
 % 1 equation for each subNet node
 % Nodes were agregated if their line efficiencies were 1
 QP.excessHeat = Plant.optimoptions.excessHeat;
+nLcum = 0; %cumulative line #
 for net = 1:1:length(networkNames)
     n = length(Plant.subNet.(networkNames{net}));
     Organize.Balance.(networkNames{net}) = [];
     Organize.Demand.(networkNames{net}) = [];
     if strcmp(networkNames{net},'Hydro')
-        
+        %don't do a water balance, since it depends on multiple time steps.
+        %Any extra power at this time step is subtracted from the expected
+        %power at the next step (same SOC and flows up river).
     else
         for i = 1:1:n
             req = req+1;%there is an energy balance at this node
@@ -166,9 +170,8 @@ for net = 1:1:length(networkNames)
             genI = Plant.subNet.(networkNames{net})(i).Equipment;
             for j = 1:1:length(genI)
                 states = Organize.States{genI(j)};%states associated with gerator i
-                if any(strcmp(Plant.Generator(genI(j)).Type,{'Electric Storage';'Thermal Storage';}))
+                if any(strcmp(Plant.Generator(genI(j)).Type,{'Electric Storage';'Thermal Storage';'Hydro Storage'}))
                     Aeq(req,states(1)) = 1; %storage converted to "generator"
-                    Organize.StorageEquality(genI(j)) = req;
                 elseif strcmp(networkNames{net},'Electrical') && isfield(Plant.Generator(genI(j)).(Op).output,'E')
                     Aeq(req,states) = Plant.Generator(genI(j)).(Op).output.E;
                 elseif strcmp(networkNames{net},'DistrictHeat') && isfield(Plant.Generator(genI(j)).(Op).output,'H')
@@ -178,27 +181,29 @@ for net = 1:1:length(networkNames)
                 end
             end
             %%identify lines coming in and out
-            connect = Plant.subNet.(networkNames{net})(i).connections;
-            for j = 1:1:length(connect)
-                nName = Plant.subNet.(networkNames{net})(i).nodes(1); %name of current subnet node
-                I = find(strcmp(strcat(nName,'_',networkNames{net},'_',connect{j}),Plant.subNet.lineNames.(networkNames{net})),1,'first');
-                dir = 1; %forward direction
-                if isempty(I)
-                    I = find(strcmp(strcat(connect{j},'_',networkNames{net},'_',nName),Plant.subNet.lineNames.(networkNames{net})),1,'first');
-                    dir = -1; %reverse direction
-                end
-                linestates = Organize.States{nG+I};
-                if length(linestates)==1 %uni-directional transfer
-                    if dir == 1 %power/water is leaving this node
-                        Aeq(req,linestates) = -1;
-                    else %power/water is entering this node
-                        Aeq(req,linestates) = Plant.subNet.lineEff.(networkNames{net})(I);
+            if ~strcmp(networkNames{net},'Hydro') %skip the water balance
+                connect = Plant.subNet.(networkNames{net})(i).connections;
+                for j = 1:1:length(connect)
+                    nName = Plant.subNet.(networkNames{net})(i).nodes(1); %name of current subnet node
+                    I = find(strcmp(strcat(nName,'_',networkNames{net},'_',connect{j}),Plant.subNet.lineNames.(networkNames{net})),1,'first');
+                    dir = 1; %forward direction
+                    if isempty(I)
+                        I = find(strcmp(strcat(connect{j},'_',networkNames{net},'_',nName),Plant.subNet.lineNames.(networkNames{net})),1,'first');
+                        dir = -1; %reverse direction
                     end
-                else %bi-directional power transfer
-                    if dir ==1
-                        Aeq(req,linestates) = [-1,0,-1]; %forward direction (this node, i)-->(connected node), is positive, thus positive transmission is power leaving the node, the penalty from b->a is power not seen at a
-                    else
-                        Aeq(req,linestates) = [1,-1,0];%reverse direction (connected node)-->(this node, i), is positive, thus positive power is power entering the node, the penalty from a->b is power not seen at b
+                    linestates = Organize.States{nG+nLcum+I};
+                    if length(linestates)==1 %uni-directional transfer
+                        if dir == 1 %power/water is leaving this node
+                            Aeq(req,linestates) = -1;
+                        else %power/water is entering this node
+                            Aeq(req,linestates) = Plant.subNet.lineEff.(networkNames{net})(I);
+                        end
+                    else %bi-directional power transfer
+                        if dir ==1
+                            Aeq(req,linestates) = [-1,0,-1]; %forward direction (this node, i)-->(connected node), is positive, thus positive transmission is power leaving the node, the penalty from b->a is power not seen at a
+                        else
+                            Aeq(req,linestates) = [1,-1,0];%reverse direction (connected node)-->(this node, i), is positive, thus positive power is power entering the node, the penalty from a->b is power not seen at b
+                        end
                     end
                 end
             end
@@ -207,14 +212,14 @@ for net = 1:1:length(networkNames)
                 Aeq(req,Organize.HeatVented(1,i)) = -1;
             end
             %%note any demands at this node
-            Organize.Demand.(networkNames{net})(i) = Plant.subNet.(networkNames{net})(i).Load;
+            if ~isempty(Plant.subNet.(networkNames{net})(i).Load)
+                Organize.Demand.(networkNames{net})(i) = Plant.subNet.(networkNames{net})(i).Load;
+            end
         end
     end
+    nLcum = nLcum + nLinet(net);
 end
 
-hydroIndex = [];
-hydroRow = [];
-hydroSOC = [];
 for i = 1:1:nG
     %link is a field if there is more than one state and the states are linked by an inequality or an equality
     if isfield(Plant.Generator(i).(Op),'link') && isfield(Plant.Generator(i).(Op).link,'eq')
@@ -226,13 +231,6 @@ for i = 1:1:nG
         end
         Organize.Equalities(i) = {req+1:req+m}; 
         req = req+m;
-    elseif strcmp(Plant.Generator(i).Type,'Hydro')
-        states = Organize.States{i};%states associated with generator i
-        Aeq(req+1,states(1:2)) = 1; %Flow for power and spill;
-        hydroIndex(end+1) = i;
-        hydroRow(end+1) = req+1;
-        hydroSOC(end+1) = states(3);
-        req = req + 1;
     end
 end
 
@@ -262,23 +260,21 @@ A = [];
 %Transmission line inequalites (penalty terms)
 nLcum = 0; %cumulative line #
 for net = 1:1:length(networkNames)
-    for i = 1:1:nLinet(net)
-        nLcum = nLcum + 1;
-        if strcmp(networkNames{net},'Hydro')
-
-        else
-            eff = Plant.subNet.lineEff.(networkNames{net});
+    if ~strcmp(networkNames{net},'Hydro')
+        eff = Plant.subNet.lineEff.(networkNames{net});
+        for i = 1:1:nLinet(net)
             if length(eff(i,:))==1 || eff(i,2)==0 %uni-directional transfer, 1 state for each line
                 %do nothing, no inequalities linking penalty states
             else%bi-directional power transfer
                 linestates = Organize.States{nG+i};
                 A(r+1,linestates) = [(1-eff(i,1)), -1, 0];% Pab*(1-efficiency) < penalty a to b
                 A(r+2,linestates) = [-(1-eff(i,2)), 0, -1];% -Pab*(1-efficiency) < penalty b to a
-                Organize.Transmission(nLcum) = {r+1:r+2}; 
+                Organize.Transmission(nLcum+i) = {r+1:r+2}; 
                 r = r+2;
             end
         end
     end
+    nLcum = nLcum + nLinet(net);
 end
 %cumulative spinning reserve shortfall: currently only implemented for electric power
 for net = 1:1:length(networkNames)

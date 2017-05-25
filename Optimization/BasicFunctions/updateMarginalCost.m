@@ -1,6 +1,5 @@
-function marginal = updateMarginalCost(Dispatch,scaleCost,Time)
+function marginal = updateMarginalCost(Dispatch,scaleCost,dt)
 global Plant
-dt = Time-[0;Time(1:end-1)];
 networkNames = fieldnames(Plant.Network);
 networkNames = networkNames(~strcmp('name',networkNames));
 networkNames = networkNames(~strcmp('Equipment',networkNames));
@@ -26,7 +25,6 @@ for i = 1:1:nG
     end
 end
 marginCost = zeros(4,nG);
-stor = [];
 CHP = [];
 I = zeros(1,nG);
 for i = 1:1:nG
@@ -39,7 +37,6 @@ for i = 1:1:nG
             marginCost(3,i) = Plant.Generator(i).OpMatB.(s{2}).H;
             marginCost(4,i) = Plant.Generator(i).OpMatB.constCost/Plant.Generator(i).Size;%constant cost/upperbound
         elseif isfield(Plant.Generator(i).OpMatA,'Stor')
-            stor(end+1) = i;
             if strcmp(Plant.Generator(i).Source,'Electricity')
                 storType.Electrical(end+1) = i;
             elseif strcmp(Plant.Generator(i).Source,'Heat')
@@ -75,15 +72,17 @@ end
 minMarginCost = nan(m,n);
 maxMarginCost = nan(m,n);
 
-for i = 1:1:length(I)
-    minMarginCost(:,i) = scaleCost(:,i).*(marginCost(1,i)+marginCost(4,i)); %marginal cost in linear segment+onCost
-    if minMarginCost(:,i)<0 %negative slope at cost fit near LB (try 1/2 way to UB)
-        half = UB(i)- (UB(i)-I(i))/2;
-        minMarginCost(:,i) = scaleCost(:,i).*(marginCost(2,i) + (half-I(i))*marginCost(3,i)) + scaleCost(:,i).*marginCost(4,i); %marginal cost 1/2 way in quadratic segment
-    end
-    maxMarginCost(:,i) = minMarginCost(:,i);
-    if I(i)>0 && I(i) ~= UB(i)
-        maxMarginCost(:,i) = scaleCost(:,i).*(marginCost(2,i) + (UB(i)-I(i))*marginCost(3,i)) + scaleCost(:,i).*marginCost(4,i); %marginal cost in quadratic segment
+for i = 1:1:nG
+    if I(i)>0
+        minMarginCost(:,i) = scaleCost(:,i).*(marginCost(1,i)+marginCost(4,i)); %marginal cost in linear segment+onCost
+        if minMarginCost(:,i)<0 %negative slope at cost fit near LB (try 1/2 way to UB)
+            half = UB(i)- (UB(i)-I(i))/2;
+            minMarginCost(:,i) = scaleCost(:,i).*(marginCost(2,i) + (half-I(i))*marginCost(3,i)) + scaleCost(:,i).*marginCost(4,i); %marginal cost 1/2 way in quadratic segment
+        end
+        maxMarginCost(:,i) = minMarginCost(:,i);
+        if I(i)>0 && I(i) ~= UB(i)
+            maxMarginCost(:,i) = scaleCost(:,i).*(marginCost(2,i) + (UB(i)-I(i))*marginCost(3,i)) + scaleCost(:,i).*marginCost(4,i); %marginal cost in quadratic segment
+        end
     end
 end
 Type = fieldnames(storType);
@@ -120,9 +119,13 @@ for i = 1:1:length(Type)
             maxMarginCost(GenOnDuringCharge==1) = NaN; %if the storage is charging, then its margin cost can be greater than the cost of the generators that are on
         end
     end
-    
-    MinThisType = minMarginCost(:,gen);
-    MaxThisType = maxMarginCost(:,gen);
+    if isempty(gen) && (isempty(CHP) || ~strcmp(Type{i},'DistrictHeat')) % && strcmp(Type{i},'Hydro')
+        MinThisType = 0.05;
+        MaxThisType = 0.07;
+    else
+        MinThisType = minMarginCost(:,gen);
+        MaxThisType = maxMarginCost(:,gen);
+    end
     if ~isempty(CHP)
         if strcmp(Type{i},'Electrical')
             for j = 1:1:length(CHP)

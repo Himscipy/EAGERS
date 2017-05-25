@@ -116,9 +116,9 @@ for net = 1:1:length(networkNames)
         out = 'W';
     end
     for m = 1:1:n
+        gen = [];
         for k = 1:1:length(subNet.(networkNames{net})(m).nodes)
             i = find(strcmp(subNet.(networkNames{net})(m).nodes{k},nodeNames),1,'first');
-            gen = [];
             equip = Plant.Network(i).Equipment;
             for j = 1:1:length(equip)
                 s = strfind(equip{j},'.');

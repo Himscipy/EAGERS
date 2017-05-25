@@ -30,8 +30,9 @@ if flag1==1
     for j = nG+1:1:nG+nL
         FeasibleDispatch(j) = dispatch(QP.organize{j}); %record lines
     end
-    if isfield(QP.Organize,'HeatVented')
+    if ~isempty(QP.Organize.HeatVented)
         HeatVent = sum(dispatch(nonzeros(QP.Organize.HeatVented(1,:))));
+    else HeatVent = 0;
     end
     
     feasible = true;

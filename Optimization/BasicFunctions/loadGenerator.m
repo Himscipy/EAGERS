@@ -1,18 +1,17 @@
 function loadGenerator% Loads generators for economic dispatch
 %% this function identifies the values that will be used to represent each generator in the quadratic optimizations
-global Plant dX_dt
+global Plant
 %UB: the upper limit (capacity) of each generator
 %LB: the lower limit (capacity) of each generator when on
 %selfDisch: the amount of self dicharging per hour for a storage system
 %MinThresh: a minimum buying constraint which may exist for some utilities
 
 nG = length(Plant.Generator);
-dX_dt = zeros(1,nG);
 for i = 1:1:nG
     Plant.Generator(i).OpMatA = {}; %delete this line when you begin using the gui again
     if isempty(Plant.Generator(i).OpMatA)%only load generators that have not been loaded yet. New run, new generator, or edited generator
         typeNoSpace = char(Plant.Generator(i).Type(~isspace(char(Plant.Generator(i).Type))));
-        [Plant.Generator(i).OpMatA, Plant.Generator(i).OpMatB, dX_dt(i),SS] = eval(strcat('load',typeNoSpace,'(Plant.Generator(i))'));
+        [Plant.Generator(i).OpMatA, Plant.Generator(i).OpMatB, Plant.Generator(i).VariableStruct.dX_dt,SS] = eval(strcat('load',typeNoSpace,'(Plant.Generator(i))'));
         if ~isempty(SS)
             SSi(i) = SS;
         end
@@ -39,13 +38,17 @@ if strcmp(Gen.Source, 'Electricity')
     OpMatA.X.f = 1;
     OpMatA.X.lb = -inf;
     OpMatA.X.ub = inf;
-    if ~isfield(util,'SellBack') || max(util.SellBack)==0 % no sellback allowed (only 1 state)
+    if util.MinImportThresh>=0 % no sellback allowed (only 1 state)
         OpMatA.X.lb = util.MinImportThresh;
-    elseif util.SellBack == -1 || util.SellBack==1% reversed meter (only 1 state)
+    elseif util.SellBackPerc == 100% reversed meter (only 1 state)
         %default (no changes from above)
     else %seperate purchasing and selling states
         OpMatA.states = {'X';'Y'};
-        OpMatA.Y.f = -max(util.SellBack,1-1e-6);%ensure less than 1, so no issues with pass through power
+        if util.SellBackRate>0
+            OpMatA.Y.f = -1;%constant sell back rate
+        else
+            OpMatA.Y.f = -max(util.SellBackPerc/100,1-1e-6);%ensure less than 1, so no issues with pass through power
+        end
         OpMatA.Y.H = 0;
         OpMatA.Y.lb = 0;
         OpMatA.Y.ub = inf;
@@ -129,6 +132,7 @@ if isfield(Gen.Output,'Heat')&& Gen.Output.Heat(end)>0
 else Hratio = [];
 end
 [dX_dt,SSi] = RampRateCalc(Gen.VariableStruct.StateSpace,LB,UB,Hratio);
+dX_dt = dX_dt/Plant.optimoptions.scaletime;
 if costTerms.P == UB %linear fit use 1 state
     OpMatA.states = {'X'};
     OpMatA.X.H = 0;
@@ -189,9 +193,11 @@ function [OpMatA, OpMatB, dX_dt,SSi] = loadChiller(Gen)
 
 function [OpMatA, OpMatB, dX_dt,SSi] = loadHeater(Gen)
 % this function loads the parameters for a heater generator.
+global Plant
 LB = Gen.VariableStruct.Startup.Heat(end);
 UB = Gen.Size;
 [dX_dt, SSi] = RampRateCalc(Gen.VariableStruct.StateSpace, LB, UB, {});
+dX_dt = dX_dt/Plant.optimoptions.scaletime;
 capacity = Gen.Output.Capacity*UB;
 efficiency = Gen.Output.Heat;
 costLinear = 1/mean(efficiency(capacity>=LB));%efficiency term  put in cost (will later be scaled by utility cost.
@@ -221,9 +227,9 @@ function [OpMatA, OpMatB, dX_dt,SSi] = Storage(Gen)
 %this function just directs to either hot or cold thermal storage
 %if we can get rid of the CS, HS structures then this function can be
 %eliminated, because all storage can be handled the same way.
-global scaleTime
+global Plant
 SSi =[];
-Stor.Size = Gen.Size*scaleTime;
+Stor.Size = Gen.Size*Plant.optimoptions.scaletime;
 Stor.SelfDischarge  = Gen.VariableStruct.SelfDischarge;% SelfDischarge per hour (fraction of total charge)
 if isfield(Gen.VariableStruct, 'EnStoreType') %if its thermal storage
     Stor.PeakDisch = (Gen.VariableStruct.DischRatePerc/100*Gen.Size); %Thermal kW out
@@ -339,8 +345,9 @@ end
 OpMatB = OpMatA; %the bounds do not change for the second optimization
 
 function [OpMatA, OpMatB, dX_dt,SSi] = loadSolar(Gen)
+%PV solar
 OpMatA = [];
-OpMatA.output = [];%there are no states or outputs for solar because renewable outputs are handled on the demand side
+OpMatA.output.E = [];%there are no states or outputs for solar because renewable outputs are handled on the demand side
 OpMatA.states = [];
 OpMatB = OpMatA;
 dX_dt = inf;
@@ -348,21 +355,22 @@ SSi = [];
 
 function [OpMatA, OpMatB, dX_dt,SSi] = loadHydroStorage(Gen)
 % this function loads the parameters for a hydroelectric plant.
-global scaleTime
+global Plant
 SSi =[];
-OpMatA.Stor.Size = Gen.Size*scaleTime;
+OpMatA.Stor.Size = Gen.Size*Plant.optimoptions.scaletime;
 OpMatA.Stor.SelfDischarge  = 0; %needs to be evaporative losses
 OpMatA.Stor.UsableSize  = OpMatA.Stor.Size*((Gen.VariableStruct.MaxHead-Gen.VariableStruct.MinHead)/Gen.VariableStruct.MaxHead);
 Eff = Gen.VariableStruct.MaxGenCapacity/(Gen.VariableStruct.MaxGenFlow*Gen.VariableStruct.MaxHead/0.01181);%Power (kW)/ideal power in kW
 OpMatA.output.E = Eff*Gen.VariableStruct.MaxHead*84.674;%Power (kW) = efficiency(%) * Flow (1000 ft^3/s) * Head (ft) * 87.674 kJ/ (1000ft^3*ft)
 OpMatA.output.W = 1;
+% OpMatA.states = {'X'};
 OpMatA.states = {'X','Z','W'};
 
 OpMatA.X.H = 0;
 OpMatA.X.f = 0;
 OpMatA.X.lb = 0;
 OpMatA.X.ub = Gen.Size;
-OpMatA.Ramp.b = [Gen.VariableStruct.RampUp; Gen.VariableStruct.RampDown];
+OpMatA.Ramp.b = [Gen.VariableStruct.RampDown; Gen.VariableStruct.RampUp;];
 
 %%buffer states
 OpMatA.link.ineq = [-1 0  -1];%-SOC(t)-lowerbuffer<-0.2

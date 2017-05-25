@@ -2,9 +2,8 @@ function K = createCombinations(QP,netDemand)
 global Plant
 Outs = fieldnames(Plant.Data.Demand);
 nG = length(Plant.Generator);
-if any(strcmp('E',Outs)) && any(strcmp('H',Outs))
-    %check if there is a CHP system
-    isCHP = false;
+isCHP = false;
+if any(strcmp('E',Outs)) && any(strcmp('H',Outs))%check if there is a CHP system
     for i = 1:1:nG
         if strcmp(Plant.Generator(i).Type,'CHP Generator')
             isCHP = true;
@@ -20,7 +19,7 @@ lines = 0;
 for s = 1:1:length(Outs)
     inc = false(nG,1);
     for i = 1:1:nG
-        if isfield(Plant.Generator(i).OpMatA.output,Outs{s})
+        if isfield(Plant.Generator(i).OpMatA.output,Outs{s}) && ~strcmp(Plant.Generator(i).Source,'Renewable')
             if isempty(strfind(Plant.Generator(i).Type,'Utility')) &&  isempty(strfind(Plant.Generator(i).Type,'Storage')) && Plant.Generator(i).Enabled
                 inc(i) = true;
             end

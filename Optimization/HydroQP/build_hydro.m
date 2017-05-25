@@ -8,24 +8,23 @@ Plant.Data.Timestamp = linspace(datenum([2015 10 2 1 0 0]),datenum([2016 10 2 0 
 Plant.Data.Temperature = 20*ones(length(Plant.Data.Timestamp),1);
 Plant.Data.Holidays = [];
 Plant.Data.HistProf = [];
-%% Need temperatures for WA on these dates
+%% Columns of SourceSink, SpillFlow, InFlow and Outflow must correspond to the node in the order of NodeNames
 %%columns 1->18 (kcfs or KW): Grand Coulee, Chief Joseph, Wells, Rocky Ridge, Rock Island, Wanapum, PriestRiver, McNary, John Day, The Dalles, Bonneville, Brownlee, Oxbow, Hells Canyon, Lower Granite, Little Goose, Lower Monumental, Ice Harbor;
-%SourcesandSinks = Mass balance; Sinks and Sources in river segments; Negative values = sinks; Positive values = sources;
+%SourceSink = Mass balance; Sinks and Sources in river segments; Negative values = sinks; Positive values = sources;
 load('SourcesandSinks'); load('Powerflow');load('Spillflow');load('Outflow');load('Inflow');load('PowerGen');
-Plant.Data.Hydro.SourcesandSinks = SourcesandSinks; 
+Plant.Data.Hydro.SourceSink = SourcesandSinks; 
 %Powerflow = Flow used to produce power
-Plant.Data.Hydro.Powerflow = Powerflow;
+Plant.Data.Hydro.PowerFlow = Powerflow;
 %Spillflow = Flow that is spilled not used for power
-Plant.Data.Hydro.Spillflow = Spillflow;
+Plant.Data.Hydro.SpillFlow = Spillflow;
 %Outflow = Full amount of discharge flow
-Plant.Data.Hydro.Outflow = Outflow;
+Plant.Data.Hydro.OutFlow = Outflow;
 %columns (kilo-cfs): inflow(GC), infl(CJ)-Disch(GC), infl(W)-Disch(CJ), infl(RR)-Disch(W), infl(RI)-Disch(RR), infl(WNP)-Disch(RI), infl(PR)-Disch(WNP), infl(MN)-Disch(IH)-Disch(PR), infl(JD)-Disch(MN), infl(TD)-Disch(JD), infl(BNVL)-Disch(TD), inflow(BRW), infl(OX)-Disch(BRW), infl(HC)-Disch(OX), infl(LGRT)-Disch(HC), infl(LGS)-Disch(LGRT), infl(LMNT)-Disch(LG), infl(IH)-Disch(LMNT);
-Plant.Data.Hydro.Inflow = Inflow;
+Plant.Data.Hydro.InFlow = Inflow;
 %PowerGen = Generation (kW) every hour
 Plant.Data.Hydro.PowerGen = PowerGen;
 PowerGen(isnan(PowerGen)) = 0;
 Plant.Data.Demand = [];
-Plant.Data.Demand.E = sum(PowerGen,2);
 %Still need 
 %            storage data
 
@@ -53,7 +52,7 @@ Equipment = {'Grand Coulee';'Chief Joseph';'Wells';'Rocky Reach';'Rock Island';.
 
 InstreamFlow = [ 0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;]; %instream flow requirements at these 18 node points
 
-Time2Sea = [80.6;73.7;69.7;64.0;61.3;56.2;53.7;39.5;29.1;25.9;19.7;82.4;80.8;77.4;58.5;53.4;49.5;45.2];%Hours for water to reach mouth of columbia
+Time2Sea = [80.6;73.7;69.7;64.0;61.3;56.2;53.7;39.5;29.1;25.9;19.7;82.4;80.8;77.4;58.5;53.4;49.5;45.2];%Hours for water to reach mouth of columbia from each node
 
 RiverMile = [596.6;545.1;515.8;473.7;453.4;415.8;397.1;292;215.6;191.5;146.1;285;273;247.6;107.5;70.3;41.6;9.7;]; %was used to calculate the Time2Sea
 
@@ -334,9 +333,14 @@ Dam(18).VariableStruct.MaxSpillFlow = 86.3; %flow in 1000 cfs
 Dam(18).VariableStruct.MaxHead = 102.32;
 Dam(18).VariableStruct.MinHead = 50; %guess minimum height allowable
 
+DamNames = cell(length(Dam),1);
+for i = 1:1:length(Dam)
+    DamNames(i) = {Dam(i).Name};
+end
+
 Plant.Generator = [];
 Plant.Network = [];
-for i = 1:1:length(Dam);%number of dams in network
+for i = 1:1:length(NodeNames);%number of dams in network
     Plant.Network(i).name = NodeNames{i}; %names of each node are name of closest city
     Plant.Network(i).Equipment = strcat('Hydro Storage.',Equipment(i)); %equiptment Hydro.Name_of_Dam
     
@@ -344,7 +348,6 @@ for i = 1:1:length(Dam);%number of dams in network
     Plant.Network(i).Electrical.Trans_Eff = [];
     Plant.Network(i).Electrical.Trans_Limit = [];
     
-    Hydro_Eff(i) = Dam(i).VariableStruct.MaxGenCapacity/(Dam(i).VariableStruct.MaxGenFlow*Dam(i).VariableStruct.MaxHead/0.01181);%Power (kW)/ideal power in kW; 
     Plant.Network(i).Hydro.connections = {};
     Plant.Network(i).Hydro.Time2Sea = Time2Sea(i);
     Plant.Network(i).Hydro.InstreamFlow = InstreamFlow(i); %Specify instream flow requirements at the node point in the river
@@ -363,12 +366,18 @@ for i = 1:1:length(Dam);%number of dams in network
         
         Plant.Network(i).Hydro.connections(end+1) = DownRiver(i);
     end
-    
-     
-    
-    if i ==1
-        Plant.Generator = Dam;
-    else Plant.Generator(i) = Dam(i);
+    I = find(strcmp(Equipment{i},DamNames));
+    if ~isempty(I)
+        Hydro_Eff(i) = Dam(I).VariableStruct.MaxGenCapacity/(Dam(I).VariableStruct.MaxGenFlow*Dam(I).VariableStruct.MaxHead/0.01181);%Power (kW)/ideal power in kW; 
+        Dam(I).VariableStruct.RampUp = 1/5*Dam(I).VariableStruct.MaxGenCapacity;
+        Dam(I).VariableStruct.RampDown = 1/5*Dam(I).VariableStruct.MaxGenCapacity;
+        if i ==1
+            Plant.Generator = Dam(I);
+        else Plant.Generator(i) = Dam(I);
+        end
+    else
+        %%put in irrigation district here
+        I = find(strcmp(Equipment{i},IrrigationNames));
     end
 end
 Plant.Network(1).Electrical.Load = 1; %put all the load at the first node
@@ -376,19 +385,20 @@ Plant.Network(1).Electrical.Load = 1; %put all the load at the first node
 
 %% Temporary filling in missing data
 Plant.Data.Hydro.Timestamp = Plant.Data.Timestamp;
-Plant.Data.Hydro.Equipment = Equipment;
-Plant.Data.Hydro.SourcesandSinks(:,15:18) = Plant.Data.Hydro.SourcesandSinks(:,13:16);
-Plant.Data.Hydro.SourcesandSinks(:,11:14) = 0;
+% Plant.Data.Hydro.Equipment = Equipment;
+Plant.Data.Hydro.Nodes = NodeNames;
+Plant.Data.Hydro.SourceSink(:,15:18) = Plant.Data.Hydro.SourceSink(:,13:16);
+Plant.Data.Hydro.SourceSink(:,11:14) = 0;
 for i = 1:1:11
     for k = 1:1:length(Plant.Data.Hydro.PowerGen(:,i))
         if isnan(Plant.Data.Hydro.PowerGen(k,i))
             Plant.Data.Hydro.PowerGen(k,i) = Plant.Data.Hydro.PowerGen(k-1,i);
         end
-        if isnan(Plant.Data.Hydro.SourcesandSinks(k,i))
-            Plant.Data.Hydro.SourcesandSinks(k,i) = Plant.Data.Hydro.SourcesandSinks(k-1,i);
+        if isnan(Plant.Data.Hydro.SourceSink(k,i))
+            Plant.Data.Hydro.SourceSink(k,i) = Plant.Data.Hydro.SourceSink(k-1,i);
         end
-        if isnan(Plant.Data.Hydro.Inflow(k,i))
-            Plant.Data.Hydro.Inflow(k,i) = Plant.Data.Hydro.Inflow(k-1,i);
+        if isnan(Plant.Data.Hydro.InFlow(k,i))
+            Plant.Data.Hydro.InFlow(k,i) = Plant.Data.Hydro.InFlow(k-1,i);
         end
     end
     HydroPerc(:,i) = Plant.Data.Hydro.PowerGen(:,i)/Plant.Generator(i).VariableStruct.MaxGenCapacity*100;
@@ -399,11 +409,11 @@ for i = 1:1:4
         if isnan(Plant.Data.Hydro.PowerGen(k,i+14))
             Plant.Data.Hydro.PowerGen(k,i+14) = Plant.Data.Hydro.PowerGen(k-1,i+14);
         end
-        if isnan(Plant.Data.Hydro.SourcesandSinks(k,i+14))
-            Plant.Data.Hydro.SourcesandSinks(k,i+14) = Plant.Data.Hydro.SourcesandSinks(k-1,i+14);
+        if isnan(Plant.Data.Hydro.SourceSink(k,i+14))
+            Plant.Data.Hydro.SourceSink(k,i+14) = Plant.Data.Hydro.SourceSink(k-1,i+14);
         end
-        if isnan(Plant.Data.Hydro.Inflow(k,i+14))
-            Plant.Data.Hydro.Inflow(k,i+14) = Plant.Data.Hydro.Inflow(k-1,i+14);
+        if isnan(Plant.Data.Hydro.InFlow(k,i+14))
+            Plant.Data.Hydro.InFlow(k,i+14) = Plant.Data.Hydro.InFlow(k-1,i+14);
         end
     end
     HydroPerc2(:,i) = Plant.Data.Hydro.PowerGen(:,i+14)/Plant.Generator(i+14).VariableStruct.MaxGenCapacity*100;
@@ -413,14 +423,20 @@ end
 for i = 1:1:3
     Plant.Data.Hydro.PowerGen(:,i+11) = round(mean(HydroPerc2,2)/100*Plant.Generator(i+11).VariableStruct.MaxGenCapacity/10)*10;
     Eff = Plant.Generator(i+11).VariableStruct.MaxGenCapacity/(Plant.Generator(i+11).VariableStruct.MaxGenFlow*Plant.Generator(i+11).VariableStruct.MaxHead/0.01181);%Power (kW)/ideal power in kW
-    Plant.Data.Hydro.Powerflow(:,i+11) = Plant.Data.Hydro.PowerGen(:,i+11)/(Eff*Plant.Generator(i+11).VariableStruct.MaxHead*84.674);%Power (kW) = efficiency(%) * Flow (1000 ft^3/s) * Head (ft) * 87.674 kJ/ (1000ft^3*ft)
-    Plant.Data.Hydro.Outflow(:,i+11) = Plant.Data.Hydro.Powerflow(:,i+11);
+    Plant.Data.Hydro.PowerFlow(:,i+11) = Plant.Data.Hydro.PowerGen(:,i+11)/(Eff*Plant.Generator(i+11).VariableStruct.MaxHead*84.674);%Power (kW) = efficiency(%) * Flow (1000 ft^3/s) * Head (ft) * 87.674 kJ/ (1000ft^3*ft)
+    Plant.Data.Hydro.OutFlow(:,i+11) = Plant.Data.Hydro.PowerFlow(:,i+11);
     if i ==1
-        Plant.Data.Hydro.SourcesandSinks(:,12) = Plant.Data.Hydro.SourcesandSinks(:,15) - 3*mean(Plant.Data.Hydro.SourcesandSinks(:,16:18),2);
-        Plant.Data.Hydro.Inflow(:,12) = Plant.Data.Hydro.SourcesandSinks(:,12);
+        Plant.Data.Hydro.SourceSink(:,12) = Plant.Data.Hydro.SourceSink(:,15) - 3*mean(Plant.Data.Hydro.SourceSink(:,16:18),2);
+        Plant.Data.Hydro.InFlow(:,12) = Plant.Data.Hydro.SourceSink(:,12);
     end
-    Plant.Data.Hydro.SourcesandSinks(:,i+12) = mean(Plant.Data.Hydro.SourcesandSinks(:,16:18),2);
+    Plant.Data.Hydro.SourceSink(:,i+12) = mean(Plant.Data.Hydro.SourceSink(:,16:18),2);
     if i<3
-        Plant.Data.Hydro.Inflow(:,i+12) = Plant.Data.Hydro.Outflow(:,i+11);
+        Plant.Data.Hydro.InFlow(:,i+12) = Plant.Data.Hydro.OutFlow(:,i+11);
     end
 end
+outputE = zeros(18,1);
+for i = 1:1:18
+    Eff = Plant.Generator(i).VariableStruct.MaxGenCapacity/(Plant.Generator(i).VariableStruct.MaxGenFlow*Plant.Generator(i).VariableStruct.MaxHead/0.01181);%Power (kW)/ideal power in kW
+    outputE(i) = Eff*Plant.Generator(i).VariableStruct.MaxHead*84.674;%Power (kW) = efficiency(%) * Flow (1000 ft^3/s) * Head (ft) * 87.674 kJ/ (1000ft^3*ft)
+end
+Plant.Data.Demand.E = Plant.Data.Hydro.PowerFlow*outputE;

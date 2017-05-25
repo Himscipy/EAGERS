@@ -25,7 +25,7 @@ for i = 1:1:length(Plant.Generator)
                     Rate(t) = utility.WinRates(utility.WinRateTable(day(t),H(t),1));
                 end
             end
-            Utility(i).Rate = Rate;
+            Utility(i).Rate = Rate;%rate in $/kWh
         elseif strcmp(Source(i), 'NG')
             %gas utility set up as daily prices for a leap year
             date1 = datevec(utility.Timestamp(1));
