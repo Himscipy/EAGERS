@@ -11,8 +11,7 @@ h_rxn3 = h.H2+.5*h.O2-h.H2O;
 Vbalance = 1./(2*F)*h_rxn3; %voltage that balances heat
 
 if block.HasFlow
-    NetPower = PowerDemandLookup(t);
-    Current = -NetPower*1000/(Inlet.Voltage*block.Cells);
+    Current = -Inlet.Setpoint*1000/(Inlet.Voltage*block.Cells);
 else
     Current = Y(1);
     VoltError = Vbalance - Inlet.Voltage;

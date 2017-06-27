@@ -1,4 +1,4 @@
-function [GenDisp, Cost, Feasible] = FindFeasible(QPmain,Locked)
+function [GenDisp, Feasible] = FindFeasible(QPmain,Locked)
 %remove ramping constraints and add them back in until it fails to isolate
 %what constraint is causing it to be infeasible
 %%currently unsure of what the fix is.
@@ -6,7 +6,7 @@ function [GenDisp, Cost, Feasible] = FindFeasible(QPmain,Locked)
 noRamp = QPmain.Organize.Dispatchable;
 %first check it is feasible without ramping
 QP = removeRamping(QPmain,noRamp);
-[GenDisp, Cost, Feasible] = DispatchQP(QP,Locked);%this is the dispatch with fit B
+[GenDisp, Feasible] = DispatchQP(QP,Locked);%this is the dispatch with fit B
 
 % %now try fixing problem
 % for i = 1:1:nnz(noRamp)

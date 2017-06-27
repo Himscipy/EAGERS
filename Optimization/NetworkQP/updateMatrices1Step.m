@@ -4,6 +4,7 @@ function QP = updateMatrices1Step(QP,Forecast,Renewable,scaleCost,dt,EC,StorPowe
 % StorPower is the expected output/input of any energy storage at this timestep (can be empty)
 % MinPower and MaxPower define the range of this generator at this timestep
 global Plant
+QP.solver = Plant.optimoptions.solver;
 nG = length(Plant.Generator);
 marginal = instantMarginalCost(EC,scaleCost);%update marginal cost
 networkNames = fieldnames(Plant.Network);
@@ -38,11 +39,11 @@ for net = 1:1:length(networkNames)
                     QP.beq(eq) = QP.beq(eq) - Renewable(k); %put renewable generation into energy balance at correct node
                 end
                 if ~isempty(strfind(Plant.Generator(k).Type,'Storage'))
-                    if isfield(Plant.Generator(k).OpMatA.output,out)
-                        if length(StorPower(:,1))==1 ||isfield(Plant.Generator(k).OpMatA.output,'W')%hydro storage shows up in both electrical energy balance and water mass balance, but loss only in mass balance
+                    if isfield(Plant.Generator(k).QPform.output,out)
+                        if length(StorPower(:,1))==1 ||isfield(Plant.Generator(k).QPform.output,'W')%hydro storage shows up in both electrical energy balance and water mass balance, but loss only in mass balance
                             loss = 0;
                         else
-                            loss = dt*(Plant.Generator(k).OpMatA.Stor.SelfDischarge*Plant.Generator(k).OpMatA.Stor.UsableSize);
+                            loss = dt*(Plant.Generator(k).QPform.Stor.SelfDischarge*Plant.Generator(k).QPform.Stor.UsableSize);
                         end
                         QP.beq(eq) = QP.beq(eq) - StorPower(k) - loss; %%remove expected storage output from beq & account for self-discharge losses
                     end
@@ -124,7 +125,7 @@ for i = 1:1:nG
                 end
             else
                 a = 4; %sets severity of quadratic penalty
-                MaxCharge =min((Plant.Generator(i).OpMatA.Stor.UsableSize-EC(i))/dt,Plant.Generator(i).OpMatB.Ramp.b(1)); %minimum of peak Charge, and SOC/time (completely charging storage in next step)
+                MaxCharge =min((Plant.Generator(i).QPform.Stor.UsableSize-EC(i))/dt,Plant.Generator(i).QPform.Ramp.b(1)); %minimum of peak Charge, and SOC/time (completely charging storage in next step)
                 QP.f(states(1)) = marginal.(type);
                 if MaxCharge == 0
                     H(states(1)) = 0;

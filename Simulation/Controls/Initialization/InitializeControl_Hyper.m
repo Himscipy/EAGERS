@@ -7,11 +7,12 @@ block = varargin{1};
 if length(varargin)==1 %first initialization
     
     block.InitialFuel = block.NominalPower/(block.EstimatedEfficiency*(block.Fuel.CH4*802952.15+block.Fuel.CO*305200+block.Fuel.H2*240424)); %molar flow rate of fuel inlet
-    block.InletPorts = {'TET','RPM','WTurbine','WCompressor'};
+    block.InletPorts = {'TET','RPM','WTurbine','WCompressor','Setpoint'};
     block.TET.IC = block.TETset; 
     block.RPM.IC = block.RPMdesign; 
     block.WTurbine.IC = 4*block.NominalPower;
     block.WCompressor.IC = 3*block.NominalPower;
+    block.Setpoint.IC = block.NominalPower;
     
     block.OutletPorts = {'GenPower','FuelFlow','ColdBypass','HotBypass','BleedValve'};
     block.GenPower.IC = block.NominalPower/block.GenEfficiency; 
@@ -28,14 +29,13 @@ end
 
 if length(varargin)==2 %% Have inlets connected, re-initialize
     Inlet = varargin{2};
-    PowerSet = PowerDemandLookup(0);
     block.RPM.IC = Inlet.RPM;
     block.WTurbine.IC = Inlet.WTurbine;
     block.WCompressor.IC = Inlet.WCompressor;
     block.TET.IC = Inlet.TET;
     
-    block.GenPower.IC = PowerSet/block.GenEfficiency;
-    PowerError =(PowerSet - (Inlet.WTurbine-Inlet.WCompressor)*block.GenEfficiency)/block.NominalPower;
+    block.GenPower.IC = Inlet.Setpoint/block.GenEfficiency;
+    PowerError =(Inlet.Setpoint - (Inlet.WTurbine-Inlet.WCompressor)*block.GenEfficiency)/block.NominalPower;
     block.InitializeError = abs(PowerError);
     
     if abs(PowerError)<0.06

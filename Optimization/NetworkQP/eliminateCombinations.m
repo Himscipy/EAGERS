@@ -1,4 +1,4 @@
-function [FeasibleDispatch,Cost,feasible,Iterate,HeatVent,K] = eliminateCombinations(QPsingle,netDemand,On,parallel,K,i,bestCost,dt)
+function [FeasibleDispatch,Cost,feasible,HeatVent,K] = eliminateCombinations(QPsingle,netDemand,On,parallel,K,i,bestCost,dt)
 %This function identifies all feasible generator combinations that can meet
 %the demand at this moment in time
 %These feasible combinations are then tested, begining with the options
@@ -7,22 +7,12 @@ function [FeasibleDispatch,Cost,feasible,Iterate,HeatVent,K] = eliminateCombinat
 %be more costly
 %The function returns the feasible generator dispatches, the cost of that 
 %dispatch, and the on/off binary matrix that represents those combinations
-options = optimset('Algorithm','interior-point-convex','MaxIter',100,'Display','none');
-options2 = optimset('MaxIter',100,'Display','none');
 nG = length(QPsingle.constCost);
 [~,n] = size(QPsingle.organize);
 nL = n-nG;
 FeasibleDispatch = zeros(1,nG+nL);
 QP = disableGenerators(QPsingle,[],On);
-%             tic
-if nnz(QP.H) ~=0 %only do quadratic programming if there are quadratic terms
-    [dispatch, result,flag1,Output]  = quadprog(QP.H,QP.f,QP.A,QP.b,QP.Aeq,QP.beq,QP.lb,QP.ub,[],options); 
-elseif ~isempty(QP.f) 
-    [dispatch, result,flag1,Output] = linprog(QP.f,QP.A,QP.b,QP.Aeq,QP.beq,QP.lb,QP.ub,[],options2);
-elseif isempty(netDemand)%% need to fix this for when demand ==0
-end
-%             timeQP(i) = toc;
-Iterate = Output.iterations;
+[dispatch,result, flag1] = callQPsolver(QP);
 if flag1==1
     for j = 1:1:nG
         FeasibleDispatch(j) = sum(dispatch(QP.organize{j})); %record this combination of outputs (SOC for storage)

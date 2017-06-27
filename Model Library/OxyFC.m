@@ -102,11 +102,12 @@ Plant.Controls.Controller.Fuel = 'FC1.Fuel';
 Plant.Controls.Controller.Oxidant = 'FC1.Flow2Spec';
 Plant.Controls.Controller.OxidantUtilization = 'FC1.OxidantUtilization';
 Plant.Controls.Controller.Cells = 'FC1.Cells';
+Plant.Controls.Controller.NominalPower = Plant.NominalPower;
 Plant.Controls.Controller.InitConditions = {'FC1.Recirc.Anode';'FC1.Flow1.IC';'FC1.Current';}; %Recirculation, fuel flow rate, net current
 Plant.Controls.Controller.Gain = [0;1e-1;1e0];
 Plant.Controls.Controller.PropGain = [0;0;1];
 Plant.Controls.Controller.TagInf = {'OxidantFlow';'OxidantTemp';'FuelFlow';'Current';'Recirculation';'Power';};
-Plant.Controls.Controller.connections = {'FC1.MeasureTflow1';'Controller.OxidantTemp';'FC1.MeasureVoltage';};
+Plant.Controls.Controller.connections = {'FC1.MeasureTflow1';'Controller.OxidantTemp';'FC1.MeasureVoltage';'PowerDemandLookup';};
 
 Plant.Scope = {'Controller.FuelFlow';'Controller.Current';'Controller.Recirculation';'Controller.Power';}; %must be in TagInf of the corresponding block to work here
 Plant.Plot = [Plant.Scope;{'FC1.StackdeltaT';'FC1.PENavgT';'FC1.Voltage';'FC1.TcathOut';'FC1.LocalNernst';}];

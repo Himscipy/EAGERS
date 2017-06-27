@@ -77,7 +77,10 @@ elseif J2 ==2
             modelParam.NominalPower = LinMod.NominalPower;
         else modelParam.NominalPower = 0;
         end
-        modelParam.Controller = LinMod.Controls.Controller;
+        controls = fieldnames(modelParam.Controls);
+        for i = 1:1:length(controls)
+            modelParam.(controls{i}) = LinMod.Controls.(controls{i});
+        end
         modelParam.IC = LinMod.IC;
     end
 elseif J2 ==3
@@ -91,44 +94,53 @@ if (J3 ==2 || J3 == 3) && J2 ==3
 end
 if J3 ~=4 
     %set up the transient
-    Prompt = {'Time','Demand (% of Nominal)'};
-    DefaultVal = {'[0 4*3600 8*3600 24*3600]','[100 100 50 50]'};
-    A= inputdlg(Prompt,'Specify the transient to test. Any string will be evaluated, but must create vertical vectors of equal length.',1,DefaultVal);
-    SimSettings.PowerTime = eval(A{1});
-    SimSettings.PowerDemand = eval(A{2})/100*modelParam.NominalPower;
-    SimSettings.RunTime = SimSettings.PowerTime(end);
-    
+    %first identify any controller input (lookup functions), let user pick ones with a schedule
+    %then get the variables from that function and allow the user to edit them
+    SimSettings.RunTime = str2double(inputdlg('Test Duration (s)','Specify length of the transient simulation',1,{num2str(24*3600)}));
+    controls = fieldnames(modelParam.Controls);
+    for i = 1:1:length(controls)
+        connections = modelParam.(controls{i}).connections;
+        for j = 1:1:length(connections)
+            r = strfind(connections{j},'.');
+            if ~isempty(connections{j}) && isempty(r)
+                [globvar,Prompt,DefaultVal] = feval(connections{j},0,'loadparam'); 
+                A = inputdlg(Prompt,strcat('Specify the transient imput parameters for the function',connections{j},'Any string will be evaluated, but must create vertical vectors of equal length.'),1,DefaultVal);
+                for k = 1:1:length(globvar)
+                    SimSettings.(globvar{k}) = eval(A{k});
+                end
+            end
+        end
+        %% modify control terms
+        nC = length(modelParam.(controls{i}).Gain);
+        Prompt = {};
+        DefaultVal = {};
+        for j = 1:1:nC
+            Prompt(end+1) = cellstr(strcat(modelParam.(controls{i}).description{j},'---Proportional'));
+            Prompt(end+1) = cellstr(strcat(modelParam.(controls{i}).description{j},'---Integral'));
+            DefaultVal(end+1) = cellstr(num2str(modelParam.(controls{i}).PropGain(j)));
+            DefaultVal(end+1) = cellstr(num2str(modelParam.(controls{i}).Gain(j)));
+        end
+        A= inputdlg(Prompt,'Specify the controller parameters',1,DefaultVal);
+        for j = 1:1:nC
+            modelParam.(controls{i}).PropGain(j) = str2double(A(2*j-1));
+            modelParam.(controls{i}).Gain(j) = str2double(A(2*j));
+        end
+        % %SOFCstack
+        % modelParam.(controls{i}).Gain = [3e-3;1e-3;1e-2];
+        % modelParam.(controls{i}).PropGain = [1;1;1];
 
-    %% modify control terms
-    nC = length(modelParam.Controller.Gain);
-    Prompt = {};
-    DefaultVal = {};
-    for i = 1:1:nC
-        Prompt(end+1) = cellstr(strcat(modelParam.Controller.description{i},'---Proportional'));
-        Prompt(end+1) = cellstr(strcat(modelParam.Controller.description{i},'---Integral'));
-        DefaultVal(end+1) = cellstr(num2str(modelParam.Controller.PropGain(i)));
-        DefaultVal(end+1) = cellstr(num2str(modelParam.Controller.Gain(i)));
-    end
-    A= inputdlg(Prompt,'Specify the controller parameters',1,DefaultVal);
-    for i = 1:1:nC
-        modelParam.Controller.PropGain(i) = str2double(A(2*i-1));
-        modelParam.Controller.Gain(i) = str2double(A(2*i));
-    end
-    % %SOFCstack
-    % modelParam.Controller.Gain = [3e-3;1e-3;1e-2];
-    % modelParam.Controller.PropGain = [1;1;1];
+        %SOFCsystem
+        % modelParam.(controls{i}).Gain = [1e-2;1e-4;1e-2];
+        % modelParam.(controls{i}).PropGain = [.5;.1;1];
 
-    %SOFCsystem
-    % modelParam.Controller.Gain = [1e-2;1e-4;1e-2];
-    % modelParam.Controller.PropGain = [.5;.1;1];
+        % %SOECstack
+        % modelParam.(controls{i}).Gain = [3e-3;1e-3;1e-2];
+        % modelParam.(controls{i}).PropGain = [1;1;1];
 
-    % %SOECstack
-    % modelParam.Controller.Gain = [3e-3;1e-3;1e-2];
-    % modelParam.Controller.PropGain = [1;1;1];
-
-    % %GasTurbine
-    % modelParam.Controller.IntGain = [4e-4; 1e-2; 4e-2;];
-    % modelParam.Controller.PropGain = [8e-3; 5e-0; .75;];
+        % %GasTurbine
+        % modelParam.(controls{i}).IntGain = [4e-4; 1e-2; 4e-2;];
+        % modelParam.(controls{i}).PropGain = [8e-3; 5e-0; .75;];
+    end 
 end
 
 %% Run a transient on non-linear model

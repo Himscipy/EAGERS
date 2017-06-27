@@ -36,6 +36,7 @@ elseif IterCount>1 && t<TagInf.Time(IterCount)
     while t<TagInf.Time(IterCount-1)
         IterCount = IterCount-1;
     end
+    TagInf.Time = TagInf.Time(1:IterCount);
 end
 TagInf.Time(IterCount,1) = t;
 
@@ -55,7 +56,7 @@ blockSteady = true(nComp,1);
 while any(blockSteady)
     for blockCount = 1:1:nComp 
         block = list{blockCount};
-        Inlet.(block) = RefreshInlet(block);
+        Inlet.(block) = RefreshInlet(block,t);
         if ~isfield(OldInlet,block)
             OldInlet.(block) = [];
         end
@@ -197,7 +198,7 @@ if  abs(Error) >= tolerance;
 else C = false;
 end
 
-function InletBlock = RefreshInlet(block)
+function InletBlock = RefreshInlet(block,t)
 global modelParam Outlet Tags
 list = modelParam.(block).InletPorts;
 controls = fieldnames(modelParam.Controls);
@@ -219,18 +220,18 @@ for i = 1:1:length(list)
                 else InletBlock.(port) = modelParam.(connectedBlock).(connectedPort).IC;
                 end
             end
-        else
-            InletBlock.(port) = feval(BlockPort,0);%finds value of look-up function at time = 0
-        end
-        %%forced interupt between controller and component ports when linearizing model
-        if ismember(connectedBlock,controls) && ~ismember(block,controls)
-            if isfield(Tags.Options,'AssignedInputs') && Tags.Options.AssignedInputs == 1
-                InletBlock.(port) = Tags.ModelInput.(connectedBlock).(connectedPort);%assign inputs
-            else
-                Tags.ModelInput.(connectedBlock).(connectedPort) = InletBlock.(port);%Collect inputs to model (outputs from controller)
+            %%forced interupt between controller and component ports when linearizing model
+            if ismember(connectedBlock,controls) && ~ismember(block,controls)
+                if isfield(Tags.Options,'AssignedInputs') && Tags.Options.AssignedInputs == 1
+                    InletBlock.(port) = Tags.ModelInput.(connectedBlock).(connectedPort);%assign inputs
+                else
+                    Tags.ModelInput.(connectedBlock).(connectedPort) = InletBlock.(port);%Collect inputs to model (outputs from controller)
+                end
             end
+        else
+            InletBlock.(port) = feval(BlockPort,t);%finds value of look-up function at time = 0
         end
-        if ismember(block,controls) %&& ~ismember(connectedBlock,fieldnames(modelParam.Controls))
+        if ismember(block,controls) 
             Tags.ModelOutput.(block).(port) = InletBlock.(port);%collect outputs of model (inputs to controller)
         end
     else

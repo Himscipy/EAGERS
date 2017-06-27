@@ -15,7 +15,7 @@ ToutletError = ((mean(Inlet.Hot) - .5*block.Target(2) + block.dT_cath_PEN) - blo
 % BlowerPower = Y(2)+(dTerror*block.PropGain(2))*block.Scale(2);
 
 BlowerPower = Y(2)+(ToutletError*block.PropGain(2))*block.Scale(2);
-StackPower = PowerDemandLookup(t) + BlowerPower;
+StackPower = Inlet.Setpoint + BlowerPower;
 % Current = Y(3)+block.PropGain(3)*(StackPower*1000/(Inlet.Voltage*block.Cells) - Y(3));
 % Power = Current*Inlet.Voltage*block.Cells/1000;
 % PowerError = (StackPower - Power)/StackPower;

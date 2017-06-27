@@ -52,7 +52,7 @@ handles.output = hObject;
 % Update handles structure
 guidata(hObject, handles);
 
-global Plant GENINDEX TestData RealTimeData
+global Plant GENINDEX TestData RealTimeData 
 GENINDEX = 1;
 set(gcf,'Name','DISPATCH')
 movegui(gcf,'center');
@@ -131,9 +131,15 @@ set(handles.simultaneous, 'value', ~Plant.optimoptions.sequential);
 set(handles.excessHeat, 'value', Plant.optimoptions.excessHeat);
 set(handles.nsSmooth, 'string', Plant.optimoptions.nsSmooth);
 
-set(handles.NoMixedInteger, 'value', ~Plant.optimoptions.MixedInteger);
-set(handles.MixedInteger, 'value', Plant.optimoptions.MixedInteger);
-set(handles.NREL, 'value', 0);
+if strcmp(Plant.optimoptions.solver,'NREL')
+    set(handles.NREL, 'value', 1);
+    set(handles.NoMixedInteger, 'value', 0);
+    set(handles.MixedInteger, 'value', 0);
+else
+    set(handles.NoMixedInteger, 'value', ~Plant.optimoptions.MixedInteger);
+    set(handles.MixedInteger, 'value', Plant.optimoptions.MixedInteger);
+    set(handles.NREL, 'value', 0);
+end
 
 set(handles.noSpinReserve, 'value', ~Plant.optimoptions.SpinReserve);
 set(handles.SpinReserve, 'value', Plant.optimoptions.SpinReserve);
@@ -160,6 +166,7 @@ set(handles.sliderStartDate,'Min',0,'Max',days,'Value',0,'SliderStep',[1/(days-1
 %%put something into axes
 sliderStartDate_Callback(hObject, eventdata, handles)
 LineGraph_Callback(hObject, eventdata, handles)
+insertMockups(handles)
 
 % --- Outputs from this function are returned to the command line.
 function varargout = DISPATCH_OutputFcn(hObject, eventdata, handles) 
@@ -518,32 +525,26 @@ handles = guihandles;
 %find the current date
 DateSim = Plant.Data.Timestamp(1) + get(handles.sliderStartDate,'Value');
 Last24hour = [];
-if Plant.Data.Timestamp(1)>(DateSim-1) && Plant.Data.Timestamp(end)<DateSim
-    Timestamp = DateSim-1+((0:round(24/Plant.optimoptions.Resolution)-1)'.*(Plant.optimoptions.Resolution/24));
+TimeYesterday = DateSim-1+((0:round(24/Plant.optimoptions.Resolution)-1)'.*(Plant.optimoptions.Resolution/24));
+if Plant.Data.Timestamp(1)<(DateSim-1) && Plant.Data.Timestamp(end)>DateSim
+    Last24hour = GetHistoricalData(TimeYesterday);
 else %need to have this in terms of the first timestep
-    Timestamp = DateSim+((0:round(24/Plant.optimoptions.Resolution)-1)'.*(Plant.optimoptions.Resolution/24));
+    Last24hour = GetHistoricalData(TimeYesterday+1);
+    Last24hour.Timestamp = TimeYesterday;
 end
-Last24hour = GetHistoricalData(Timestamp);
-Last24hour.Timestamp = DateSim-1+((0:round(24/Plant.optimoptions.Resolution)-1)'.*(Plant.optimoptions.Resolution/24));
-
 Data = GetHistoricalData(DateSim); 
 if isfield(Plant,'Dispatch') && ~isempty(Plant.Dispatch) && isfield(Plant.Dispatch,'Timestamp') && ~isempty(Plant.Dispatch.Timestamp)
     I = nnz(Plant.Dispatch.Timestamp<=DateSim & Plant.Dispatch.Timestamp>0);
 else I = 0;
 end
 if I == 0 || Plant.Dispatch.Timestamp(I)<(DateSim - Plant.optimoptions.Resolution/24)%if it has not been run at this timestep
-    if ~isfield(Plant,'subNet') || isempty(Plant.subNet)
+    if isempty(Plant.subNet)
         initializeOptimization
     end
     automaticInitialCondition(Data);
     ForecastTime = DateSim+[0;buildTimeVector(Plant.optimoptions)/24];%linspace(DateSim,DateEnd)';would need to re-do optimization matrices for this time vector
     Forecast = updateForecast(ForecastTime(2:end),Data);
     Dispatch = DispatchLoop(ForecastTime,Forecast,[]);
-    for i = 1:1:length(Plant.Generator)
-        if strcmp(Plant.Generator(i).Source,'Renewable') && Plant.Generator(i).Enabled
-            Dispatch(1,i) = RenewableOutput(Plant.Generator(i).VariableStruct,DateSim,'Actual');
-        end
-    end
     Forecast = Dispatch;
     History = [];
     HistoryTime = [];
@@ -578,22 +579,22 @@ global Plant Virtual RealTime DispatchWaitbar DateSim Last24hour GenAvailTime Re
 if get(handles.VirtualMode,'Value') ==1 
     Virtual = 1;
     RealTime = 0;
-    Plant.optimoptions.fastsimulation = 1;
+    Plant.optimoptions.mode = 'virtual';
 elseif get(handles.ObserverMode,'Value') == 1
     Virtual = 1;
     RealTime = 0;
-    Plant.optimoptions.fastsimulation = 0;
+    Plant.optimoptions.mode = 'observer';
 elseif get(handles.ControllerMode,'Value') == 1
     Virtual = 0;
     RealTime = 1;
-    Plant.optimoptions.fastsimulation = 0;
+    Plant.optimoptions.mode = 'controller';
 end
 set(handles.Start,'Value',1);%reset start button
 set(handles.Stop,'Value',0);%reset stop button
 
 %%Need to select a starting Date
 DateSim = Plant.Data.Timestamp(1) + get(handles.sliderStartDate,'Value');
-if ~isfield(Plant,'subNet') || isempty(Plant.subNet)
+if isempty(Plant.subNet)
     initializeOptimization%Load generators, build QP matrices
 end
 % clear & initialize variables
@@ -632,7 +633,7 @@ end
 
 Last24hour = [];
 TimeYesterday = DateSim-1+((0:round(24/Plant.optimoptions.Resolution)-1)'.*(Plant.optimoptions.Resolution/24));
-if Plant.Data.Timestamp(1)<(DateSim-1) && Plant.Data.Timestamp(end)>=DateSim
+if RealTimeData.Timestamp(1)<(DateSim-1) && RealTimeData.Timestamp(end)>=DateSim
     Last24hour = GetCurrentData(TimeYesterday);
 else %need to have this in terms of the first timestep
     Last24hour = GetCurrentData(TimeYesterday+1);
@@ -661,11 +662,6 @@ while Si<NumSteps
 %     disp(strcat('FistDisp:',num2str(timers(Si,1))));
 %     disp(strcat('StebByStep:',num2str(timers(Si,2))));
 %     disp(strcat('FinalDisp:',num2str(timers(Si,3))));
-    for i = 1:1:length(Plant.Generator)
-        if strcmp(Plant.Generator(i).Source,'Renewable') && Plant.Generator(i).Enabled
-            LastDispatch(1,i) = RenewableOutput(Plant.Generator(i).VariableStruct,DateSim,'Actual');
-        end
-    end
     if isempty(DispatchWaitbar)
         return %stop button was pressed
     end
@@ -894,11 +890,11 @@ handles = guihandles;
 DateSim = Plant.Data.Timestamp(1) + get(handles.sliderDate,'Value');
 Last24hour = [];
 TimeYesterday = DateSim-1+((0:round(24/Plant.optimoptions.Resolution)-1)'.*(Plant.optimoptions.Resolution/24));
-if Plant.Data.Timestamp(1)<(DateSim-1) && Plant.Data.Timestamp(end)>=DateSim
+if Plant.Data.Timestamp(1)<(DateSim-1) && Plant.Data.Timestamp(end)>DateSim
     Last24hour = GetHistoricalData(TimeYesterday);
 else %need to have this in terms of the first timestep
     Last24hour = GetHistoricalData(TimeYesterday+1);
-    Last24hour.Timestamp = TimeYesterday;
+    Last24hour.Timstamp = TimeYesterday;
 end
 
 Data = GetHistoricalData(DateSim);        
@@ -932,9 +928,9 @@ else
     if I == 0 || Plant.Dispatch.Timestamp(I)<(DateSim - Plant.optimoptions.Resolution/24)%if it has not been run at this timestep
         ForecastTime = DateSim+[0;buildTimeVector(Plant.optimoptions)/24];%linspace(DateSim,DateEnd)';would need to re-do optimization matrices for this time vector
         if strcmp(Plant.Generator(GENINDEX).Source,'Renewable')
-            Forecast = RenewableOutput(Plant.Generator(GENINDEX).VariableStruct,ForecastTime,'Actual');
+            Forecast = RenewableOutput(GENINDEX,ForecastTime,'Actual');
         else
-            if ~isfield(Plant,'subNet') || isempty(Plant.subNet)
+            if isempty(Plant.subNet)
                 initializeOptimization
             end
             automaticInitialCondition(Data);
@@ -982,15 +978,13 @@ end
 
 
 %% Settings Tab
-function removeQPmatrices
+function emptyQPmatrices
 %something changed in the specifications, any previously calculated
 %matrices or results do not apply
 global Plant
 A = {'subNet';'OpMatA';'OpMatB';'OneStep';'Online';'Dispatch';'Predicted';'RunData';'Baseline'};
 for i = 1:1:length(A)
-    if isfield(Plant,A{i})
-        Plant.(A{i}) = [];
-    end
+    Plant.(A{i}) = [];
 end
 
 function changingtimesteps_SelectionChangeFcn(hObject, eventdata, handles)
@@ -1011,7 +1005,7 @@ switch get(eventdata.NewValue,'Tag')
     case 'logarithm'
         Plant.optimoptions.tspacing = 'logarithm';
 end
-removeQPmatrices
+emptyQPmatrices
 
 function Interval_Callback(hObject, eventdata, handles)
 global Plant
@@ -1024,7 +1018,7 @@ end
 function Resolution_Callback(hObject, eventdata, handles)
 global Plant
 Plant.optimoptions.Resolution = str2double(get(handles.Resolution, 'String'));
-removeQPmatrices
+emptyQPmatrices
 
 function Resolution_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
@@ -1034,7 +1028,7 @@ end
 function Horizon_Callback(hObject, eventdata, handles)
 global Plant
 Plant.optimoptions.Horizon = str2double(get(handles.Horizon, 'String'));
-removeQPmatrices
+emptyQPmatrices
 
 function Horizon_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
@@ -1045,7 +1039,7 @@ function scaletime_Callback(hObject, eventdata, handles)
 global Plant
 %scaletime: the ratio of emulated time to time in the test-data. For example 24 hours of test data can be run in 3 hours with a scaletime of 8. scaletime enlarges any energy storage and slows down the transient response of any generators
 Plant.optimoptions.scaletime = str2double(get(handles.scaletime, 'String'));
-removeQPmatrices
+emptyQPmatrices
 
 function scaletime_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
@@ -1060,42 +1054,36 @@ switch get(eventdata.NewValue,'Tag')
     case 'simultaneous'
         Plant.optimoptions.sequential = 0;
 end
-removeQPmatrices
+emptyQPmatrices
 
 function excessHeat_Callback(hObject, eventdata, handles)
 global Plant
 Plant.optimoptions.excessHeat = get(hObject, 'Value');
-removeQPmatrices
+emptyQPmatrices
 
 function nsSmooth_Callback(hObject, eventdata, handles)
 global Plant
 Plant.optimoptions.nSSmooth = str2double(get(handles.nsSmooth, 'String'));
-removeQPmatrices
+emptyQPmatrices
 
 function nsSmooth_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor','white');
 end
 
-% --- Executes when selected object is changed in simulationspeed.
-function simulationspeed_SelectionChangeFcn(hObject, eventdata, handles)
-global Plant
-switch get(eventdata.NewValue,'Tag')
-    case 'fastsimulation'
-        Plant.optimoptions.fastsimulation = 1;
-    case 'slowsimulation'
-        Plant.optimoptions.fastsimulation = 0;
-end
 
 % --- Executes when selected object is changed in uipanelSolverMethod.
 function uipanelSolverMethod_SelectionChangedFcn(hObject, eventdata, handles)
 global Plant
 switch get(eventdata.NewValue,'Tag')
     case 'NoMixedInteger'
-        Plant.optimoptions.MixedInteger = 0;
+        Plant.optimoptions.MixedInteger = false;
+        Plant.optimoptions.solver = 'quadprog';
     case 'MixedInteger'
-        Plant.optimoptions.MixedInteger = 1;
+        Plant.optimoptions.MixedInteger = true;
+        Plant.optimoptions.solver = 'quadprog';
     case 'NREL'
+        Plant.optimoptions.solver = 'NREL';
         %
 end
 
@@ -1109,12 +1097,12 @@ switch get(eventdata.NewValue,'Tag')
         Plant.optimoptions.SpinReserve = true;
         Plant.optimoptions.SpinReservePerc = str2double(get(handles.SpinReservePerc, 'String'));
 end
-removeQPmatrices
+emptyQPmatrices
 
 function SpinReservePerc_Callback(hObject, eventdata, handles)
 global Plant
 Plant.optimoptions.SpinReservePerc = str2double(get(handles.SpinReservePerc, 'String'));
-removeQPmatrices
+emptyQPmatrices
 
 function SpinReservePerc_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
@@ -1124,7 +1112,7 @@ end
 function editBuffer_Callback(hObject, eventdata, handles)
 global Plant
 Plant.optimoptions.Buffer = str2double(get(handles.editBuffer, 'String'));
-removeQPmatrices
+emptyQPmatrices
 
 function editBuffer_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
@@ -1143,7 +1131,7 @@ end
 function Topt_Callback(hObject, eventdata, handles)
 global Plant
 Plant.optimoptions.Topt = str2double(get(handles.Topt, 'String'));
-removeQPmatrices
+emptyQPmatrices
 
 function Topt_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
@@ -1153,7 +1141,7 @@ end
 function Tmpc_Callback(hObject, eventdata, handles)
 global Plant
 Plant.optimoptions.Tmpc = str2double(get(handles.Tmpc, 'String'));
-removeQPmatrices
+emptyQPmatrices
 
 function Tmpc_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
@@ -1300,3 +1288,23 @@ function popupmenuColor_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor','white');
 end
+
+function insertMockups(handles)
+global Model_dir
+handles.MarketServices = axes('Units','normalized',...
+        'Position', [0,0,1,1],...
+        'Tag', 'MarketServices',...
+        'Parent', handles.uipanelMain2,...
+        'Visible','on');
+[x,map] = imread(fullfile(Model_dir,'GUI','Graphics','AncillaryServiceMockup.png'));
+image(x,'Parent',handles.MarketServices);
+set(handles.MarketServices,'xtick',[],'xticklabel',[],'ytick',[],'yticklabel',[],'box','off')
+
+handles.NetworkDisplay = axes('Units','normalized',...
+        'Position', [0,.1,1,.8],...
+        'Tag', 'NetworkDisplay',...
+        'Parent', handles.uipanelMain4,...
+        'Visible','on');
+[x,map] = imread(fullfile(Model_dir,'GUI','Graphics','NetworkDisplayMockup.png'));
+image(x,'Parent',handles.NetworkDisplay);
+set(handles.NetworkDisplay,'xtick',[],'xticklabel',[],'ytick',[],'yticklabel',[],'box','off')

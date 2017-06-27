@@ -23,7 +23,9 @@ for i = 1:1:nG
     else skip = true;
     end
     if ~skip %dont add the cost of a chiller if you ran E and C simultaneously, or you will double count the chiller demand
-        FuelInput(:,i) = GenDisp(:,i)./interp1(cap,eff,GenDisp(:,i));
+        genEff = interp1(cap,eff,GenDisp(:,i));
+        FuelInput(:,i) = GenDisp(:,i)./genEff;
+        FuelInput(GenDisp(:,i)==0,i) = 0;
     end
 end
 
@@ -69,11 +71,11 @@ for i = 1:1:length(mUnique)
     index = nonzeros((1:1:length(m))'.*(m==mUnique(i)));
     days = datenum([y(index(1)) mUnique(i)+1 1]) - datenum([y(index(1)) mUnique(i) 1]);
     fracOfMonth = length(index)/(days*24/testSystems(k).optimoptions.Resolution);
-    MonthlyCosts(mUnique(i),1) = DemandCharge(ElectricUse(index),Timestamp(index),testSystems(k).Generator(electricUtility).VariableStruct);
-    MonthlyCosts(mUnique(i),2) = sum(ElecUseCost(index))/fracOfMonth - sum(ElecSellBack(index))/fracOfMonth;
-    MonthlyCosts(mUnique(i),3) = sum(FuelCost(index))/fracOfMonth;
-    MonthlyCosts(mUnique(i),4) = sum(OandM)/12;
-    MonthlyCosts(mUnique(i),5) = sum(FinanceMonthly);
+    MonthlyCosts(mUnique(i),1) = sum(FinanceMonthly);
+    MonthlyCosts(mUnique(i),2) = sum(OandM)/12;
+    MonthlyCosts(mUnique(i),3) = DemandCharge(ElectricUse(index),Timestamp(index),testSystems(k).Generator(electricUtility).VariableStruct);
+    MonthlyCosts(mUnique(i),4) = sum(ElecUseCost(index))/fracOfMonth - sum(ElecSellBack(index))/fracOfMonth;
+    MonthlyCosts(mUnique(i),5) = sum(FuelCost(index))/fracOfMonth;
 end
 %find net present cost
 AnnualCost = sum(sum(MonthlyCosts))*12/length(mUnique);

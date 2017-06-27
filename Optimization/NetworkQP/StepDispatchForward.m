@@ -46,7 +46,7 @@ end
 if strcmp(Plant.optimoptions.method,'Control')
     %count forward in time in the control loop
         %% Real-time control 
-    if Plant.optimoptions.fastsimulation==0
+    if any(strcmp(Plant.optimoptions.mode,{'observer';'controller';}))
         if isempty(timerfindall)
             Timers(Plant.optimoptions)
         else %do nothing;

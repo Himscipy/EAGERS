@@ -7,7 +7,6 @@ function QP = buildMatrices1Step
 %Fit B does not include energy storage and uses non-zero intercept
 %Demands, upper/lower bounds, and utility costs must updated prior to optimization
 global Plant 
-Op = 'OpMatB';
 nG = length(Plant.Generator);
 
 networkNames = fieldnames(Plant.Network);
@@ -35,9 +34,12 @@ QP.constCost = zeros(1,nG);
 H = []; f = []; lb =[]; ub = [];
 xL = 0;
 for i = 1:1:nG
-    Gen = Plant.Generator(i).(Op);
-    s = length(Gen.states);%generator with multiple states
-    if s>0
+    Gen = Plant.Generator(i).QPform;
+    if ~isempty(Gen.states)
+        [~,fit] = size(Gen.states);% fit = 2 for generators with 2 different piecewise quadratics when Op = 'B'
+    else fit = 0;
+    end
+    if fit>0
         if ~isempty(strfind(Plant.Generator(i).Type,'Storage'))
             s = 1;% Storage treated as generator with 1 state
             H(end+1) = 0;
@@ -45,16 +47,18 @@ for i = 1:1:nG
             lb(end+1) = -Gen.Ramp.b(1);
             ub(end+1) = Gen.Ramp.b(2);
         else %dispatchable generator or utility
+            states = Gen.states(:,fit);
+            s = length(states);%generator with multiple states
             for k = 1:1:s
-                H(end+1) = Gen.(Gen.states{k}).H;
-                f(end+1) = Gen.(Gen.states{k}).f;
-                lb(end+1) = Gen.(Gen.states{k}).lb;
-                ub(end+1) = Gen.(Gen.states{k}).ub;
+                H(end+1) = Gen.(states{k}).H(fit);
+                f(end+1) = Gen.(states{k}).f(fit);
+                lb(end+1) = Gen.(states{k}).lb(fit);
+                ub(end+1) = Gen.(states{k}).ub(fit);
             end
             if isempty(strfind(Plant.Generator(i).Type,'Utility'))
                 Organize.Dispatchable(i) = 1;
-                if isfield(Plant.Generator(i).(Op),'constCost') 
-                     QP.constCost(i) = Plant.Generator(i).OpMatB.constCost;
+                if isfield(Plant.Generator(i).QPform,'constCost') 
+                     QP.constCost(i) = Plant.Generator(i).QPform.constCost;
                 end
             end
         end
@@ -107,6 +111,17 @@ end
 
 Organize.HeatVented = [];
 if any(strcmp('DistrictHeat',networkNames)) && Plant.optimoptions.excessHeat == 1
+    %%find maximum heat production possible
+    maxHeat = 0;
+    for i = 1:1:nG
+        if isfield(Plant.Generator(i).QPform.output,'H')
+            if ~isempty(strfind(Plant.Generator(i).Type,'Storage'))
+                maxHeat = maxHeat + Plant.Generator(i).QPform.Stor.PeakDisch;
+            else
+                maxHeat = maxHeat + Plant.Generator(i).QPform.output.H*Plant.Generator(i).Size;
+            end
+        end
+    end
     %%assume heat can be lost any any node in the network that has a device producing heat
     n = length(Plant.subNet.('DistrictHeat'));
     Organize.HeatVented = zeros(1,n);
@@ -114,7 +129,7 @@ if any(strcmp('DistrictHeat',networkNames)) && Plant.optimoptions.excessHeat == 
         genI = Plant.subNet.('DistrictHeat')(i).Equipment;%%identify generators at this node
         hasHeater = 0;
         for j = 1:1:length(genI)
-            if isfield(Plant.Generator(genI(j)).(Op).output,'H')
+            if isfield(Plant.Generator(genI(j)).QPform.output,'H')
                 hasHeater = 1;
                 break
             end
@@ -125,7 +140,7 @@ if any(strcmp('DistrictHeat',networkNames)) && Plant.optimoptions.excessHeat == 
             H(end+1) = 0;
             f(end+1) = 0;
             lb(end+1) = 0;
-            ub(end+1) = inf;
+            ub(end+1) = maxHeat;
         end
     end
 end
@@ -172,12 +187,12 @@ for net = 1:1:length(networkNames)
                 states = Organize.States{genI(j)};%states associated with gerator i
                 if any(strcmp(Plant.Generator(genI(j)).Type,{'Electric Storage';'Thermal Storage';'Hydro Storage'}))
                     Aeq(req,states(1)) = 1; %storage converted to "generator"
-                elseif strcmp(networkNames{net},'Electrical') && isfield(Plant.Generator(genI(j)).(Op).output,'E')
-                    Aeq(req,states) = Plant.Generator(genI(j)).(Op).output.E;
-                elseif strcmp(networkNames{net},'DistrictHeat') && isfield(Plant.Generator(genI(j)).(Op).output,'H')
-                    Aeq(req,states) = Plant.Generator(genI(j)).(Op).output.H;
-                elseif strcmp(networkNames{net},'DistrictCool') && isfield(Plant.Generator(genI(j)).(Op).output,'C')
-                    Aeq(req,states) = Plant.Generator(genI(j)).(Op).output.C;
+                elseif strcmp(networkNames{net},'Electrical') && isfield(Plant.Generator(genI(j)).QPform.output,'E')
+                    Aeq(req,states) = Plant.Generator(genI(j)).QPform.output.E;
+                elseif strcmp(networkNames{net},'DistrictHeat') && isfield(Plant.Generator(genI(j)).QPform.output,'H')
+                    Aeq(req,states) = Plant.Generator(genI(j)).QPform.output.H;
+                elseif strcmp(networkNames{net},'DistrictCool') && isfield(Plant.Generator(genI(j)).QPform.output,'C')
+                    Aeq(req,states) = Plant.Generator(genI(j)).QPform.output.C;
                 end
             end
             %%identify lines coming in and out
@@ -222,12 +237,12 @@ end
 
 for i = 1:1:nG
     %link is a field if there is more than one state and the states are linked by an inequality or an equality
-    if isfield(Plant.Generator(i).(Op),'link') && isfield(Plant.Generator(i).(Op).link,'eq')
-        [m,n] = size(Plant.Generator(i).(Op).link.eq);
+    if isfield(Plant.Generator(i).QPform,'link') && isfield(Plant.Generator(i).QPform.link,'eq')
+        [m,n] = size(Plant.Generator(i).QPform.link.eq);
         states = Organize.States{i};%states associated with gerator i
         for k = 1:1:m
-            Aeq(req+k,states) = Plant.Generator(i).(Op).link.eq(k,:);
-            beq(req+k) = Plant.Generator(i).(Op).link.beq(k);
+            Aeq(req+k,states) = Plant.Generator(i).QPform.link.eq(k,:);
+            beq(req+k) = Plant.Generator(i).QPform.link.beq(k);
         end
         Organize.Equalities(i) = {req+1:req+m}; 
         req = req+m;
@@ -240,7 +255,7 @@ for net = 1:1:length(networkNames)
     if strcmp(networkNames{net},'Electrical') && Plant.optimoptions.SpinReserve
         Organize.SpinRow = cell(1,nG);
         for i = 1:1:nG
-            if isfield(Plant.Generator(i).OpMatA.output,'E') && ~isfield(Plant.Generator(i).OpMatA.output,'C') && (~isempty(strfind(Plant.Generator(i).Type,'Storage')) || Organize.Dispatchable(i))%electric storage & dispatchable electric generators have spinning reserve capacity
+            if isfield(Plant.Generator(i).QPform.output,'E') && ~isfield(Plant.Generator(i).QPform.output,'C') && (~isempty(strfind(Plant.Generator(i).Type,'Storage')) || Organize.Dispatchable(i))%electric storage & dispatchable electric generators have spinning reserve capacity
                 states = Organize.States{i};%states associated with gerator i
                 Organize.SpinRow(i) = {req+1};
                 Aeq(req+1,states) = 1;
@@ -266,7 +281,7 @@ for net = 1:1:length(networkNames)
             if length(eff(i,:))==1 || eff(i,2)==0 %uni-directional transfer, 1 state for each line
                 %do nothing, no inequalities linking penalty states
             else%bi-directional power transfer
-                linestates = Organize.States{nG+i};
+                linestates = Organize.States{nG+nLcum+i};
                 A(r+1,linestates) = [(1-eff(i,1)), -1, 0];% Pab*(1-efficiency) < penalty a to b
                 A(r+2,linestates) = [-(1-eff(i,2)), 0, -1];% -Pab*(1-efficiency) < penalty b to a
                 Organize.Transmission(nLcum+i) = {r+1:r+2}; 

@@ -19,7 +19,7 @@ lines = 0;
 for s = 1:1:length(Outs)
     inc = false(nG,1);
     for i = 1:1:nG
-        if isfield(Plant.Generator(i).OpMatA.output,Outs{s}) && ~strcmp(Plant.Generator(i).Source,'Renewable')
+        if isfield(Plant.Generator(i).QPform.output,Outs{s}) && ~strcmp(Plant.Generator(i).Source,'Renewable')
             if isempty(strfind(Plant.Generator(i).Type,'Utility')) &&  isempty(strfind(Plant.Generator(i).Type,'Storage')) && Plant.Generator(i).Enabled
                 inc(i) = true;
             end
@@ -30,7 +30,7 @@ for s = 1:1:length(Outs)
     end
     if (strcmp(Outs{s},'E') && isCHP) %combine heaters into CHP case
         for i = 1:1:nG
-            if  isempty(strfind(Plant.Generator(i).Type,'Utility')) &&  isempty(strfind(Plant.Generator(i).Type,'Storage')) && Plant.Generator(i).Enabled && isfield(Plant.Generator(i).OpMatA.output,'H')
+            if  isempty(strfind(Plant.Generator(i).Type,'Utility')) &&  isempty(strfind(Plant.Generator(i).Type,'Storage')) && Plant.Generator(i).Enabled && isfield(Plant.Generator(i).QPform.output,'H')
                 inc(i) = true;
             end
         end

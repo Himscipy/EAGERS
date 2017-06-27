@@ -22,7 +22,7 @@ function varargout = MainScreen1(varargin)
 
 % Edit the above text to modify the response to help MainScreen1
 
-% Last Modified by GUIDE v2.5 25-May-2017 00:52:14
+% Last Modified by GUIDE v2.5 31-May-2017 23:42:54
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -60,7 +60,7 @@ guidata(hObject, handles);
 
 % UIWAIT makes MainScreen1 wait for user response (see UIRESUME)
 % uiwait(handles.figure1);
-global Plant Model_dir SYSINDEX GENINDEX testSystems
+global Plant Model_dir SYSINDEX GENINDEX testSystems 
 movegui(gcf,'center');
 set(gcf,'Name','Energy Planning Tool 2017.0.1')
 Plant.optimoptions.method = 'Planning';
@@ -101,7 +101,8 @@ for i = 1:length(TabText)
         set(handles.(strcat('uipanelMain',j)),'Visible','off')
     end
 end
-
+set(handles.axesMain,'NextPlot','add');
+set(handles.axesCumulative,'NextPlot','add');
 %%setup library: give the buttons symbols
 buttonIms = {'mGT', 'ICE', 'SOFC', 'MCFC', 'PEM', 'SolarPV', 'SolarThermal', 'Chiller', ...
     'AbChiller','AirHeater','WaterHeater', 'ColdStor', 'HotStor', 'Battery'}; % need images for: 'SolarStirling', 'Wind','HighTempStor
@@ -152,7 +153,7 @@ if isfield(testSystems(SYSINDEX).Data,'Building')
 else build = 'custom';
 end
 set(handles.textBuilding,'String',build);
-days = max(1,floor(testSystems(SYSINDEX).Data.Timestamp(end) - testSystems(SYSINDEX).Data.Timestamp(1)));
+days = max(2,floor(testSystems(SYSINDEX).Data.Timestamp(end) - testSystems(SYSINDEX).Data.Timestamp(1)));
 if days<7
     set(handles.sliderZoom1,'Min',0,'Max',1,'Value',0,'SliderStep',[1,1]) %either single day or all data   
 elseif days<31
@@ -162,7 +163,12 @@ elseif days<367
 else
     set(handles.sliderZoom1,'Min',0,'Max',4,'Value',0,'SliderStep',[1/4,1/4]) %either single day, week, month, year, or all data
 end
-set(handles.sliderDate1,'Min',0,'Max',days,'Value',0,'SliderStep',[1/(days-1),10/(days-10)])
+if days>20
+    set(handles.sliderDate1,'Min',0,'Max',days,'Value',0,'SliderStep',[1/(days-1),10/(days-10)])
+else
+    set(handles.sliderDate1,'Min',0,'Max',days,'Value',0,'SliderStep',[1/(days-1),1/(days-1)])
+end
+insertMockups(handles)
 
 % --- Outputs from this function are returned to the command line.
 function varargout = MainScreen1_OutputFcn(hObject, eventdata, handles) 
@@ -196,7 +202,7 @@ for i = 1:1:length(hNames)
         end
         delete(handles.(hNames{i}));
     end
-    if strncmp(hNames{i},'System',6) || strncmp(hNames{i},'DeleteSys',9) || strncmp(hNames{i},'PrevSys',7) || strncmp(hNames{i},'NextSys',7) || strncmp(hNames{i},'textShow',8)
+    if strncmp(hNames{i},'System',6) || strncmp(hNames{i},'DeleteSys',9) || strncmp(hNames{i},'PrevSys',7) || strncmp(hNames{i},'NextSys',7) || strncmp(hNames{i},'textSys',7)
         delete(handles.(hNames{i}));
     end
 end
@@ -402,6 +408,16 @@ projFile = fullfile(Model_dir,'Plant',projName);
 load(projFile);
 Plant.optimoptions.method = 'Planning';
 Plant.optimoptions.forecast = 'Perfect';
+allFieldNames = {'Name';'Data';'Generator';'optimoptions';'Network';'Costs';'subNet';'OpMatA';'OpMatB';'OneStep';'Online';'Design';'Dispatch';'Predicted';'RunData';'Baseline'};
+fNames = fieldnames(Plant);
+for i = 1:1:length(allFieldNames)
+    if ~any(strcmp(allFieldNames{i},fNames))
+        Plant.(allFieldNames{i}) = [];
+    end
+end
+if isempty(Plant.Costs) || ~isfield(Plant.Costs,'Equipment')
+    defaultCosts
+end
 testSystems(SYSINDEX) = Plant;
 list={};
 for i=1:length(testSystems)
@@ -527,12 +543,12 @@ Plant.optimoptions.forecast = 'Perfect';
 function pushbuttonEDC_Callback(hObject, eventdata, handles)
 global testSystems SYSINDEX Plant
 Plant = testSystems(SYSINDEX);
-fNames = fieldnames(Plant);
-for i = 1:1:length(fNames)
-    if isempty(Plant.(fNames{i}))
-        Plant = rmfield(Plant,fNames{i});
-    end
-end
+% fNames = fieldnames(Plant);
+% for i = 1:1:length(fNames)
+%     if isempty(Plant.(fNames{i}))
+%         Plant = rmfield(Plant,fNames{i});
+%     end
+% end
 close
 DISPATCH
 
@@ -553,32 +569,31 @@ if strcmp(item,'Monthly Costs')
     for i = 1:1:length(testSystems)
         if get(handles.(strcat('showSys',num2str(i))),'Value') == 1
             if get(handles.DesignDay,'Value') ==1
-                [~, m, ~] = datevec(testSystems(i).Data.Timestamp);
+                simTime = (testSystems(i).Data.Timestamp(1):1/24*Plant.optimoptions.Resolution:testSystems(i).Data.Timestamp(end))';
+                [~, m, ~] = datevec(simTime);
                 mUnique = unique(m); %months that be tested
-                dataStep = testSystems(i).Data.Timestamp(2) - testSystems(i).Data.Timestamp(1);
-                fullyear = min(365,(testSystems(i).Data.Timestamp(end)-testSystems(i).Data.Timestamp(1) + dataStep));
+                dStep = (testSystems(i).Data.Timestamp(2) - testSystems(i).Data.Timestamp(1));
+                fullyear = min(365+1/24*testSystems(i).optimoptions.Resolution,(testSystems(i).Data.Timestamp(end)-testSystems(i).Data.Timestamp(1) + dStep));
                 SiTest = [];
                 for j = 1:1:length(mUnique)
-                    index = nonzeros((1:1:length(m)).*(m==mUnique(j)));
+                    index = nonzeros((1:1:length(m))'.*(m==mUnique(j)));
                     SiTest(end+1) = index(1); %first point in each month
                 end
-%                 SiTest = 1+ 24/testSystems(i).optimoptions.Resolution*[0 31 59 90 120 151 181 212 243 273 304 334];%1st day of every month
                 interval = 1;
                 %% need to fix logical statements for when data is not 1 year
-                if isempty(testSystems(i).Design) || length(testSystems(i).Design.Timestamp)~=(fullyear*24/testSystems(i).optimoptions.Resolution+1) || any(testSystems(i).Design.Timestamp(SiTest+1)==0) %at least some design days have not been run
+                if isempty(testSystems(i).Design) || length(testSystems(i).Design.Timestamp)~=(fullyear*24/testSystems(i).optimoptions.Resolution) || any(testSystems(i).Design.Timestamp(SiTest+1)==0) %at least some design days have not been run
                     repeat = true;
                 else repeat = false;
                 end
             else
                 SiTest = 1;
                 interval = fullyear;
-                if isempty(testSystems(i).Design) || length(testSystems(i).Design.Timestamp)~=365*24/testSystems(i).optimoptions.Resolution || any(testSystems(i).Design.Timestamp==0) %at least some design days have not been run
+                if isempty(testSystems(i).Design) || length(testSystems(i).Design.Timestamp)~=fullyear*24/testSystems(i).optimoptions.Resolution || any(testSystems(i).Design.Timestamp==0) %at least some design days have not been run
                     repeat = true;
                 else repeat = false;
                 end
             end
             if  repeat
-%             if ~isfield(testSystems(i).Costs,'Design') || isempty(testSystems(i).Costs.Design)
                 Plant = testSystems(i);
                 TestData = Plant.Data;
                 Xi = nnz(Plant.Data.Timestamp<=Plant.Data.Timestamp(1));
@@ -597,13 +612,7 @@ if strcmp(item,'Monthly Costs')
                     nL = n-nG;
                     Plant.Design.GeneratorState = zeros(length(Plant.Design.Timestamp),nG+nL);
                 end
-                if any(strcmp(optim,{'NoMixedInteger';'MixedInteger';}))
-                    RunPlanning(SiTest,interval);%specify starting indices Si, and duration of test in days
-                elseif strcmp(optim,{'NREL'})
-                    %run NREL optimization
-                else %run old DG-BEAT code
-
-                end
+                RunPlanning(SiTest,interval);%specify starting indices Si, and duration of test in days
                 testSystems(i) = Plant;
                 [testSystems(i).Costs.Design,testSystems(i).Costs.NPC]  = DesignCosts(i);
             end
@@ -660,11 +669,6 @@ for j = 1:1:length(SiTest)
         %     disp(strcat('FistDisp:',num2str(timers(Si,1))));
         %     disp(strcat('StebByStep:',num2str(timers(Si,2))));
         %     disp(strcat('FinalDisp:',num2str(timers(Si,3))));
-            for i = 1:1:length(Plant.Generator)
-                if strcmp(Plant.Generator(i).Source,'Renewable') && Plant.Generator(i).Enabled
-                    LastDispatch(1,i) = RenewableOutput(Plant.Generator(i).VariableStruct,DateSim,'Actual');
-                end
-            end
             Si = StepDispatchForward(Si,Date,Data,Forecast,LastDispatch);
             waitbar(((j-1)*NumOptim+t)/(NumOptim*length(SiTest)),DispatchWaitbar,STR);
         end
@@ -683,6 +687,7 @@ elseif isfield(handles,'legend')%2015 matlab
 end
 h1 = handles.axesMain;
 cla(h1);
+hold(h1,'on')
 h2 = handles.axesCumulative;
 cla(h2);
 nShow = 0; %number of systems to plot
@@ -691,9 +696,14 @@ for i = 1:1:length(testSystems)
         nShow = nShow+1;
     end
 end
+Xpos = zeros(12,nShow);
+for i = 1:1:nShow
+    Xpos(:,i) = (1/nShow^2 + (i-1)/nShow:1:12)';
+end
 j = 0;
 NPC = zeros(nShow,1);
 Name = cell(nShow,1);
+colormap(h1,'summer')
 for i = 1:1:length(testSystems)
     if get(handles.(strcat('showSys',num2str(i))),'Value') == 1
         j = j+1;
@@ -701,13 +711,14 @@ for i = 1:1:length(testSystems)
         NPC(j) = testSystems(i).Costs.NPC;
         Name(j) = {testSystems(i).Name};
         %change color and figure out spacing/width
-        bar(h1,Data,'stacked')
+        bar(h1,Xpos(:,j),Data,'stacked','BarWidth',0.8/nShow)
     end
 end
-legend(h1,{'Demand Charges';'Electric Use Charges';'Fuel Charges';'O & M Charges';'Financing Charges';})
-xlim(h1,[0.5,12.5])
+legend(h1,{'Financing Charges';'O & M Charges';'Demand Charges';'Electric Use Charges';'Fuel Charges';})
+xlim(h1,[0,12])
 ylabel(h1,'Cost ($)','Color','k','FontSize',14)
-set(h1,'XTickLabel', {'Jan';'Feb';'Mar';'Apr';'May';'Jun';'Jul';'Aug';'Sep';'Oct';'Nov';'Dec';})
+set(h1,'XTick',mean(Xpos,2),'XTickLabel', {'Jan';'Feb';'Mar';'Apr';'May';'Jun';'Jul';'Aug';'Sep';'Oct';'Nov';'Dec';})
+colormap(h2,'summer')
 bar(h2,NPC)
 ylabel(h2,'20 Year Net Present Cost ($)','Color','k','FontSize',14)
 set(h2,'XTickLabel',Name) 
@@ -734,6 +745,7 @@ end
 Xi = nnz(testSystems(SYSINDEX).Data.Timestamp<=DateSim);
 Xf = nnz(testSystems(SYSINDEX).Data.Timestamp<=DateEnd);
 time = testSystems(SYSINDEX).Data.Timestamp(Xi:Xf);
+units = ' (kW)';
 if strcmp(demand,'Electrical Demand')
     data = testSystems(SYSINDEX).Data.Demand.E(Xi:Xf,:);
     color = {'black'};
@@ -746,13 +758,14 @@ elseif strcmp(demand,'Heating Demand')
 elseif strcmp(demand,'Water Demand')
     data = testSystems(SYSINDEX).Data.Demand.W(Xi:Xf,:);
     color = {'cyan'};
+    units = ' (1000 CFS)';
 end
 if tab ==1 
-    PlotData(handles.axesMain,time,data,demand,color)
-    PlotHistogram(handles.axesCumulative,data)
+    PlotData(handles.axesMain,time,data,[demand, units],color)
+    PlotHistogram(handles.axesCumulative,data,[demand, units])
 elseif tab ==2
-    PlotData(handles.axesBuildLoad,time,data,demand,color)
-    PlotHistogram(handles.axesBuildCumulative,data)
+    PlotData(handles.axesBuildLoad,time,data,[demand, units],color)
+    PlotHistogram(handles.axesBuildCumulative,data,[demand, units])
 end
 
 function updateEqipmentCosts(Data)
@@ -1134,6 +1147,7 @@ if OK && ~strcmp(list{s},emptyStr)
     testSystems(SYSINDEX).Network(1).Equipment(end+1) = {strcat( ...
     testSystems(SYSINDEX).Generator(GENINDEX).Type,'.',testSystems(SYSINDEX).Generator(GENINDEX).Name)};
     EditSystem(handles)
+    emptyQPmatrices
 end
 updateSystemRep(hObject,[], handles)
 
@@ -1150,6 +1164,7 @@ if GENINDEX > 0
     GENINDEX = 0;
     updateSystemRep(hObject, eventdata, handles)
     EditSystem(handles)
+    emptyQPmatrices
 end
 
 % --- Executes on selection change in CompFuel.
@@ -1211,13 +1226,12 @@ switch get(eventdata.NewValue,'Tag')
         %Old DG-BEAT method
     case 'NoMixedInteger'
         testSystems(SYSINDEX).optimoptions.MixedInteger = false;
+        testSystems(SYSINDEX).optimoptions.method = 'Planning';
     case 'MixedInteger'
         testSystems(SYSINDEX).optimoptions.MixedInteger = true;
-    case 'DesignDay'
-        testSystems(SYSINDEX).optimoptions.MixedInteger = true;
-        %only test a couple days
+        testSystems(SYSINDEX).optimoptions.method = 'Planning';
     case 'NREL'
-        
+        testSystems(SYSINDEX).optimoptions.method = 'NREL';
 end
 
 function SpinningReserve_SelectionChangeFcn(hObject, eventdata, handles)
@@ -1293,7 +1307,7 @@ end
 
 function DesignDay_Callback(hObject, eventdata, handles)
 
-function PlotHistogram(h,Data)
+function PlotHistogram(h,Data,Xlab)
 N = length(Data);
 dSort = sort(Data);
 Xi = max(1,floor(0.01*N));
@@ -1320,6 +1334,7 @@ while Xi<dSort(Xf)
     label(end+1) = {strcat(num2str(Xi-Xspace),'--',num2str(Xi))};
 end
 hist = hist/N*100;
+cla(h)
 bar(h,hist)
 ylabel(h,'Percent of Time Within Range')
 % set(h,'XTickLabel', label)
@@ -1328,11 +1343,12 @@ xlim(h,[0.5,length(hist)+.5]);
 % ax = axis;    % Current axis limits
 % axis(axis);    % Set the axis limit modes (e.g. XLimMode) to manual
 pos = get(h,'position');
-xWidth = pos(3);
+t = text(0,0,Xlab);
+set(t,'Parent',h,'Units','characters','HorizontalAlignment','center','Position',[pos(3)/2,-6,0]);
 % Place the text labels
 for i = 1:length(hist)
     t = text(0,0,label{i});
-    xpos = i*xWidth/length(hist)- 0.5*xWidth/length(hist);
+    xpos = i*pos(3)/length(hist)- 0.5*pos(3)/length(hist);
     set(t,'Parent',h,'Units','characters','HorizontalAlignment','right','VerticalAlignment','top','Rotation',45,'Position',[xpos,0,0]);
 end
 
@@ -1391,3 +1407,33 @@ elseif days ==1
     datetick(h,'x','HH','keeplimits','keepticks')
     xlabel(h,strcat(['Hours of ', monthLabel(D(2),:), num2str(D(3))]))
 end
+
+
+% --- Executes on key press with focus on CarbonTax and none of its controls.
+function CarbonTax_KeyPressFcn(hObject, eventdata, handles)
+% hObject    handle to CarbonTax (see GCBO)
+% eventdata  structure with the following fields (see UICONTROL)
+%	Key: name of the key that was pressed, in lower case
+%	Character: character interpretation of the key(s) that was pressed
+%	Modifier: name(s) of the modifier key(s) (i.e., control, shift) pressed
+% handles    structure with handles and user data (see GUIDATA)
+
+function emptyQPmatrices
+%something changed in the specifications, any previously calculated
+%matrices or results do not apply
+global testSystems SYSINDEX
+A = {'subNet';'OpMatA';'OpMatB';'OneStep';'Online';'Dispatch';'Predicted';'RunData';'Baseline'};
+for i = 1:1:length(A)
+    testSystems(SYSINDEX).(A{i}) = [];
+end
+
+function insertMockups(handles)
+global Model_dir
+handles.NetworkSetup = axes('Units','normalized',...
+        'Position', [0,.15,1,.7],...
+        'Tag', 'NetworkSetup',...
+        'Parent', handles.uipanelMain4,...
+        'Visible','off');
+[x,map] = imread(fullfile(Model_dir,'GUI','Graphics','NetworkSetupMockup.png'));
+image(x,'Parent',handles.NetworkSetup);
+set(handles.NetworkSetup,'xtick',[],'xticklabel',[],'ytick',[],'yticklabel',[],'box','off')

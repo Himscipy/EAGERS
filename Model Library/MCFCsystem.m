@@ -118,12 +118,13 @@ Plant.Controls.Controller.Fuel = Fuel;
 Plant.Controls.Controller.Cells = 'FC1.Cells';
 Plant.Controls.Controller.Utilization = 'FC1.FuelUtilization';
 Plant.Controls.Controller.InitialAnodeRecirc = 'FC1.Recirc.Anode';
+Plant.Controls.Controller.NominalPower = Plant.NominalPower;
 Plant.Controls.Controller.InitConditions = {'bypassValve.PercOpen';'Blower.NominalPower';'FC1.Current';}; %heater bypass, blower power, FC current  [note: fuel flow and recirculaion are calculated and are not states]
 Plant.Controls.Controller.Gain = [1e-1;1e-3;];
 Plant.Controls.Controller.PropGain = [.75;4;];
 Plant.Controls.Controller.TagInf = {'Bypass';'Blower';'Recirculation';'FuelFlow';'Current';'Utilization'};
 Plant.Controls.Controller.TagInf = {'AirFlow';'Toxidant';'Tfuel';'FuelFlow';'ValvePerc';};
-Plant.Controls.Controller.connections = {'FC1.MeasureTflow2';'Mix2.Temperature';'FC1.MeasureVoltage'};
+Plant.Controls.Controller.connections = {'FC1.MeasureTflow2';'Mix2.Temperature';'FC1.MeasureVoltage';'PowerDemandLookup'};
 
 Plant.Scope = {'Controller.Blower';'Controller.Bypass';'Controller.Current'}; %must be in TagInf of the corresponding block to work here
 Plant.Plot = [Plant.Scope;{'FC1.StackdeltaT';'Controller.AirFlow';'FC1.PENavgT';'Controller.Toxidant';'FC1.Voltage';'FC1.TcathOut'}];

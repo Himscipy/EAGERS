@@ -1,5 +1,5 @@
 function calculateHistoricalFit
-global Plant
+global Plant RealTimeData
 h=waitbar(0,'Recalculating surface fit');
 
 Plant.Data.HistProf.Temperature = TypicalDay(h,Plant.Data.Timestamp,Plant.Data.Temperature);
@@ -20,9 +20,11 @@ months = sort(unique(m));
 
 monthNames = cellstr({'Jan';'Feb';'Mar';'Apr';'May';'Jun';'Jul';'Aug';'Sep';'Oct';'Nov';'Dec';});
 dateDay = round(Plant.Data.Timestamp);
-BusDay = zeros(length(dateDay),1);
-for i = 1:1:length(dateDay)
-    BusDay(i) = isbusday(dateDay(i),Plant.Data.Holidays,[1 0 0 0 0 0 1]);
+BusDay = ones(length(dateDay),1);
+if license('test','Financial Toolbox')
+    for i = 1:1:length(dateDay)
+        BusDay(i) = isbusday(dateDay(i),Plant.Data.Holidays,[1 0 0 0 0 0 1]);
+    end
 end
 %% make a surface fit for Demand.E, Demand.H, and Demand.C
 Outs = fieldnames(Plant.Data.Demand);

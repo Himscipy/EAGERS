@@ -18,25 +18,22 @@ end
 marginal =[];
 nG = length(Plant.Generator);
 UB = zeros(nG,1);
-for i = 1:1:nG
-    states = Plant.Generator(i).OpMatB.states;
-    for j = 1:1:length(states);
-        UB(i) = UB(i) + Plant.Generator(i).OpMatB.(states{j}).ub;
-    end
-end
 marginCost = zeros(4,nG);
 CHP = [];
 I = zeros(1,nG);
 for i = 1:1:nG
-    if Plant.Generator(i).Enabled
-        s = Plant.Generator(i).OpMatB.states;
-        if length(s)>1 && isfield(Plant.Generator(i).OpMatB, 'constCost') %all of these cost terms need to be scaled later on
-            I(i) = Plant.Generator(i).OpMatB.(s{1}).ub;
-            marginCost(1,i) = Plant.Generator(i).OpMatB.(s{1}).f;
-            marginCost(2,i) = Plant.Generator(i).OpMatB.(s{2}).f;
-            marginCost(3,i) = Plant.Generator(i).OpMatB.(s{2}).H;
-            marginCost(4,i) = Plant.Generator(i).OpMatB.constCost/Plant.Generator(i).Size;%constant cost/upperbound
-        elseif isfield(Plant.Generator(i).OpMatA,'Stor')
+    if Plant.Generator(i).Enabled && ~isempty(Plant.Generator(i).QPform.states)
+        states = Plant.Generator(i).QPform.states(:,end);
+        for j = 1:1:length(states);
+            UB(i) = UB(i) + Plant.Generator(i).QPform.(states{j}).ub(end);
+        end
+        if length(states)>1 && isfield(Plant.Generator(i).QPform, 'constCost') %all of these cost terms need to be scaled later on
+            I(i) = Plant.Generator(i).QPform.(states{1}).ub(end);
+            marginCost(1,i) = Plant.Generator(i).QPform.(states{1}).f(end);
+            marginCost(2,i) = Plant.Generator(i).QPform.(states{2}).f(end);
+            marginCost(3,i) = Plant.Generator(i).QPform.(states{2}).H(end);
+            marginCost(4,i) = Plant.Generator(i).QPform.constCost/Plant.Generator(i).Size;%constant cost/upperbound
+        elseif isfield(Plant.Generator(i).QPform,'Stor')
             if strcmp(Plant.Generator(i).Source,'Electricity')
                 storType.Electrical(end+1) = i;
             elseif strcmp(Plant.Generator(i).Source,'Heat')
@@ -46,15 +43,15 @@ for i = 1:1:nG
             elseif strcmp(Plant.Generator(i).Source,'Water')
                 storType.Hydro(end+1) = i;
             end
-        elseif~isempty(s) %utilities and single state generators (linear cost term)
+        elseif~isempty(states) %utilities and single state generators (linear cost term)
             I(i) = UB(i);
-            marginCost(1,i) = Plant.Generator(i).OpMatB.(s{1}).f;
-            if isfield(Plant.Generator(i).OpMatB, 'constCost')
-                marginCost(4,i) = Plant.Generator(i).OpMatB.constCost/Plant.Generator(i).Size;%constant cost/upperbound
+            marginCost(1,i) = Plant.Generator(i).QPform.(states{1}).f(end);
+            if isfield(Plant.Generator(i).QPform, 'constCost')
+                marginCost(4,i) = Plant.Generator(i).QPform.constCost/Plant.Generator(i).Size;%constant cost/upperbound
             end
         end
         if I(i)>0
-            S = fieldnames(Plant.Generator(i).OpMatA.output);
+            S = fieldnames(Plant.Generator(i).QPform.output);
             if length(S)==2 && ismember('H',S) && ismember('E',S)
                 Out.E(end+1) = i;
                 CHP(end+1) = i;
@@ -73,7 +70,7 @@ minMarginCost = nan(m,n);
 maxMarginCost = nan(m,n);
 
 for i = 1:1:nG
-    if I(i)>0
+    if I(i)>0 && UB(i)>0
         minMarginCost(:,i) = scaleCost(:,i).*(marginCost(1,i)+marginCost(4,i)); %marginal cost in linear segment+onCost
         if minMarginCost(:,i)<0 %negative slope at cost fit near LB (try 1/2 way to UB)
             half = UB(i)- (UB(i)-I(i))/2;

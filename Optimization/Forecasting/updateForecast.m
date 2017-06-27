@@ -9,7 +9,7 @@ switch Plant.optimoptions.forecast
     case 'NeuralNet'
         %%
     case 'Surface'
-        Forecast = CreateForecast(Date,Data);
+        Forecast = SurfaceForecast(Date,Data);
     case 'Perfect'
         Forecast = GetCurrentData(Date);
 end
@@ -19,6 +19,6 @@ nG = length(Plant.Generator);
 Forecast.Renewable = zeros(nS,nG);
 for i = 1:1:nG
     if strcmp(Plant.Generator(i).Source,'Renewable') && Plant.Generator(i).Enabled
-        Forecast.Renewable(:,i) = RenewableOutput(Plant.Generator(i).VariableStruct,Date,'Predict');
+        Forecast.Renewable(:,i) = RenewableOutput(i,Date,'Predict');
     end
 end

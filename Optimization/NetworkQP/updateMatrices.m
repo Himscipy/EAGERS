@@ -8,6 +8,7 @@ function QP = updateMatrices(QP,IC,Date,scaleCost,marginCost,Forecast,EC)
 % Renewable is the forecasted uncontrollable generation
 % EC is the end condition for the threshold optimization
 global Plant
+QP.solver = Plant.optimoptions.solver;
 nG = length(Plant.Generator);
 nS = length(Date)-1;
 dt = (Date(2:end) - Date(1:end-1))*24;
@@ -46,8 +47,8 @@ for net = 1:1:length(networkNames)
                 QP.beq(eq) = QP.beq(eq) - QP.Renewable(:,k); %put renewable generation into energy balance at correct node
             end
             if ~isempty(strfind(Plant.Generator(k).Type,'Storage'))
-                if isfield(Plant.Generator(k).OpMatA.output,out)
-                    loss = dt*(Plant.Generator(k).OpMatA.Stor.SelfDischarge*Plant.Generator(k).OpMatA.Stor.UsableSize);
+                if isfield(Plant.Generator(k).QPform.output,out)
+                    loss = dt*(Plant.Generator(k).QPform.Stor.SelfDischarge*Plant.Generator(k).QPform.Stor.UsableSize);
                     QP.beq(eq) = QP.beq(eq) - loss; %account for self-discharge losses
                 end
             end
@@ -79,8 +80,12 @@ for i = 1:1:nG+nL
     if QP.Organize.IC(i)>0 
         nIC = nnz(QP.Organize.IC(1:i)); %order in IC
         QP.beq(nIC) = IC(i);
+        QP.ub(nIC) = IC(i);
     end
 end
+% if isfield(Organize,'HeatVented') %avoid inf as upper bound
+%     QP.ub(Organize.HeatVented) = 100*max(sum(Forecast.Demand.H(:,:),2));
+% end
 
 %update costs
 H = diag(QP.H);
@@ -109,9 +114,9 @@ for i = 1:1:nG
             end
              %% update storage costs
             s_end = states(end)-nt+1; %final state of charge
-            StorSize = Plant.Generator(i).OpMatA.X.ub;
-            if isfield(Plant.Generator(i).OpMatA,'W') %has buffer
-                BuffSize = Plant.Generator(i).OpMatA.W.ub;
+            StorSize = Plant.Generator(i).QPform.X.ub;
+            if isfield(Plant.Generator(i).QPform,'W') %has buffer
+                BuffSize = Plant.Generator(i).QPform.W.ub;
             else BuffSize = 0;
             end
             if isempty(EC)
@@ -143,7 +148,7 @@ for i = 1:1:nG
                 %final SOC deviation cost (quadratic cost for error = SOC(end) - EC
                 rows = QP.Organize.Inequalities{i};
                 nr = length(states)/nS;
-                PeakChargePower = Plant.Generator(i).OpMatA.Ramp.b(1);
+                PeakChargePower = Plant.Generator(i).QPform.Ramp.b(1);
                 dSOC_10perc = .1*PeakChargePower*(Date(end)-Date(1)); %energy (kWh) if charging at 10%
                 H(s_end) = -2*marginCost.(type).Min/dSOC_10perc;%quadratic final value term loaded into SOC(t=nS)  %factor of 2 because its solving C = 0.5*x'*H*x + f'*x
                 QP.f(s_end) = -marginCost.(type).Min;%linear final value term loaded into SOC(t=nS)

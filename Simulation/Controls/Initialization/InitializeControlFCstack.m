@@ -50,10 +50,11 @@ if length(varargin)==1 %first initialization
         end
     end
         
-    block.InletPorts = {'Hot','Cold','Voltage'};
+    block.InletPorts = {'Hot','Cold','Voltage','Setpoint'};
     block.Hot.IC = block.Target(2)+.5*block.Target(1); 
     block.Cold.IC = block.Target(2)-.5*block.Target(1); 
     block.Voltage.IC = 0.85; %needed for flow outlet
+    block.Setpoint.IC = block.NominalPower;
     
     block.OutletPorts = {'OxidantTemp','OxidantFlow','AnodeRecirc','FuelFlow','Current'};
     block.OxidantTemp.IC = OxidantTemp;
@@ -77,7 +78,6 @@ end
 if length(varargin)==2 %% Have inlets connected, re-initialize
     Inlet = varargin{2};
 
-    NetPower = PowerDemandLookup(0);
     Power = block.Current.IC*Inlet.Voltage*block.Cells/1000;
 %     PEN_Temperature = mean(ComponentProperty('FC1.T.Elec'));
     averageT = (mean(Inlet.Hot)+mean(Inlet.Cold))/2; %average temperature of cathode
@@ -93,11 +93,11 @@ if length(varargin)==2 %% Have inlets connected, re-initialize
         FuelFlow = block.FuelFlow.IC*(1-.02*TavgError);
         O2flow = block.Cells*block.Current.IC/(4*F*1000)*32*3600*24/1000; %Ton/day
         Parasitic = (1.0101*O2flow^-.202)*(O2flow*1000/24); %parasitic in kW
-        PowerError = (NetPower + Parasitic - Power)/NetPower;
+        PowerError = (Inlet.Setpoint + Parasitic - Power)/Inlet.Setpoint;
         block.Current.IC = block.Current.IC*(1 + PowerError);
-%         block.Current.IC = (NetPower + Parasitic)*1000/(Inlet.Voltage*block.Cells);
+%         block.Current.IC = (Inlet.Setpoint + Parasitic)*1000/(Inlet.Voltage*block.Cells);
     else
-        block.Current.IC = NetPower*1000/(Inlet.Voltage*block.Cells);
+        block.Current.IC = Inlet.Setpoint*1000/(Inlet.Voltage*block.Cells);
         FuelFlow = (block.Cells*block.Current.IC/(2*F*block.Utilization*(4*block.Fuel.CH4+block.Fuel.CO+block.Fuel.H2))/1000);
         a = .5;
         block.OxidantFlow.IC = block.OxidantFlow.IC*(1+a*dTerror); 

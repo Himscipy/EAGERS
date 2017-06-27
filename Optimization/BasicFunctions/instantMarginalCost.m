@@ -21,16 +21,16 @@ stor = [];
 CHP = [];
 I = zeros(1,nG);
 for i = 1:1:nG
-    if Plant.Generator(i).Enabled %only use enabled gens
-        s = Plant.Generator(i).OpMatB.states;
-        if isfield(Plant.Generator(i).OpMatB,'constCost') %all of these cost terms need to be scaled later on       
-            I(i) = Plant.Generator(i).OpMatB.(s{1}).ub;
+    if Plant.Generator(i).Enabled && ~isempty(Plant.Generator(i).QPform.states)%only use enabled gens
+        states = Plant.Generator(i).QPform.states(:,end);
+        if isfield(Plant.Generator(i).QPform,'constCost') %all of these cost terms need to be scaled later on       
+            I(i) = Plant.Generator(i).QPform.(states{1}).ub(end);
             if isempty(Dispatch) || Dispatch(i)<=I(i)
-                marginCost(i) = Plant.Generator(i).OpMatB.(s{1}).f;
+                marginCost(i) = Plant.Generator(i).QPform.(states{1}).f(2);
             elseif Dispatch(i)>I(i)
-                marginCost(i) = Plant.Generator(i).OpMatB.(s{2}).f + (Dispatch(i)-I(i))*Plant.Generator(i).OpMatB.(s{2}).H;
+                marginCost(i) = Plant.Generator(i).QPform.(states{2}).f(2) + (Dispatch(i)-I(i))*Plant.Generator(i).QPform.(states{2}).H(2);
             end
-        elseif isfield(Plant.Generator(i).OpMatB,'Stor')
+        elseif isfield(Plant.Generator(i).QPform,'Stor')
             stor(end+1) = i;
             if strcmp(Plant.Generator(i).Source,'Electricity')
                 storType.Electrical(end+1) = i;
@@ -41,14 +41,14 @@ for i = 1:1:nG
             elseif strcmp(Plant.Generator(i).Source,'Water')
                 storType.Hydro(end+1) = i;
             end
-        elseif~isempty(s) %utilities and single state generators (linear cost term)
-            marginCost(i) = Plant.Generator(i).OpMatB.(s{1}).f;
-            for j = 1:1:length(s);
-                I(i) = I(i) + Plant.Generator(i).OpMatB.(s{j}).ub;
+        elseif~isempty(states) %utilities and single state generators (linear cost term)
+            marginCost(i) = Plant.Generator(i).QPform.(states{1}).f(end);
+            for j = 1:1:length(states);
+                I(i) = I(i) + Plant.Generator(i).QPform.(states{j}).ub(end);
             end
         end
         if I(i)>0
-            S = fieldnames(Plant.Generator(i).OpMatB.output);
+            S = fieldnames(Plant.Generator(i).QPform.output);
             if length(S)==2 && ismember('H',S) && ismember('E',S)
                 Out.E(end+1) = i;
                 CHP(end+1) = i;

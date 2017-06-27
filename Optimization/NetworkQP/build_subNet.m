@@ -124,7 +124,7 @@ for net = 1:1:length(networkNames)
                 s = strfind(equip{j},'.');
                 I = find(strcmp(equip{j}(s+1:end),genNames),1,'first');
                 if ~isempty(I)
-                    if isfield(Plant.Generator(I).OpMatA.output,out) && (~isempty(Plant.Generator(I).OpMatA.states) || strcmp(Plant.Generator(I).Source,'Renewable')) %avoid things like gas utility with no states
+                    if isfield(Plant.Generator(I).QPform.output,out) && (~isempty(Plant.Generator(I).QPform.states) || strcmp(Plant.Generator(I).Source,'Renewable')) %avoid things like gas utility with no states
                         gen(end+1) = I;
                     end
                 else disp(strcat('error, generator is not in library',equip{j}))
@@ -135,6 +135,37 @@ for net = 1:1:length(networkNames)
     end
 end
 Plant.subNet = subNet;
+%identify upper bound for utility states
+for i = 1:1:nG
+    if strcmp(Plant.Generator(i).Type,'Utility') && isfield(Plant.Generator(i).QPform.output,out)
+        %identify the network
+        out = char(fieldnames(Plant.Generator(i).QPform.output));
+        if strcmp(out,'E')
+            net = 'Electrical';
+        elseif strcmp(out,'H')
+            net = 'DistrictHeat';
+        elseif strcmp(out,'C')
+            net = 'DistrictCool';
+        elseif strcmp(out,'W')
+            net = 'Hydro';
+        end
+        Plant.Generator(i).QPform.X.ub = max(Plant.Data.Demand.(out));%max Purchase
+        if isfield(Plant.Generator(i).QPform,'Y')
+            maxSellback = 0;
+            for m = 1:1:length(subNet.(net))
+                equip = subNet.(net)(m).Equipment;
+                for j = 1:1:length(equip)
+                    s = strfind(equip{j},'.');
+                    I = find(strcmp(equip{j}(s+1:end),genNames),1,'first');
+                    if isfield(Plant.Generator(I).QPform.output,out) && (~isempty(Plant.Generator(I).QPform.states) || strcmp(Plant.Generator(I).Source,'Renewable')) %avoid things like gas utility with no states
+                        maxSellback = maxSellback + Plant.Generator(I).Size*Plant.Generator(I).QPform.output.(out);
+                    end
+                end
+            end
+            Plant.Generator(i).QPform.Y.ub = maxSellback;
+        end
+    end
+end  
 
 function [TransEff,TransLimit,dir] = lineProp(node1,node2,net)
 %find the transmission efficiency and limit between 2 connected nodes

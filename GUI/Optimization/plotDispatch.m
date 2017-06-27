@@ -72,9 +72,9 @@ end
 StoragePower = 0*Data;
 StorageState = 0*Data;
 for i = 1:1:length(stor)
-    StorageState(:,stor(i)) = Data(:,stor(i))+ ones(length(hours),1)*(Plant.Generator(stor(i)).OpMatA.Stor.Size - Plant.Generator(stor(i)).OpMatA.Stor.UsableSize); %add the unusable charge
+    StorageState(:,stor(i)) = Data(:,stor(i))+ ones(length(hours),1)*(Plant.Generator(stor(i)).QPform.Stor.Size - Plant.Generator(stor(i)).QPform.Stor.UsableSize); %add the unusable charge
     if strcmp(Plant.Generator(stor(i)).Type,'Hydro Storage')%% Need the river segment and spill flow to calculate power
-        StoragePower(2:end,stor(i)) = (Data(2:end,Plant.Generator(stor(i)).OpMatA.DownRiverSegment) - Data(2:end,Plant.Generator(stor(i)).OpMatA.SpillFlow))*Plant.Generator(stor(i)).OpMatA.output.E;
+        StoragePower(2:end,stor(i)) = (Data(2:end,Plant.Generator(stor(i)).QPform.DownRiverSegment) - Data(2:end,Plant.Generator(stor(i)).QPform.SpillFlow))*Plant.Generator(stor(i)).QPform.output.E;
     else
         StoragePower(2:end,stor(i)) = (StorageState(1:end-1,stor(i)) - StorageState(2:end,stor(i)))./dt;  
     end
@@ -112,7 +112,7 @@ for q = 1:1:nPlot
             S = 'W';
             for i = 1:1:length(Plant.Generator)
                 if strcmp(Plant.Generator(i).Type,'Hydro Storage')%% plot the downriver flow
-                    Data(:,i) = Data(:,Plant.Generator(i).OpMatA.DownRiverSegment);
+                    Data(:,i) = Data(:,Plant.Generator(i).QPform.DownRiverSegment);
                 end
             end
         elseif strcmp(S,'Steam')
@@ -177,19 +177,19 @@ Data2 =[];
 for i = 1:1:length(Plant.Generator)
     include = false;
     dataI = Data(:,i);
-    if isfield(Plant.Generator(i).OpMatA,'Stor') && isfield(Plant.Generator(i).OpMatA.output,S) && Plant.Generator(i).Enabled % energy storage
+    if isfield(Plant.Generator(i).QPform,'Stor') && isfield(Plant.Generator(i).QPform.output,S) && Plant.Generator(i).Enabled % energy storage
         if strcmp(S,'E') && strcmp(Plant.Generator(i).Type,'Hydro Storage')
             %don't plot state-of charge on electric plot
         else
             stor(end+1) = i;
         end
         include = true;
-    elseif (strcmp(Plant.Generator(i).Type,'Utility')||~isempty(strfind(Plant.Generator(i).Type,'District'))) && isfield(Plant.Generator(i).OpMatA.output,S) %utilities
+    elseif (strcmp(Plant.Generator(i).Type,'Utility')||~isempty(strfind(Plant.Generator(i).Type,'District'))) && isfield(Plant.Generator(i).QPform.output,S) %utilities
         include = true;
-    elseif isfield(Plant.Generator(i).OpMatA.output,S) && ~(strcmp(Plant.Generator(i).Type,'Chiller') && strcmp(S,'E')) %generators
+    elseif isfield(Plant.Generator(i).QPform.output,S) && ~(strcmp(Plant.Generator(i).Type,'Chiller') && strcmp(S,'E')) %generators
         include = true;
-        if strcmp(S,'H') && isfield(Plant.Generator(i).OpMatA.output,'E')
-            dataI = dataI*Plant.Generator(i).OpMatA.output.(S)(1); %Hratio for CHP generators
+        if strcmp(S,'H') && isfield(Plant.Generator(i).QPform.output,'E')
+            dataI = dataI*Plant.Generator(i).QPform.output.(S)(1); %Hratio for CHP generators
         end
     elseif strcmp(S,'E') && strcmp(Plant.Generator(i).Source,'Renewable')
         include = true;

@@ -34,7 +34,7 @@ QP.constCost = zeros(1,nG);
 ic = 0; % row index of the Aeq matrix and beq vector
 H = []; f = []; lb =[]; ub = [];
 for i = 1:1:nG
-    if isfield(Plant.Generator(i).(Op),'Ramp') 
+    if isfield(Plant.Generator(i).QPform,'Ramp') 
         ic = ic+1;%initial condition state
         QP.organize{1,i} = ic; %output state organized into matrix of time vs. generator (IC)   
         Organize.IC(i) = ic;
@@ -56,26 +56,36 @@ end
 xL = 0;
 GenNames = cell(nG,1);
 for i = 1:1:nG
-    Gen = Plant.Generator(i).(Op);
+    Gen = Plant.Generator(i).QPform;
     GenNames{i} = Plant.Generator(i).Name;
-    s = length(Gen.states);%generator with multiple states
-    if s>0
+    if strcmp(Op,'B') 
+        [~,fit] = size(Gen.states);% fit = 2 for generators with 2 different piecewise quadratics when Op = 'B'
+    elseif ~isempty(Gen.states)
+        fit = 1;
+    else fit = 0;
+    end
+    if fit>0
+        states = Gen.states(:,fit);
+        if isempty(states{length(states)}) %in case fitA is linear and fitB is piecewise quadratic
+            states = states(1:length(states)-1);
+        end
+        s = length(states);%generator with multiple states
         if ~isempty(strfind(Plant.Generator(i).Type,'Storage'))
             QP.organize{2,i} = xL+1+ic; %output state for storage is only SOC
         else
             QP.organize{2,i} = xL+1+ic:xL+s+ic; %output is sum of multiple states at each time step
             if isempty(strfind(Plant.Generator(i).Type,'Utility')) && ~strcmp(Plant.Generator(i).Source,'Renewable')
                 Organize.Dispatchable(i) = 1;
-                if isfield(Plant.Generator(i).(Op),'constCost') 
-                     QP.constCost(i) = Plant.Generator(i).OpMatB.constCost;
+                if isfield(Plant.Generator(i).QPform,'constCost') 
+                     QP.constCost(i) = Plant.Generator(i).QPform.constCost;
                 end
             end
         end
         for k = 1:1:s
-            H(end+1) = Gen.(Gen.states{k}).H;
-            f(end+1) = Gen.(Gen.states{k}).f;
-            lb(end+1) = Gen.(Gen.states{k}).lb;
-            ub(end+1) = Gen.(Gen.states{k}).ub;
+            H(end+1) = Gen.(states{k}).H(fit);
+            f(end+1) = Gen.(states{k}).f(fit);
+            lb(end+1) = Gen.(states{k}).lb(fit);
+            ub(end+1) = Gen.(states{k}).ub(fit);
         end
         Organize.States(i)= {xL+1:xL+s};
         if Plant.optimoptions.SpinReserve && isfield(Gen.output,'E') && ~isfield(Gen.output,'C') %electric systems that are not electric chillers
@@ -91,8 +101,8 @@ for i = 1:1:nG
                         lb(end+1) =  0;
                         ub(end+1) = Plant.Generator(i).VariableStruct.MaxGenCapacity;
                     else
-                        lb(end+1) = -Plant.Generator(i).OpMatA.Stor.PeakCharge;
-                        ub(end+1) = Plant.Generator(i).OpMatA.Stor.PeakDisch;
+                        lb(end+1) = -Plant.Generator(i).QPform.Stor.PeakCharge;
+                        ub(end+1) = Plant.Generator(i).QPform.Stor.PeakDisch;
                     end
                 end
             end
@@ -116,7 +126,7 @@ for net = 1:1:length(networkNames)
         minimum = zeros(nLinet(net),1);
     end
     for i = 1:1:nLinet(net) 
-%         QP.organize{1,nG+nLcum+i} = []; %no initial condition for lines
+%         QP.organize{1,nG+nLcum+i} = []; %no initial condition for lines         (except hydro)
         QP.organize{2,nG+nLcum+i} = xL+1+ic; %line state organized into matrix of time vs. line state
         if isempty(eff) || length(eff(i,:))==1 || eff(i,2)==0 %uni-directional transfer, 1 state for each line
             Organize.States(nG+nLcum+i)= {xL+1};
@@ -139,6 +149,17 @@ end
 
 Organize.HeatVented =[];
 if any(strcmp('DistrictHeat',networkNames)) && Plant.optimoptions.excessHeat == 1
+    %%find maximum heat production possible
+    maxHeat = 0;
+    for i = 1:1:nG
+        if isfield(Plant.Generator(i).QPform.output,'H')
+            if ~isempty(strfind(Plant.Generator(i).Type,'Storage'))
+                maxHeat = maxHeat + Plant.Generator(i).QPform.Stor.PeakDisch;
+            else
+                maxHeat = maxHeat + Plant.Generator(i).QPform.output.H*Plant.Generator(i).Size;
+            end
+        end
+    end
     %%assume heat can be lost any any node in the network that has a device producing heat
     n = length(Plant.subNet.('DistrictHeat'));
     Organize.HeatVented =zeros(nS,n); %matrix for the state associated with venting heat at each district heating node, at each time step
@@ -146,7 +167,7 @@ if any(strcmp('DistrictHeat',networkNames)) && Plant.optimoptions.excessHeat == 
         genI = Plant.subNet.('DistrictHeat')(i).Equipment;%%identify generators at this node
         hasHeater = 0;
         for j = 1:1:length(genI)
-            if isfield(Plant.Generator(genI(j)).(Op).output,'H')
+            if isfield(Plant.Generator(genI(j)).QPform.output,'H')
                 hasHeater = 1;
                 break
             end
@@ -157,7 +178,7 @@ if any(strcmp('DistrictHeat',networkNames)) && Plant.optimoptions.excessHeat == 
             H(end+1) = 0;
             f(end+1) = 0;
             lb(end+1) = 0;
-            ub(end+1) = inf;
+            ub(end+1) = maxHeat;
         end
     end
 end
@@ -208,12 +229,12 @@ for net = 1:1:length(networkNames)
                 elseif strcmp(networkNames{net},'Hydro')
                     hydroRowMass(genI(j)) = req; %stor the mass balance equality row
                 end
-            elseif strcmp(networkNames{net},'Electrical') && isfield(Plant.Generator(genI(j)).(Op).output,'E')
-                Aeq(req,states) = Plant.Generator(genI(j)).(Op).output.E;
-            elseif strcmp(networkNames{net},'DistrictHeat') && isfield(Plant.Generator(genI(j)).(Op).output,'H')
-                Aeq(req,states) = Plant.Generator(genI(j)).(Op).output.H;
-            elseif strcmp(networkNames{net},'DistrictCool') && isfield(Plant.Generator(genI(j)).(Op).output,'C')
-                Aeq(req,states) = Plant.Generator(genI(j)).(Op).output.C;
+            elseif strcmp(networkNames{net},'Electrical') && isfield(Plant.Generator(genI(j)).QPform.output,'E')
+                Aeq(req,states) = Plant.Generator(genI(j)).QPform.output.E;
+            elseif strcmp(networkNames{net},'DistrictHeat') && isfield(Plant.Generator(genI(j)).QPform.output,'H')
+                Aeq(req,states) = Plant.Generator(genI(j)).QPform.output.H;
+            elseif strcmp(networkNames{net},'DistrictCool') && isfield(Plant.Generator(genI(j)).QPform.output,'C')
+                Aeq(req,states) = Plant.Generator(genI(j)).QPform.output.C;
             end
         end
         %%identify lines coming in and out of the node
@@ -257,12 +278,12 @@ end
 
 for i = 1:1:nG
     %link is a field if there is more than one state and the states are linked by an inequality or an equality
-    if isfield(Plant.Generator(i).(Op),'link') && isfield(Plant.Generator(i).(Op).link,'eq')
-        [m,~] = size(Plant.Generator(i).(Op).link.eq);
+    if isfield(Plant.Generator(i).QPform,'link') && isfield(Plant.Generator(i).QPform.link,'eq')
+        [m,~] = size(Plant.Generator(i).QPform.link.eq);
         states = Organize.States{i};%states associated with gerator i
         for k = 1:1:m
-            Aeq(req+k,states) = Plant.Generator(i).(Op).link.eq(k,:);
-            beq(req+k) = Plant.Generator(i).(Op).link.beq(k);
+            Aeq(req+k,states) = Plant.Generator(i).QPform.link.eq(k,:);
+            beq(req+k) = Plant.Generator(i).QPform.link.beq(k);
         end
         Organize.Equalities(i) = {req+1:req+m}; 
         req = req+m;
@@ -283,15 +304,15 @@ for i = 1:1:nG
     if strcmp(Plant.Generator(i).Type,'Hydro Storage')
         HydroRow(i) = r+1;
         r = r+3; %3 constraints for a hydro plant
-    elseif isfield(Plant.Generator(i).(Op),'Ramp') 
+    elseif isfield(Plant.Generator(i).QPform,'Ramp') 
         Ramping(i) = r+1; 
         r = r+2;
     end
 end
 %Generator inequalities
 for i = 1:1:nG 
-    if isfield(Plant.Generator(i).(Op),'link') && isfield(Plant.Generator(i).(Op).link,'ineq')%link is a field if there is more than one state and the states are linked by an inequality or an equality
-        [m,~] = size(Plant.Generator(i).(Op).link.ineq);
+    if isfield(Plant.Generator(i).QPform,'link') && isfield(Plant.Generator(i).QPform.link,'ineq')%link is a field if there is more than one state and the states are linked by an inequality or an equality
+        [m,~] = size(Plant.Generator(i).QPform.link.ineq);
         Organize.Inequalities(i) = {r+1:r+m}; 
         r = r+m;
     end
@@ -322,7 +343,7 @@ for net = 1:1:length(networkNames)
         Organize.SpinReserve = r+1;
         r = r+1;
         for i = 1:1:nG
-            if isfield(Plant.Generator(i).OpMatA.output,'E') && ~isfield(Gen.output,'C') && (~isempty(strfind(Plant.Generator(i).Type,'Storage')) || Organize.Dispatchable(i))%electric storage & dispatchable electric generators have spinning reserve capacity
+            if isfield(Plant.Generator(i).QPform.output,'E') && ~isfield(Gen.output,'C') && (~isempty(strfind(Plant.Generator(i).Type,'Storage')) || Organize.Dispatchable(i))%electric storage & dispatchable electric generators have spinning reserve capacity
                 SpinRow(i) = r+1;
                 r = r+2;
             end
@@ -345,8 +366,8 @@ QP.f = zeros(totalStates,1);
 QP.lb = zeros(totalStates,1);
 QP.ub = zeros(totalStates,1);
 
-QP.lb(1:ic)  = -inf;
-QP.ub(1:ic)  = inf;
+QP.lb(1:ic)  = 0;
+QP.ub(1:ic)  = inf;%will be updated to not be inf later
 for t= 1:nS
     QP.H(ic+(t-1)*t1States+1:ic+t*t1States)  = H';
     QP.f(ic+(t-1)*t1States+1:ic+t*t1States)  = f';
@@ -376,10 +397,10 @@ end
 for i = 1:1:nG
     if any(strcmp(Plant.Generator(i).Type,{'Electric Storage';'Thermal Storage';}))
         states = Organize.States{i};
-        eff = Plant.Generator(i).(Op).Stor.DischEff;
+        eff = Plant.Generator(i).QPform.Stor.DischEff;
         for t= 1:nS
             QP.Aeq((t-1)*t1Balances+storRow(i)+ic,(t-1)*t1States+states(1)+ic) = -eff/dt(t); %SOC at t
-            if ismember('Y',Plant.Generator(i).(Op).states)
+            if ismember('Y',Plant.Generator(i).QPform.states)
                 QP.Aeq((t-1)*t1Balances+storRow(i)+ic,(t-1)*t1States+states(2)+ic) = -1/dt(t); %charging penalty at t
             end
             if t==1
@@ -446,8 +467,8 @@ for net = 1:1:length(networkNames)%Hydro Equalities
                         end 
                         %water flow out of the node
                         QP.Aeq((t-1)*t1Balances+hydroRowMass(dam)+ic,(t-1)*t1States+Organize.States{nG+nLcum+J}+ic)= -1/12.1; %Qdownriver, conversion factor is 1000 ft^3/s / 12.1 = 1000 acre ft/hr 
-                        Plant.Generator(dam).(Op).DownRiverSegment = nLcum + J;
-                        Plant.Generator(dam).(Op).SpillFlow = nLcum + S;
+                        Plant.Generator(dam).QPform.DownRiverSegment = nLcum + J;
+                        Plant.Generator(dam).QPform.SpillFlow = nLcum + S;
                         
                         states = Organize.States{dam};
                         %SOC of the reservior in 1000 acre ft.
@@ -458,9 +479,9 @@ for net = 1:1:length(networkNames)%Hydro Equalities
                             QP.Aeq((t-1)*t1Balances+hydroRowMass(dam)+ic,(t-2)*t1States+states(1)+ic) = -1/dt(t); %SOC at t-1
                         end
                         %Converting water flow to power
-                        QP.Aeq((t-1)*t1Balances+hydroRowEnergy(dam)+ic,(t-1)*t1States+Organize.States{nG+nLcum+J}+ic)= Plant.Generator(dam).OpMatA.output.E; %Qdownriver * energy conversion factor (1000 ft^3/s to kW)
+                        QP.Aeq((t-1)*t1Balances+hydroRowEnergy(dam)+ic,(t-1)*t1States+Organize.States{nG+nLcum+J}+ic)= Plant.Generator(dam).QPform.output.E; %Qdownriver * energy conversion factor (1000 ft^3/s to kW)
                         if ~isempty(S)
-                            QP.Aeq((t-1)*t1Balances+hydroRowEnergy(dam)+ic,(t-1)*t1States+Organize.States{nG+nLcum+S}+ic) = -Plant.Generator(dam).OpMatA.output.E; %Spillway flow (subtracted from downriver flow)
+                            QP.Aeq((t-1)*t1Balances+hydroRowEnergy(dam)+ic,(t-1)*t1States+Organize.States{nG+nLcum+S}+ic) = -Plant.Generator(dam).QPform.output.E; %Spillway flow (subtracted from downriver flow)
                         end
                     end 
                 else
@@ -500,23 +521,23 @@ for t= 1:nS
                 QP.A(r+Ramping(i),s-t1States+rampStates) = -1/dt(t); %ramp up 
                 QP.A(r+Ramping(i)+1,s-t1States+rampStates) = 1/dt(t); %ramp down 
             end
-            QP.b(r+[Ramping(i),Ramping(i)+1],1) = Plant.Generator(i).(Op).Ramp.b;
+            QP.b(r+[Ramping(i),Ramping(i)+1],1) = Plant.Generator(i).QPform.Ramp.b;
         end
         %Inequalities constraints
         ineqRow = Organize.Inequalities{i};
         for k = 1:1:length(ineqRow)
-            if k == 1 && ~isempty(strfind(Plant.Generator(i).Type,'Storage')) && ismember('Y',Plant.Generator(i).(Op).states)
-                QP.A(r+ineqRow(k),s+states(1)) = Plant.Generator(i).(Op).link.ineq(1,1)/dt(t);  % SOC at t  
-                QP.A(r+ineqRow(k),s+states(2)) = Plant.Generator(i).(Op).link.ineq(1,2)/dt(t);  % charging state at t: value is -1/(1-efficiency)
+            if k == 1 && ~isempty(strfind(Plant.Generator(i).Type,'Storage')) && ismember('Y',Plant.Generator(i).QPform.states)
+                QP.A(r+ineqRow(k),s+states(1)) = Plant.Generator(i).QPform.link.ineq(1,1)/dt(t);  % SOC at t  
+                QP.A(r+ineqRow(k),s+states(2)) = Plant.Generator(i).QPform.link.ineq(1,2)/dt(t);  % charging state at t: value is -1/(1-efficiency)
                 if t ==1 %SOC change from IC
-                    QP.A(ineqRow(k),nnz(Organize.IC(1:i))) = -Plant.Generator(i).(Op).link.ineq(1,1)/dt(t); % SOC at t-1
+                    QP.A(ineqRow(k),nnz(Organize.IC(1:i))) = -Plant.Generator(i).QPform.link.ineq(1,1)/dt(t); % SOC at t-1
                 else
-                    QP.A(r+ineqRow(k),s-t1States+states(1)) = -Plant.Generator(i).(Op).link.ineq(1,1)/dt(t);  % SOC at t-1
+                    QP.A(r+ineqRow(k),s-t1States+states(1)) = -Plant.Generator(i).QPform.link.ineq(1,1)/dt(t);  % SOC at t-1
                 end
             else
-                QP.A(r+ineqRow(k),s+states) = Plant.Generator(i).(Op).link.ineq(k,:);
+                QP.A(r+ineqRow(k),s+states) = Plant.Generator(i).QPform.link.ineq(k,:);
             end
-            QP.b(r+ineqRow(k)) = Plant.Generator(i).(Op).link.bineq(k);
+            QP.b(r+ineqRow(k)) = Plant.Generator(i).QPform.link.bineq(k);
         end
     end
     %Transmission
@@ -554,7 +575,7 @@ for t= 1:nS
                 else
                     QP.A(r+SpinRow(i),s-t1States+states) = -1/dt(t); % Power at t-1
                 end
-                QP.b(r+SpinRow(i)) = Plant.Generator(i).(Op).Ramp.b(1);%ramp up constraint
+                QP.b(r+SpinRow(i)) = Plant.Generator(i).QPform.Ramp.b(1);%ramp up constraint
                 
                 QP.A(r+SpinRow(i)+1,s+SRstates) = 1; %SR + power <= Size
                 QP.A(r+SpinRow(i)+1,s+states) = 1;
@@ -563,7 +584,7 @@ for t= 1:nS
                 if strcmp(Plant.Generator(i).Type,'Hydro Storage')%%Hydro spinning reserve
                     
                 else%electric storage 
-                    eff = Plant.Generator(i).(Op).Stor.DischEff;
+                    eff = Plant.Generator(i).QPform.Stor.DischEff;
                     QP.A(r+SpinRow(i),s+SRstate) = 1; %SR + eff*(SOC(t-1) - SOC(t))/dt <= peak discharge
                     QP.A(r+SpinRow(i),s+states(1)) = -eff/dt(t);
                     QP.A(r+SpinRow(i)+1,s+SRstate) = 1; %SR - SOC(t-1)/dt <= 0
@@ -574,7 +595,7 @@ for t= 1:nS
                         QP.A(r+SpinRow(i),s-t1States+states) = eff/dt(t); % SOC at t-1
                         QP.A(r+SpinRow(i)+1,s-t1States+states) = -eff/dt(t); % SOC at t-1
                     end
-                    QP.b(r+SpinRow(i)) = Plant.Generator(i).(Op).Ramp.b(2);%peak discharge constraint
+                    QP.b(r+SpinRow(i)) = Plant.Generator(i).QPform.Ramp.b(2);%peak discharge constraint
                 end
             end
         end
@@ -598,29 +619,29 @@ for net = 1:1:length(networkNames)
                     s = ic;
                     for t = 1:1:nS
                         QP.A(r+HydroRow(I),s+Organize.States{nG+nLcum+J}) = 1; %max flow constraint
-                        QP.A(r+HydroRow(I)+1,s+Organize.States{nG+nLcum+J}) = Plant.Generator(I).(Op).output.E;%ramp up constraint total flow at t
-                        QP.A(r+HydroRow(I)+2,s+Organize.States{nG+nLcum+J}) = -Plant.Generator(I).(Op).output.E;%ramp down constraint total flow at t
+                        QP.A(r+HydroRow(I)+1,s+Organize.States{nG+nLcum+J}) = Plant.Generator(I).QPform.output.E;%ramp up constraint total flow at t
+                        QP.A(r+HydroRow(I)+2,s+Organize.States{nG+nLcum+J}) = -Plant.Generator(I).QPform.output.E;%ramp down constraint total flow at t
                         
                         QP.b(r+HydroRow(I)) = Plant.Generator(I).VariableStruct.MaxGenFlow;%max flow constrain
                         QP.b(r+HydroRow(I)+1) = Plant.Generator(I).VariableStruct.RampUp;%max increase in power
                         QP.b(r+HydroRow(I)+2) = Plant.Generator(I).VariableStruct.RampDown;%max decrease in power
                         if t == 1
-                            QP.A(r+HydroRow(I)+1,nnz(Organize.IC(1:nG+nLcum+J))) = -Plant.Generator(I).(Op).output.E;%ramp up constraint total flow at t-1
-                            QP.A(r+HydroRow(I)+2,nnz(Organize.IC(1:nG+nLcum+J))) = Plant.Generator(I).(Op).output.E;%ramp down constraint total flow at t-1
+                            QP.A(r+HydroRow(I)+1,nnz(Organize.IC(1:nG+nLcum+J))) = -Plant.Generator(I).QPform.output.E;%ramp up constraint total flow at t-1
+                            QP.A(r+HydroRow(I)+2,nnz(Organize.IC(1:nG+nLcum+J))) = Plant.Generator(I).QPform.output.E;%ramp down constraint total flow at t-1
                         else
-                            QP.A(r+HydroRow(I)+1,s-t1States+Organize.States{nG+nLcum+J}) = -Plant.Generator(I).(Op).output.E;%ramp up constraint total flow at t-1
-                            QP.A(r+HydroRow(I)+2,s-t1States+Organize.States{nG+nLcum+J}) = Plant.Generator(I).(Op).output.E;%ramp down constraint total flow at t-1
+                            QP.A(r+HydroRow(I)+1,s-t1States+Organize.States{nG+nLcum+J}) = -Plant.Generator(I).QPform.output.E;%ramp up constraint total flow at t-1
+                            QP.A(r+HydroRow(I)+2,s-t1States+Organize.States{nG+nLcum+J}) = Plant.Generator(I).QPform.output.E;%ramp down constraint total flow at t-1
                         end
                         if ~isempty(S) %spill flow (power flow = total flow - spill flow)
                             QP.A(r+HydroRow(I),s+Organize.States{nG+nLcum+S}) = -1; %max flow constraint
                             QP.A(r+HydroRow(I)+1,s+Organize.States{nG+nLcum+S}) = -1; %ramp up constraint spill flow at t
                             QP.A(r+HydroRow(I)+2,s+Organize.States{nG+nLcum+S}) = 1; %ramp down constraint spill flow at t
                             if t == 1
-                                QP.A(r+HydroRow(I)+1,nnz(Organize.IC(1:nG+nLcum+S))) = Plant.Generator(I).(Op).output.E;%ramp up constraint spill flow at t-1
-                                QP.A(r+HydroRow(I)+2,nnz(Organize.IC(1:nG+nLcum+S))) = -Plant.Generator(I).(Op).output.E;%ramp down constraint spill flow at t-1
+                                QP.A(r+HydroRow(I)+1,nnz(Organize.IC(1:nG+nLcum+S))) = Plant.Generator(I).QPform.output.E;%ramp up constraint spill flow at t-1
+                                QP.A(r+HydroRow(I)+2,nnz(Organize.IC(1:nG+nLcum+S))) = -Plant.Generator(I).QPform.output.E;%ramp down constraint spill flow at t-1
                             else
-                                QP.A(r+HydroRow(I)+1,s-t1States+Organize.States{nG+nLcum+S}) = Plant.Generator(I).(Op).output.E;%ramp up constraint spill flow at t-1
-                                QP.A(r+HydroRow(I)+2,s-t1States+Organize.States{nG+nLcum+S}) = -Plant.Generator(I).(Op).output.E;%ramp down constraint spill flow at t-1
+                                QP.A(r+HydroRow(I)+1,s-t1States+Organize.States{nG+nLcum+S}) = Plant.Generator(I).QPform.output.E;%ramp up constraint spill flow at t-1
+                                QP.A(r+HydroRow(I)+2,s-t1States+Organize.States{nG+nLcum+S}) = -Plant.Generator(I).QPform.output.E;%ramp down constraint spill flow at t-1
                             end
                         end
                         r = r+t1ineq;
@@ -660,7 +681,7 @@ end
 
 % Equalities for each generator
 for i = 1:1:nG
-    if isfield(Plant.Generator(i).(Op),'link') && isfield(Plant.Generator(i).(Op).link,'eq')
+    if isfield(Plant.Generator(i).QPform,'link') && isfield(Plant.Generator(i).QPform.link,'eq')
         s = Organize.Equalities{i};
         n = length(s);
         rows = [];
@@ -675,7 +696,7 @@ end
 
 % Ramping each generator/storage
 for i = 1:1:nG
-    if isfield(Plant.Generator(i).(Op),'Ramp') 
+    if isfield(Plant.Generator(i).QPform,'Ramp') 
         ramp = [];
         for t = 1:1:nS
             ramp(end+1:end+2) =(t-1)*t1ineq+[Ramping(i), Ramping(i)+1];
@@ -686,7 +707,7 @@ end
 
 % Inequalities for each generator
 for i = 1:1:nG
-    if (isfield(Plant.Generator(i).(Op),'link') && isfield(Plant.Generator(i).(Op).link,'ineq'))
+    if (isfield(Plant.Generator(i).QPform,'link') && isfield(Plant.Generator(i).QPform.link,'ineq'))
         s = Organize.Inequalities{i};
         n = length(s);
         ineqRow = [];

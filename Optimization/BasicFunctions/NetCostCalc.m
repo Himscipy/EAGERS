@@ -12,7 +12,7 @@ if strcmp(method,'Dispatch')
             eff = Plant.Generator(i).Output.Electricity;
         elseif strcmp(Plant.Generator(i).Type,'Chiller') 
 %             eff = Plant.Generator(i).Output.Cooling;
-%             if ~Plant.optimoptions.sequential && ~isfield(Plant.Generator(i).OpMatA.output,'E')%don't include cost if it shows up in generator demand
+%             if ~Plant.optimoptions.sequential && ~isfield(Plant.Generator(i).QPform.output,'E')%don't include cost if it shows up in generator demand
                 skip = true;
 %             end
         elseif strcmp(Plant.Generator(i).Type,'Heater')
@@ -26,30 +26,32 @@ if strcmp(method,'Dispatch')
         end
     end
     %% ___ %%% alternate: uses the cost in the optimization (FitB)
-    % dt = Timestamp(2:end)-Timestamp(1:end-1);
-    % Cost = zeros(length(Timestamp)-1,1);
-    % StorPower =[];
-    % for i = 1:1:length(Plant.Generator)
-    %     if nnz(Dispatch(:,i))>0
-    %         s = Plant.Generator(i).OpMatB.states;
-    %         if isfield(Plant.Generator(i).OpMatB,'Stor')
-    %             StorPower(:, end+1) = Dispatch(1:end-1,i) - Dispatch(2:end,i); %no cost
-    %         elseif isfield(Plant.Generator(i).OpMatB,'constCost') %all of these cost terms need to be scaled later on
-    %             I = Plant.Generator(i).OpMatB.(s{1}).ub;
-    %             b1 = Plant.Generator(i).OpMatB.(s{1}).f;
-    %             b2 = Plant.Generator(i).OpMatB.(s{2}).f;
-    %             b3 = Plant.Generator(i).OpMatB.(s{2}).H;
-    %             b4 = Plant.Generator(i).OpMatB.constCost;
-    %             Cost = Cost + (min(Dispatch(2:end,i),I)*b1 + max(Dispatch(2:end,i)-I,0)*b2 + max(Dispatch(2:end,i)-I,0).^2*b3+b4).*dt.*scaleCost(:,i);
-    %         elseif~isempty(s) %single state generators (linear cost term) & utilities
-    %             b1 = Plant.Generator(i).OpMatB.(s{1}).f;
-    %             Cost = Cost + Dispatch(2:end,i)*b1.*scaleCost(:,i).*dt;
-    %             %need to handle case of sell-back
-    %         elseif ~isempty(strcmp(Plant.Generator(i).Source,'Renewable'))
-    %             %renewable
-    %         end
-    %     end
-    % end  
+%     dt = Timestamp(2:end)-Timestamp(1:end-1);
+%     Cost = zeros(length(Timestamp)-1,1);
+%     StorPower =[];
+%     for i = 1:1:length(Plant.Generator)
+%         if nnz(Dispatch(:,i))>0
+%             if ~isempty(Plant.Generator(i).QPform.states)
+%                 states = Plant.Generator(i).QPform.states(:,end);
+%             end
+%             if isfield(Plant.Generator(i).QPform,'Stor')
+%                 StorPower(:, end+1) = Dispatch(1:end-1,i) - Dispatch(2:end,i); %no cost
+%             elseif isfield(Plant.Generator(i).QPform,'constCost') %all of these cost terms need to be scaled later on
+%                 I = Plant.Generator(i).QPform.(states{1}).ub(end);
+%                 b1 = Plant.Generator(i).QPform.(states{1}).f(end);
+%                 b2 = Plant.Generator(i).QPform.(states{2}).f(end);
+%                 b3 = Plant.Generator(i).QPform.(states{2}).H(end);
+%                 b4 = Plant.Generator(i).QPform.constCost;
+%                 Cost = Cost + (min(Dispatch(2:end,i),I)*b1 + max(Dispatch(2:end,i)-I,0)*b2 + max(Dispatch(2:end,i)-I,0).^2*b3+b4).*dt.*scaleCost(:,i);
+%             elseif~isempty(states) %single state generators (linear cost term) & utilities
+%                 b1 = Plant.Generator(i).QPform.(states{1}).f(end);
+%                 Cost = Cost + Dispatch(2:end,i)*b1.*scaleCost(:,i).*dt;
+%                 %need to handle case of sell-back
+%             elseif ~isempty(strcmp(Plant.Generator(i).Source,'Renewable'))
+%                 %renewable
+%             end
+%         end
+%     end  
 elseif strcmp(method,'Input')
     Input = Var1;
     Dispatch = 0*Input;
@@ -66,7 +68,7 @@ for i = 1:1:nG
         nStartups = (Dispatch(2:run,i)>0).*(Dispatch(1:run-1,i)==0);
         startupcost(:,i) = nStartups*Plant.Generator(i).VariableStruct.StartCost;
     end
-    if isfield(Plant.Generator(i).OpMatB,'Stor')
+    if isfield(Plant.Generator(i).QPform,'Stor')
        stor(end+1) = i; 
     end
 end

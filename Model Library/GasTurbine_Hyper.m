@@ -135,7 +135,7 @@ Plant.Controls.GTcontrolH.Fuel = Plant.Components.FuelSource.InitialComposition;
 Plant.Controls.GTcontrolH.IntGain = [3e-3; 4e-3; 0; 0;];%Load control, Fuel control, Cold Bypass control, Hot Bypass valve control
 Plant.Controls.GTcontrolH.PropGain = [1e-2; 2e-0; 0; 0;];
 Plant.Controls.GTcontrolH.TagInf = {'TET';'GenPower';'FuelFlow';'SteadyPower';'Efficiency'};
-Plant.Controls.GTcontrolH.connections = {'Turb.TET';'Shaft.RPM';'Turb.PowerTurb';'Comp.Work';};%needs leakage valve interp value
+Plant.Controls.GTcontrolH.connections = {'Turb.TET';'Shaft.RPM';'Turb.PowerTurb';'Comp.Work';'PowerDemandLookup';};%needs leakage valve interp value
 
 Plant.Plot = {'GTcontrolH.Efficiency';'Turb.MassFlow';'Shaft.RPM';'Turb.TET';'GTcontrolH.GenPower';'GTcontrolH.FuelFlow';};
 %% run initialization

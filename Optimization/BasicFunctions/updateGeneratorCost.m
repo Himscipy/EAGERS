@@ -43,10 +43,10 @@ scaleCost = zeros(nS,length(Plant.Generator));
 for i = 1:1:length(Plant.Generator)
     if strcmp(Plant.Generator(i).Type,'Utility')
         scaleCost(:,i) = Utility(i).Rate;
-    elseif ~isfield(Plant.Generator(i).OpMatB,'Stor') && ~strcmp(Plant.Generator(i).Source, 'Renewable')
+    elseif isempty(strfind(Plant.Generator(i).Type,'Storage')) && ~strcmp(Plant.Generator(i).Source, 'Renewable') && ~strcmp(Plant.Generator(i).Type, 'Hydro') %not storage or renewable or hydro
         Uindex = find(strcmp(Source,Plant.Generator(i).Source),1);
         if isempty(Uindex)
-           scaleCost(:,i) = 1; %no utility (don't scale costs)
+            scaleCost(:,i) = 1; %no utility (don't scale costs)
         else
             scaleCost(:,i) = Utility(Uindex).Rate;
         end

@@ -7,7 +7,6 @@ function Out = ControlFCstack(t,Y, Inlet,block,string1)
 % if OxyFC: % Three (3) states: anode recirculation, Fuel flow rate, Current
 
 global Tags F
-NetPower = PowerDemandLookup(t);
 averageT = (Inlet.Cold+Inlet.Hot)/2;
 TavgError = (block.Target(1)-averageT)/block.Target(2);
 deltaT = (mean(Inlet.Hot)-mean(Inlet.Cold));
@@ -18,7 +17,7 @@ if isfield(block,'OxyFC')
     O2flow = block.Cells*Current/(4*F*1000)*32*3600*24/1000; %Ton/day
     Parasitic = (1.0101*O2flow^-.202)*(O2flow*1000/24); %parasitic in kW
     Power = Current*Inlet.Voltage*block.Cells/1000;
-    PowerError = (NetPower + Parasitic - Power)/(NetPower + Parasitic);
+    PowerError = (Inlet.Setpoint + Parasitic - Power)/(Inlet.Setpoint + Parasitic);
     
     FuelFlow = Y(2)+(PowerError*block.PropGain(2))*block.Scale(2);
     CH4_Util = Y(3)*block.Cells/(2000*F)/(FuelFlow*4*block.Fuel.CH4);%hydrogen used vs. ideal H2 available
@@ -39,7 +38,7 @@ if isfield(block,'OxyFC')
     BalancedVoltage = BalancedPower*1000/Current;
     VoltageError = Inlet.Voltage - BalancedVoltage;
 else
-    Current = NetPower*1000/(Inlet.Voltage*block.Cells);
+    Current = Inlet.Setpoint*1000/(Inlet.Voltage*block.Cells);
     Power = Current*Inlet.Voltage*block.Cells/1000;
     FuelFlow = block.Cells*Current/(2*F*block.Utilization*(4*block.Fuel.CH4+block.Fuel.CO+block.Fuel.H2))/1000;
     if block.AnodeRecirc.IC == 0

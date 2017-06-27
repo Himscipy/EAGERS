@@ -41,10 +41,11 @@ if length(varargin)==1 %first initialization
         end
     end
     
-    block.InletPorts = {'Hot','Cold','Voltage'};
+    block.InletPorts = {'Hot','Cold','Voltage','Setpoint'};
     block.Hot.IC = block.Target(2)+.5*block.Target(1); 
     block.Cold.IC = block.Target(2)-.5*block.Target(1); 
     block.Voltage.IC = 0.85; 
+    block.Setpoint.IC = block.NominalPower;
     
     block.OutletPorts = {'HeaterBypass','Blower','Current','AnodeRecirc','FuelFlow'};
     block.HeaterBypass.IC = Bypass;
@@ -63,7 +64,7 @@ elseif length(varargin)==2 %% Have inlets connected, re-initialize
     Inlet = varargin{2};
     PEN_Temperature = mean(ComponentProperty('FC1.T.Elec'));
     blowerPower = ComponentProperty('Blower.NominalPower');
-    StackPower = PowerDemandLookup(0) + blowerPower;
+    StackPower = Inlet.Setpoint + blowerPower;
 %     PowerError = (StackPower-block.Current.IC*Inlet.Voltage*block.Cells/1000)/StackPower;
 %     block.Current.IC = block.Current.IC*(1 + PowerError);
     

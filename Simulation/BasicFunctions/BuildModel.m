@@ -125,7 +125,9 @@ end
 %% Run non-linear model to steady state (24 hours)
 options = odeset('RelTol',1e-3);
 IterCount = 1; TagInf =[]; TagFinal =[]; WaitBar.Text = 'Initialization'; WaitBar.Handle=waitbar(0,WaitBar.Text);
-[T, Y] = ode15s(@RunBlocks, [0, SimSettings.RunTime], modelParam.IC,options); disp(strcat('Initialization:',num2str(toc),' seconds'));close(WaitBar.Handle); 
+[T, Y] = ode15s(@RunBlocks, [0, SimSettings.RunTime], modelParam.IC,options);
+% [T, Y] = solverFixedStep(SimSettings.RunTime,300,modelParam.IC); 
+disp(strcat('Initialization:',num2str(toc),' seconds'));close(WaitBar.Handle); 
 %     PlotSimulation(T,Y,1,0,1)
 modelParam.IC = Y(end,:)';
 

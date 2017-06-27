@@ -1,15 +1,9 @@
-function [GenDisp,cost,Feasible] = DispatchQP(QP,Locked)
+function [GenDisp,Feasible] = DispatchQP(QP,Locked)
 [m,n] = size(QP.organize);
 nG = length(QP.constCost);
 nS = m-1;
 QP = disableGenerators(QP,Locked,[]);%Disable generators here
-if nnz(QP.H)==0
-    options = optimset('Algorithm','interior-point','MaxIter',100,'Display','none');
-    [GenSetting,cost,Feasible] = linprog(QP.f,QP.A,QP.b,QP.Aeq,QP.beq,QP.lb,QP.ub,[],options); 
-else
-    options2 = optimset('Algorithm','interior-point-convex','MaxIter',100,'Display','none');
-    [GenSetting,cost,Feasible] = quadprog(QP.H,QP.f,QP.A,QP.b,QP.Aeq,QP.beq,QP.lb,QP.ub,[],options2);
-end
+[GenSetting, cost,Feasible] = callQPsolver(QP);
 GenDisp = zeros(nS+1,n);
 if Feasible ~=1
     Feasible = false;
@@ -18,6 +12,7 @@ else
     Feasible = true;
     for i = 1:1:nG
         if any(QP.Renewable(:,i)~=0)
+            GenDisp(1,i) = RenewableOutput(i,[],'Actual');
             GenDisp(2:end,i) = QP.Renewable(:,i);
         else
             for t = 1:1:nS+1

@@ -22,7 +22,7 @@ for net = 1:1:length(networkNames)
     if ~strcmp(networkNames{net},'Hydro')
         nLcum = nLcum+nLinet(net); 
     else
-        if Plant.Dispatch.Timestamp(1) == 0 
+        if isempty(Plant.Dispatch)
             Time = [0 Date(end)];  
             if strcmp(name(r(1)+1:r(2)-1),'Hydro')
                 Flow = [Plant.Data.Hydro.OutFlow(1,I), Plant.Data.Hydro.OutFlow(1,I)];  

@@ -1,5 +1,5 @@
   function LockedNet = fireNeurons(FirstDisp,GenDemand,marginCost,scaleCost)
-global Plant timersOn dischEff UB LB Si DateSim CurrentState
+global Plant dischEff UB LB Si DateSim CurrentState
 global lockedNet lockederror net %these are created in this function and used in each subsequent step
 global Last24hour
 %input: inputs for neuron dispatch and network training
@@ -59,8 +59,9 @@ if training %train the first time through
         if ~isempty(dischEff) %must be a storage system
             IC(stor)=max(IC(stor).*(1-(1-dischEff(stor))*dt(1)),LB(stor));%scale storage value by discharge efficiency (this scaling is used in optimizations)
         end
+        Date = Time/24+DateSim;
         IC = min(UB,IC);
-        scaleCost = updateGeneratorCost(Time/24+DateSim); %% All feedstock costs were assumed to be 1 when building matrices 
+        scaleCost = updateGeneratorCost(Date); %% All feedstock costs were assumed to be 1 when building matrices 
         if day<1
             PredictDispatch = ones(length(Time)+1,1)*IC;
         else PredictDispatch = [IC;predictDisp(2:end,:)];
@@ -72,15 +73,17 @@ if training %train the first time through
         [QPall,~] = updateMatrices(Plant.OpMatA.QP,Organize,IC,Time,scaleCost,marginCost,[]);
         %the demand should be historical data + gaussian noise (-renewable
         %generation if it is added to the QP)
-        if ~isempty(renews)%renewable generation
-            [renewgen, ~]= RenewableOutput(DateSim,Time,'Predict');%Add forecast of renewable power @ resulution equal to the Time vector
-            renewgen = sum(renewgen,2);%this assumes that all renewable generation goes to electric demand
-        else
-            renewgen = zeros(nS,1);
+        renewgen = zeros(nS,1);
+        for i = 1:1:nG
+            if strcmp(Plant.Generator(i).Source, 'Renewable')
+                renewgen(i) = RenewableOutput(i,Date,'Predict');%Add forecast of renewable power @ resulution equal to the Time vector
+            end
         end
+        renewgen = sum(renewgen,2);%this assumes that all renewable generation goes to electric demand
         ibeq = 0;%index of demand within beq matrix
         for j = 1:1:length(Out)
-            histData = Plant.Data.Demand.(Out{j})((DateSim-Plant.Data.Timestamp(1))*24*4+round((Time-Time(1))./0.25)+1);%assumes data is every 15 minutes
+            index = nnz(Plant.Data.Timestamp<=Date(1)):1:nnz(Plant.Data.Timestamp<=Date(end));
+            histData = Plant.Data.Demand.(Out{j})(index);%assumes data is every 15 minutes
             sizeHistData = size(histData);
             if sizeHistData(1) == 1 %if format is in a single row, change it to a single collumn
                 Last24hour.(Out{j}) = histData;
@@ -154,7 +157,7 @@ if training %train the first time through
         FirstDispT(1+nS*day:nS*(1+day),:) = FirstDisp(2:end,:);
         predictDisp = DayDisp;%[DayDisp(ceil(.3*nS):end,:);DayDisp(1:ceil(.3*nS)-1,:)];
         maxGenDem = max(max(GenDemand.E),maxGenDem);
-        Last24hour.Timestamp = DateSim+Time./24;
+        Last24hour.Timestamp = Date(1)-1:Plant.optimoptions.Resolution/24:Date(1)-Plant.optimoptions.Resolution/24;
     end
     GenDisp = [GenDisp(1,:);GenDisp];
     scaleCost = scaleCostT;

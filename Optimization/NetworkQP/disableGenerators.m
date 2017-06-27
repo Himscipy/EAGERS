@@ -20,8 +20,9 @@ if ~isempty(Locked)
             end
             for t = 1:1:nS
                 if ~Locked(t+1,j)
-                    QP.lb(QP.organize{t+1,j}) = 0;
-                    QP.ub(QP.organize{t+1,j}) = 0;
+                    QP.lb(QP.organize{t+1,j}) = 0;%was already zero
+                    QP.ub(QP.organize{t+1,j}) = 0;%need to make into an equality constraint (first change Aeq(:,i) = 0 to remove from energy balance, if more than 2 concurrent locked off steps, remove ramping constraints)
+                    %do this by setting A(:,i)=0 then remove all rows that are all zeros, then rows with 1 value (half a ramping constraint get  a) eliminated and b) converted to an upper bound
                     if ~isempty(ineqRows)
                         QP.A(ineqRows(t),SRstates(t)) = 0;%%remove from calculation of spinning reserve
                     end

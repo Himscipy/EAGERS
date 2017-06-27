@@ -4,7 +4,6 @@ function Out = ControlRecouperatedGasTurbine(t,Y, Inlet,block,string1)
 % Three (3) outlets: Generator Power, fuel flow rae and byass vale postion
 % Three (3) states: desired RPM, generator power, molar fuel flow
 global Tags 
-PowerSet = PowerDemandLookup(t);
 P_Gain = block.PropGain.*block.Scale;
 I_Gain = block.Gain.*block.Scale;
 
@@ -12,7 +11,7 @@ TETerror = (Inlet.TET-block.TETset)/100;
 RPMfromTET =(P_Gain(1)*TETerror + Y(1));
 RPMerror = (Inlet.RPM - RPMfromTET)/block.RPMdesign;
 GenPower =(P_Gain(2)*RPMerror + Y(2));
-FuelError =(PowerSet - GenPower*block.GenEfficiency)/PowerSet;
+FuelError =(Inlet.Setpoint - GenPower*block.GenEfficiency)/Inlet.Setpoint;
 PowerError = RPMerror;
 
 if strcmp(string1,'Outlet')

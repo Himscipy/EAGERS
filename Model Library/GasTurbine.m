@@ -108,7 +108,7 @@ Plant.Controls.Controller.Fuel = Plant.Components.FuelSource.InitialComposition;
 Plant.Controls.Controller.Gain = [4e-4; 4e-3; 5e-4;];%gain for TET control, Power control, fuel control
 Plant.Controls.Controller.PropGain = [8e-3; 2e-0; .3;];
 Plant.Controls.Controller.TagInf = {'TET';'GenPower';'FuelFlow';'SteadyPower';'Efficiency'};
-Plant.Controls.Controller.connections = {'Turb.TET';'Shaft.RPM';'Turb.PowerTurb';'Comp.Work';};
+Plant.Controls.Controller.connections = {'Turb.TET';'Shaft.RPM';'Turb.PowerTurb';'Comp.Work';'PowerDemandLookup'};
 
 Plant.Scope = {'Controller.FuelFlow';'Shaft.RPM';'Comp.MassFlow';'Turb.TET';}; %must be in TagInf of the corresponding block to work here
 Plant.Plot = [Plant.Scope;{'Controller.Efficiency';'Controller.GenPower';}];

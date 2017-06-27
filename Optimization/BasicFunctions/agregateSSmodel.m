@@ -3,7 +3,7 @@ function agregateSSmodel(SSi)
 %SSmpc: the agregated state-space model seen by the MPC, the time may be scaled by both Tmpc and scaletime.
 %GenSSindex: A matrix used to relate the primary and secondary states of each generator to their index in the states of the agregated state space model SSmpc.
 %GendX: The derivative of the generator state, assume steady initial condition and GendX=0. Need to keep track of this for MPC
-global Plant GenSSindex SSmpc GendX
+global Plant GenSSindex %SSmpc GendX
 nG = length(Plant.Generator);
 GenSSindex = [];
 gen = [];
@@ -12,7 +12,7 @@ if ~isempty(SSi)
     for i=1:1:length(SSi)
         if ~isempty(SSi(i).A)
             gen(end+1) = i;
-            if isfield(Plant.Generator(i).OpMatB.output,'H') && isfield(Plant.Generator(i).OpMatB.output,'E')
+            if isfield(Plant.Generator(i).QPform.output,'H') && isfield(Plant.Generator(i).QPform.output,'E')
                 nCHP = nCHP+1;
             end
         end

@@ -31,11 +31,12 @@ if length(varargin)==1 %first initialization
         block.HasFlow = false;
     end
     
-    block.InletPorts = {'Hot','Cold','Voltage','PEN_Temp'};
+    block.InletPorts = {'Hot','Cold','Voltage','PEN_Temp','Setpoint'};
     block.Hot.IC = block.Target(1)+.5*block.Target(2); 
     block.Cold.IC = block.Target(1)-.5*block.Target(2);    
     block.Voltage.IC = 1.3; 
     block.PEN_Temp.IC = block.Target(1);
+    block.Setpoint.IC = block.NominalPower;
     
     block.OutletPorts = {'OxidantTemp','OxidantFlow','SteamTemp','SteamFlow','Current'};
     block.OxidantTemp.IC = block.Target(1);
@@ -57,8 +58,7 @@ end
 
 if length(varargin)==2 %% Have inlets connected, re-initialize
     Inlet = varargin{2};
-    NetPower = PowerDemandLookup(0);
-    PowerError = (NetPower-abs(block.Current.IC)*Inlet.Voltage*block.Cells/1000)/NetPower;
+    PowerError = (Inlet.Setpoint-abs(block.Current.IC)*Inlet.Voltage*block.Cells/1000)/Inlet.Setpoint;
     block.Current.IC = block.Current.IC*(1 + PowerError);
     block.SteamFlow.IC = (block.Cells*abs(block.Current.IC)/(2*F*block.Utilization*block.Steam.H2O)/1000);
     block.SteamTemp.IC = block.SteamTemp.IC; %currently not manipulated during initialization

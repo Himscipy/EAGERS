@@ -5,12 +5,11 @@ function Out = Control_Hyper(t,Y, Inlet,block,string1)
 % Four (4) states: desired RPM, generator power, molar fuel flow and compressor leakage valve position
 global Tags 
 SteadyPower = Inlet.WTurbine - Inlet.WCompressor;
-PowerSet = PowerDemandLookup(t);
 P_Gain = block.PropGain.*block.Scale;
 
-PowerError = PowerSet-Y(2);
+PowerError = Inlet.Setpoint-Y(2);
 GenPower =(P_Gain(2)*PowerError + Y(2));
-FuelError =(PowerSet - GenPower*block.GenEfficiency)/PowerSet;
+FuelError =(Inlet.Setpoint - GenPower*block.GenEfficiency)/Inlet.Setpoint;
 
 if strcmp(string1,'Outlet')
     if t>0

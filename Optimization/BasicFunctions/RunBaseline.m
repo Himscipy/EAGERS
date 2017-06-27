@@ -24,7 +24,7 @@ while Date<Plant.Data.Timestamp(1)+Plant.optimoptions.Interval
     end
     for i = 1:1:nG
         if strcmp(Plant.Generator(i).Source,'Renewable') && Plant.Generator(i).Enabled
-            Demand.Renewable(:,i) = RenewableOutput(Plant.Generator(i).VariableStruct,Date,Time,'Actual');
+            Demand.Renewable(:,i) = RenewableOutput(i,Date,Time,'Actual');
         end
     end
     QP = updateMatrices(Plant.OpMatB.QP,IC,Baseline.Timestamp,scaleCost,margincost,Demand,[]); 

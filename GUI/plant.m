@@ -26,25 +26,26 @@ classdef plant
             obj.Data.HistProf = [];
 %             obj.Data.PlanningResult = [];
             %add optimization options
-            obj.optimoptions.Interval = 1;
+            obj.optimoptions.Interval = 31;
             obj.optimoptions.Horizon = 24;
             obj.optimoptions.Resolution = 1;
             obj.optimoptions.Topt = 3600;
             obj.optimoptions.Tmpc = 600;
             obj.optimoptions.nsSmooth = 0;
             obj.optimoptions.scaletime = 1;
-            obj.optimoptions.fastsimulation = 1;
             obj.optimoptions.tspacing = 'constant';
-            obj.optimoptions.sequential = 0;
-            obj.optimoptions.excessHeat = 1;
-            obj.optimoptions.scaleTime = 1;
+            obj.optimoptions.sequential = false;
+            obj.optimoptions.excessHeat = true;
             obj.optimoptions.thresholdSteps = 6;
             obj.optimoptions.Buffer = 20;
             obj.optimoptions.method = 'Dispatch';
             obj.optimoptions.MixedInteger = true;
             obj.optimoptions.SpinReserve = false;
             obj.optimoptions.SpinReservePerc = 0;
-            obj.optimoptions.Outputs = {};
+            obj.optimoptions.forecast = 'Perfect';
+            obj.optimoptions.solver = 'quadprog';
+            obj.optimoptions.mode = 'virtual';
+            
             %add generators
             obj.Generator = [];
             obj.Generator.Type = [];

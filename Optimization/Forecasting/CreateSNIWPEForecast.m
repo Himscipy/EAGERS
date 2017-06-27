@@ -1,49 +1,40 @@
 function Forecast = CreateSNIWPEForecast(Date,RealData)
 global Last24hour
-
 %% initialize
+alpha = .85;
 beta = 0.9; % Take this out after training is added!
-S = fieldnames(Last24hour.Demand);
-Forecast.Timestamp = Date(2:end); % first value of Date is current time
-
-%% forecast horizons and historical data times
-hrstep = 1/24; % equivalent to 1 hour in datenum format
-nmlzDate = Date - Date(1);
-hrDate = nmlzDate ./ hrstep;
-hzn = hrDate(2:end); % first value of Date is current time
-
-histNum = [Last24hour.Timestamp;Date(1)]; % include current datum
-nmlzhistNum = histNum - histNum(1);
-histTime = nmlzhistNum ./ hrstep;
-
-%% check for existence of prevErr and prevFcast in Last24hour
-if ~isfield(Last24hour,'prevErr')
+Outs = fieldnames(Last24hour.Demand);
+Forecast.Timestamp = Date;
+if ~isfield(Last24hour,'prevErr') || isnan(Last24hour.prevFcast.Temp)
     Last24hour.prevErr.Temp = 0;
-    for i = 1:1:length(S)
-        Last24hour.prevErr.(S{i}) = 0;
-    end
-end
-if ~isfield(Last24hour,'prevFcast')
     Last24hour.prevFcast.Temp = RealData.Temperature;
-    for i = 1:1:length(S)
-        Last24hour.prevFcast.(S{i}) = RealData.Demand.(S{i});
+else
+    Last24hour.prevErr.Temp = Last24hour.prevFcast.Temp - Last24hour.Temperature(end) + Last24hour.prevErr.Temp;
+end
+for S = 1:1:length(Outs)
+    if ~isfield(Last24hour.prevErr,Outs{S}) || isnan(Last24hour.prevFcast.(Outs{S}))
+        Last24hour.prevErr.(Outs{S}) = 0;
+        Last24hour.prevFcast.(Outs{S}) = RealData.Demand.(Outs{S});
+    else Last24hour.prevErr.(Outs{S}) = Last24hour.prevFcast.(Outs{S}) - Last24hour.Demand.(Outs{S})(end) + Last24hour.prevErr.(Outs{S});
     end
 end
-
-%% create forward forecast of temperature
-histData = [Last24hour.Temperature;RealData.Temperature];
-pf = Last24hour.prevFcast.Temp;
-pe = Last24hour.prevErr.Temp;
-[Forecast.Temperature, Last24hour.prevErr.Temp] = ...
-    SNIWPEForecast(histData, histTime, hzn, pf, pe, beta);
-Last24hour.prevFcast.Temp = Forecast.Temperature(1);
-
-%% repeat for electric, cooling, heating, and steam demands as necessary
-for i = 1:1:length(S)
-    histData = [Last24hour.Demand.(S{i});RealData.Demand.(S{i})];
-    pf = Last24hour.prevFcast.(S{i});
-    pe = Last24hour.prevErr.(S{i});
-    [Forecast.Demand.(S{i}), Last24hour.prevErr.(S{i})] = ...
-        SNIWPEForecast(histData, histTime, hzn, pf, pe, beta);
-    Last24hour.prevFcast.(S{i}) = Forecast.Demand.(S{i})(1);
+Dvec = [Last24hour.Timestamp;RealData.Timestamp];
+nDays = ceil(Date(end)-RealData.Timestamp);
+w = [linspace(alpha,0,nnz(Date<(RealData.Timestamp+beta)))';zeros(nnz(Date>=(RealData.Timestamp+beta)),1)];
+n = length(Dvec)-1;
+data = [Last24hour.Temperature; RealData.Temperature];
+dStep = Last24hour.Timestamp(2) - Last24hour.Timestamp(1);
+for d = 1:1:nDays
+    Dvec(end+1:end+n) = Last24hour.Timestamp + d + dStep;
+    data(end+1:end+n) = Last24hour.Temperature;
+end
+Forecast.Temperature = interp1(Dvec,data,Date);
+Forecast.Temperature(1:length(w)) = Forecast.Temperature(1:length(w)) + w*Last24hour.prevErr.Temp;
+for S = 1:1:length(Outs)
+    data = [Last24hour.Demand.(Outs{S});RealData.Demand.(Outs{S});];
+    for d = 1:1:nDays
+        data(end+1:end+n) = Last24hour.Demand.(Outs{S});
+    end
+    Forecast.Demand.(Outs{S}) = interp1(Dvec,data,Date);
+    Forecast.Demand.(Outs{S})(1:length(w)) = Forecast.Demand.(Outs{S})(1:length(w)) + w*Last24hour.prevErr.(Outs{S}); 
 end

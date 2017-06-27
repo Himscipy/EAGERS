@@ -8,9 +8,11 @@ nG = length(Plant.Generator);
 dX = zeros(nS,nG);
 UB = zeros(nG,1);
 for i = 1:1:nG
-    states = Plant.Generator(i).OpMatB.states;
-    for j = 1:1:length(states);
-        UB(i) = UB(i) + Plant.Generator(i).OpMatB.(states{j}).ub;
+    if ~isempty(Plant.Generator(i).QPform.states)
+        states = Plant.Generator(i).QPform.states(:,end);
+        for j = 1:1:length(states);
+            UB(i) = UB(i) + Plant.Generator(i).QPform.(states{j}).ub(end);
+        end
     end
     dX(:,i) = dt*Plant.Generator(i).VariableStruct.dX_dt;
 end
@@ -39,7 +41,7 @@ for j = 1:1:length(dGen)
             if starts(1)-p>0
                 L2 = Locked;
                 L2(1:(starts(1)-p+1),i) = false;
-                [Disp,~,Feasible] = DispatchQP(QP,L2);
+                [Disp,Feasible] = DispatchQP(QP,L2);
                 newCost = sum(NetCostCalc(Disp,Timestamp,'Dispatch'));
                 if Feasible==1 && newCost<Cost
                     Locked = L2;
@@ -72,7 +74,7 @@ for j = 1:1:length(dGen)
                     p = p+1;
                 end
                 L2((stops(k)+n):(starts(k)-p+1),i) = false;
-                [Disp,~,Feasible] = DispatchQP(QP,L2);
+                [Disp,Feasible] = DispatchQP(QP,L2);
                 newCost = sum(NetCostCalc(Disp,Timestamp,'Dispatch'));
                 if Feasible==1 && newCost<Cost
                     Locked = L2;
@@ -93,7 +95,7 @@ for j = 1:1:length(dGen)
         if n<(nS)
             L2 = Locked;
             L2((n+1):nS+1,i) = false;
-            [Disp,~,Feasible] = DispatchQP(QP,L2);
+            [Disp,Feasible] = DispatchQP(QP,L2);
             newCost = sum(NetCostCalc(Disp,Timestamp,'Dispatch'));
             if Feasible==1 && newCost<Cost
                 Locked = L2;
@@ -121,7 +123,7 @@ for j = 1:1:length(dGen)
         if sum(dX(starts(k):stops(k),i))<UB(i) && sum(Locked(:,i))<floor(nS/4)%can only ramp to 1/2 power and less than 1/4 of horizon
             L2 = Locked;
             L2(starts(k):(stops(k)+1),i)= false;
-            [Disp,~,Feasible] = DispatchQP(QP,L2);
+            [Disp,Feasible] = DispatchQP(QP,L2);
             newCost = sum(NetCostCalc(Disp,Timestamp,'Dispatch'));
             if Feasible==1 && newCost<Cost
                 Locked = L2;
@@ -145,7 +147,7 @@ end
 %             if starts(k)==stops(k)+1 %if you are starting immediately after stopping
 %                 L2 = Locked;
 %                 L2(stops(k)+1,i) = true;
-%                 [Disp,~,Feasible] = DispatchQP(QP,L2);
+%                 [Disp,Feasible] = DispatchQP(QP,L2);
 %                 newCost = sum(NetCostCalc(Disp,Timestamp,'Dispatch'));
 %                 if Feasible==1 && newCost<Cost
 %                     Locked = L2;
