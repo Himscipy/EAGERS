@@ -118,7 +118,7 @@ for i = 1:1:nG
             %don't penalize spinning reserve state
             if isempty(EC)
                 QP.f(states(1)) = marginal.(type);
-                if any(strcmp(networkNames,'Electrical')) && strcmp(type,'H') % first initialization give arbitrarily high cost to storage (but not thermal storage if in conjunction with electric dispatch)
+                if any(strcmp(networkNames,'Electrical')) && strcmp(type,'DistrictHeat') % first initialization give arbitrarily high cost to storage (but not thermal storage if in conjunction with electric dispatch)
                     H(states(1)) = 0;
                 else
                     H(states(1)) = 1e8*marginal.(type);

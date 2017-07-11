@@ -6,7 +6,7 @@ function block = InitializeHVAC_NREL(varargin)
 global Tags
 block = varargin{1};
 if length(varargin)==1 %first initialization
-    block.description = {'Air Supply to Building';};
+    block.description = {'Mass flow (of dry air)';};
     
     block.ColdAirSetpoint = 12.8; %minimum temperature of cooling air supplied by HVAC
     block.HotAirSetpoint = 40; %temperature of heating air supplied by HVAC when furnace is on

@@ -1,9 +1,9 @@
 function dY = RunBlocks(t,Y)
-global modelParam IterCount Inlet Outlet TagInf TagFinal Tags SimSettings WaitBar Jcount
+global modelParam LinMod IterCount Inlet Outlet TagInf TagFinal Tags SimSettings WaitBar Jcount
 
 Y = Y.*modelParam.Scale;
-if ~isfield(Tags,'Options');
-    Tags.Options = [];
+if ~isfield(LinMod,'Options');
+    LinMod.Options = [];
 end
 CompNames = fieldnames(modelParam.Components);
 controls = fieldnames(modelParam.Controls);
@@ -181,6 +181,12 @@ else
                         end
                     end
                 end
+            elseif iscell(New.(port))
+                for j = 1:1:length(New.(port));
+                    if New.(port){j}~=Old.(port){j}
+                        Change = 1;
+                    end
+                end
             end
         end
     end
@@ -199,40 +205,44 @@ else C = false;
 end
 
 function InletBlock = RefreshInlet(block,t)
-global modelParam Outlet Tags
+global modelParam LinMod Outlet Tags
 list = modelParam.(block).InletPorts;
 controls = fieldnames(modelParam.Controls);
 for i = 1:1:length(list)
     port = list{i};
     if ~isempty(modelParam.(block).(port).connected)%inlet connected to another outlet
         BlockPort = char(modelParam.(block).(port).connected);
-        r = strfind(BlockPort,'.');
-        if ~isempty(r)
-            connectedBlock = BlockPort(1:r-1);
-            if strcmp(connectedBlock,'Tags')
-                connectedBlock = BlockPort(r(1)+1:r(2)-1);
-                connectedPort = BlockPort(r(2)+1:end);
-                InletBlock.(port) = Tags.(connectedBlock).(connectedPort);
-            else
-                connectedPort = BlockPort(r+1:end);
-                if isfield(Outlet.(connectedBlock),connectedPort)
-                    InletBlock.(port) = Outlet.(connectedBlock).(connectedPort);
-                else InletBlock.(port) = modelParam.(connectedBlock).(connectedPort).IC;
-                end
-            end
-            %%forced interupt between controller and component ports when linearizing model
-            if ismember(connectedBlock,controls) && ~ismember(block,controls)
-                if isfield(Tags.Options,'AssignedInputs') && Tags.Options.AssignedInputs == 1
-                    InletBlock.(port) = Tags.ModelInput.(connectedBlock).(connectedPort);%assign inputs
-                else
-                    Tags.ModelInput.(connectedBlock).(connectedPort) = InletBlock.(port);%Collect inputs to model (outputs from controller)
-                end
-            end
+        if isnumeric(BlockPort);
+            InletBlock.(port) = BlockPort;
         else
-            InletBlock.(port) = feval(BlockPort,t);%finds value of look-up function at time = 0
+            r = strfind(BlockPort,'.');
+            if ~isempty(r)
+                connectedBlock = BlockPort(1:r-1);
+                if strcmp(connectedBlock,'Tags')
+                    connectedBlock = BlockPort(r(1)+1:r(2)-1);
+                    connectedPort = BlockPort(r(2)+1:end);
+                    InletBlock.(port) = Tags.(connectedBlock).(connectedPort);
+                else
+                    connectedPort = BlockPort(r+1:end);
+                    if isfield(Outlet.(connectedBlock),connectedPort)
+                        InletBlock.(port) = Outlet.(connectedBlock).(connectedPort);
+                    else InletBlock.(port) = modelParam.(connectedBlock).(connectedPort).IC;
+                    end
+                end
+                %%forced interupt between controller and component ports when linearizing model
+                if ismember(connectedBlock,controls) && ~ismember(block,controls)
+                    if isfield(LinMod.Options,'AssignedInputs') && LinMod.Options.AssignedInputs == 1
+                        InletBlock.(port) = LinMod.ModelInput.(connectedBlock).(connectedPort);%assign inputs
+                    else
+                        LinMod.ModelInput.(connectedBlock).(connectedPort) = InletBlock.(port);%Collect inputs to model (outputs from controller)
+                    end
+                end
+            else
+                InletBlock.(port) = feval(BlockPort,t);%finds value of look-up function at time = 0
+            end
         end
         if ismember(block,controls) 
-            Tags.ModelOutput.(block).(port) = InletBlock.(port);%collect outputs of model (inputs to controller)
+            LinMod.ModelOutput.(block).(port) = InletBlock.(port);%collect outputs of model (inputs to controller)
         end
     else
         InletBlock.(port) = modelParam.(block).(port).IC;

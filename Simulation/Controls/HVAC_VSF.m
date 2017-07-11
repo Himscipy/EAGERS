@@ -1,61 +1,40 @@
 function Out = HVAC_VSF(t,Y, Inlet,block,string1)
 % Controls for building HVAC with variable speed fan and proportional cooling
-% Five (5) inlets: Building temperature, building humidity, building mode (heating or cooling), ambient temperature, ambient humidity
-% Three (3) outlets: Supply flow to the building, Cooling load, heating load
+% Three (3) inlets: Building temperature, building humidity, building mode (heating or cooling)
+% Three (3) outlets: Supply flow to the building, treated air temperature (T after cooling, T after heating -- different when dehumidifying), Damper position
 % One (1) state: mass flow
 global Tags
 Tol = block.Tolerance;
 Terror = Inlet.Temperature - block.Target(1);
-flow = max(min(Y(1)+block.PropGain(1)*Terror,block.maxFlow),block.minFlow);
-%ambient air
-AmbientAir = makeAir(Inlet.Tamb,Inlet.ambHumidity,(1-block.Entrainment/100)*flow,'abs');
-%recirculated air
-RecircAir = makeAir(Inlet.Temperature,Inlet.Humidity,block.Entrainment/100*flow,'abs');
-%mixed air
-MixedAir = MixAir(RecircAir,AmbientAir);
-mixed_AH = MixedAir.H2O*18/(MassFlow(MixedAir)-MixedAir.H2O*18);%actual humidity: kg H20/kg dry air
 
 if strcmp(string1,'Outlet')
     if strcmp(Inlet.Mode,'cooling')
-        if Terror<-Tol ||  (Tags.(block.name).Cooling<1e-6 && Terror<Tol) %don't run AC
-            T = MixedAir.T;
-        elseif mixed_AH>block.maxHumidity && Terror<0%if de-humidifying, and too cold (can't shut off cooling, so re-heat extra)
-            T = (block.ColdAirSetpoint + block.Target(1))/2 + 273.15;
+        if Terror<-Tol ||  (Tags.(block.building).Cooling<1e-6 && Terror<Tol) %don't run AC
+            T = [];
         else %if Terror>2 || (Tags.(block.name).Cooling>0 && Terror>-2)
-            T = block.ColdAirSetpoint+273.15;
+            T = block.ColdAirSetpoint;
         end
     else
-        if Terror>Tol ||  (Tags.(block.name).Heating<1e-6 && Terror>-Tol) %don't run heater
-            T = MixedAir.T;
+        if Terror>Tol ||  (Tags.(block.building).Heating<1e-6 && Terror>-Tol) %don't run heater
+            T = [];
         else %if Terror<-2 || (Tags.(block.name).Heating>0 && Terror<2)
-            T = block.HotAirSetpoint+273.15;
+            T = block.HotAirSetpoint;
         end
     end
-    
-    %%cooling
-    if mixed_AH>block.maxHumidity %if de-humidifying, cool to the dew point
-        CooledAir = makeAir(block.Target(2),100,flow,'rel');
-    elseif T<MixedAir.T % cool to the supply temperature if cooling (no re-heating
-        CooledAir = MixedAir;
-        CooledAir.T = T;%cooled mixed air
-    else %no cooling (only heating)
-        CooledAir = MixedAir;
+    if Inlet.Humidity>block.maxHumidity %if de-humidifying, cool to the dew point
+        Out.T = {block.Target(2),T};
+    else
+        Out.T = {T,T};
     end
-    Tags.(block.name).Cooling  = enthalpyAir(MixedAir)*(MassFlow(MixedAir) - MixedAir.H2O*18) - enthalpyAir(CooledAir)*(MassFlow(CooledAir) - CooledAir.H2O*18);
-    %%heating
-    HeatedAir = CooledAir;
-    HeatedAir.T = T;
-    Tags.(block.name).Heating  = enthalpyAir(HeatedAir)*(MassFlow(HeatedAir) - HeatedAir.H2O*18) - enthalpyAir(CooledAir)*(MassFlow(CooledAir) - CooledAir.H2O*18);
-    
-    Out.Supply = HeatedAir;
-    Tags.(block.name).FlowRate = MassFlow(Out.Supply) - Out.Supply.H2O*18;
-    Tags.(block.name).Temperature = Out.Supply.T - 273.15;
-    Tags.(block.name).Humidity = Out.Supply.H2O*18/Tags.(block.name).FlowRate; % kg H2O / kg dry air
-    Tags.(block.name).CoolingPower = Tags.(block.name).Cooling/block.COP;
+    Out.Flow = max(min(Y(1)+block.PropGain(1)*Terror,block.maxFlow),block.minFlow);
+    Out.Damper = block.Damper.IC ;
+    Tags.(block.name).FlowRate = Out.Flow;
+    Tags.(block.name).Temperature = T;
+    Tags.(block.name).CoolingPower = Tags.(block.building).Cooling/block.COP;
 elseif strcmp(string1,'dY')
     dY = Y*0;
     %%mass flow
-    if Tags.(block.name).Cooling == 0 % if not cooling, run at minimum flow
+    if Tags.(block.building).Cooling == 0 % if not cooling, run at minimum flow
         dY(1) = (block.minFlow - Y(1))/60;        
     else%control mass flow to control room cooling
         if Terror<0 && Y(1)<= block.minFlow %room is too cold, and already at minimum flow, maintain same flow rate (eventually cooling will shut off)

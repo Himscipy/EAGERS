@@ -1,6 +1,7 @@
 %% MCFC with indirect internal reformer (is there anode recirculation?)
 function Plant = MCFCsystem
-Plant.NominalPower=300;
+global SimSettings
+SimSettings.NominalPower= 300;
 Steam2Carbon = 2.0;
 
 Air.N2 = .79;
@@ -118,7 +119,7 @@ Plant.Controls.Controller.Fuel = Fuel;
 Plant.Controls.Controller.Cells = 'FC1.Cells';
 Plant.Controls.Controller.Utilization = 'FC1.FuelUtilization';
 Plant.Controls.Controller.InitialAnodeRecirc = 'FC1.Recirc.Anode';
-Plant.Controls.Controller.NominalPower = Plant.NominalPower;
+Plant.Controls.Controller.NominalPower = SimSettings.NominalPower;
 Plant.Controls.Controller.InitConditions = {'bypassValve.PercOpen';'Blower.NominalPower';'FC1.Current';}; %heater bypass, blower power, FC current  [note: fuel flow and recirculaion are calculated and are not states]
 Plant.Controls.Controller.Gain = [1e-1;1e-3;];
 Plant.Controls.Controller.PropGain = [.75;4;];

@@ -92,6 +92,7 @@ if rmv
         if Enabled(i) ==0  && ~isempty(QP.Organize.States{i})%remove disabled generator
             if isfield(QP.Organize,'IC') && QP.Organize.IC(i)>0
                 xkeep(QP.Organize.IC(i)) = 0;
+                reqkeep(QP.Organize.IC(i)) = 0; %initial condition constraints
             end
             states = QP.Organize.States{i};
             xkeep(states) = 0; %removes states associated with this generator.

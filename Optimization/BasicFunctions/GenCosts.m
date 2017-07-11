@@ -96,9 +96,9 @@ costTerms.I = x(1) + (index-1)*(x(end) - x(1))/10;
 % end
 
 function [coef, fit] = piecewiseQuadratic(I,x,c)
-global solver
 k = nnz(x<=I);
 coef = zeros(1,4);
+    
 %fit linear segment with c_1*x+c0*x_end
 x_i = x(1:k);
 y_i = c(1:k);%cost associated with segment
@@ -146,7 +146,7 @@ else %quadratic segment
         QP.Aeq = [x_i(end)  x_i(end).^2];
         QP.beq = y_i(end);
         QP.A = [-1, 0; 0, -1];
-        QP.b = [coef(1);0];
+        QP.b = [-coef(1);0];
         QP.lb = [];
         QP.ub =[];
         QP.solver = 'quadprog';
@@ -160,3 +160,40 @@ else %quadratic segment
     coef(3) = max(0,coef(3));%ensure positive H value
 end
 fit = fit1 + sum((coef(2).*x_i + coef(3).*x_i.^2 - y_i).^2);
+
+% UB = max(x);
+% Xa = min(x,I);
+% Xb = max(x-I,0);
+% 
+% QP.H = 2*[sum(Xa.^2), sum(Xa.*Xb), sum(Xa.*Xb.^2), sum(Xa); sum(Xa.*Xb), sum(Xb.^2), sum(Xb.^3), sum(Xb); sum(Xa.*Xb.^2), sum(Xb.^3), sum(Xb.^4), sum(Xb.^2); sum(Xa), sum(Xb), sum(Xb.^2), 1;];
+% QP.f = -2*[sum(Xa.*c), sum(Xb.*c), sum(Xb.^2.*c), sum(c)];
+% QP.Aeq = [I, (UB-I), (UB-I)^2, 1];
+% QP.beq = c(end);
+% QP.A = [1, -1, 0, 0; 0, -1, 0, 0;];
+% QP.b = [0;0;];
+% QP.lb = [];
+% QP.ub = [];
+% QP.solver = 'quadprog';
+% [coef, cost,Feasible] = callQPsolver(QP);
+% if Feasible==1
+%     fit = sum((coef(1)*Xa + coef(2)*Xb + coef(3)*Xb.^2 + coef(4) - c).^2);
+% else fit = inf;
+% end
+
+% coef(1) = 0;
+% X = (x(x>=I)-I)/(x(end)-I);%x normalized to 1
+% QP.H = 2*[sum(X.^2), sum(X.^3), sum(X); sum(X.^3), sum(X.^4), sum(X.^2);sum(X), sum(X.^2), 1;];
+% QP.f = -2*[sum(X.*c/c(end)), sum(X.^2.*c/c(end)), sum(c/c(end))];%cost normalized to 1
+% QP.Aeq = [(1-I/max(x)), (1-I/max(x))^2, 1];
+% QP.beq = 1;
+% QP.A = [-1, 0, 0; -1, 0, 0;];
+% QP.b = [coef(1);0;];
+% QP.lb = [];
+% QP.ub = [];
+% QP.solver = 'quadprog';
+% [A, cost,Feasible] = callQPsolver(QP);
+% coef = [coef(1), A];
+% if Feasible==1
+%     fit = sum((coef(1)*min(x,I) + coef(2)*max(x-I) + coef(3)*X.^2 + coef(4) - c).^2);
+% else fit = inf;
+% end

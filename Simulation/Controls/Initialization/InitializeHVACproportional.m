@@ -6,7 +6,7 @@ function block = InitializeHVACproportional(varargin)
 global Tags
 block = varargin{1};
 if length(varargin)==1 %first initialization
-    block.description = {'Zonal HVAC settings';};
+    block.description = {'Mass flow (of dry air)';'Damper position';'Cooling valve position (cold water mass flow)';'Heating valve position (hot water mass flow)';};
     
     block.InletPorts = {'Temperature','Tamb','Qcool','Qheat','Mode'};
     block.Temperature.IC = 22.2; 

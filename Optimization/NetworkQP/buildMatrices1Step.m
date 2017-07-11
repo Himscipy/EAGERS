@@ -91,10 +91,14 @@ for net = 1:1:length(networkNames)
             QP.organize{1,nG+nLcum+i} = xL+1; %line state 
             if length(eff(i,:))==1 || eff(i,2)==0 %uni-directional transfer, 1 state for each line
                 Organize.States(nG+nLcum+i)= {xL+1};
-                H(end+1:end+3) = 0;
-                f(end+1:end+3) = 0;
-                lb(end+1:end+3) = minimum(i);
-                ub(end+1:end+3) = limit(i,1);
+%                 H(end+1:end+3) = 0;
+%                 f(end+1:end+3) = 0;
+%                 lb(end+1:end+3) = minimum(i);
+%                 ub(end+1:end+3) = limit(i,1);
+                H(end+1) = 0;
+                f(end+1) = 0;
+                lb(end+1) = minimum(i);
+                ub(end+1) = limit(i,1);
                 xL = xL + 1;
             else% bi-directional transfer, 3 states for each line (state of the line and penalty term in each direction)
                 Organize.States(nG+nLcum+i)= {[xL+1, xL+2, xL+3]};

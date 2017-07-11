@@ -1,6 +1,6 @@
-function LinMod = CreateLinModel(SetPoints,HSVtol)
+function CreateLinModel(SetPoints,HSVtol)
 %builds linear time independent model around a steady state point for a model
-global Tags modelParam WaitBar SimSettings IterCount TagInf TagFinal
+global  modelParam WaitBar SimSettings IterCount TagInf TagFinal LinMod
 Y0 =  modelParam.IC;
 for n = 1:length(SetPoints)
     setPoint =SetPoints(n);
@@ -22,14 +22,14 @@ for n = 1:length(SetPoints)
         ControlStates((end+1):(end+length(modelParam.(controls{i}).States))) = modelParam.(controls{i}).States;
     end
     %% convert steady state inputs & outputs to vector and keep names of inputs/components
-    U0 = InOutStates(Tags.ModelInput);
-    Out0 = InOutStates(Tags.ModelOutput);
+    U0 = InOutStates(LinMod.ModelInput);
+    Out0 = InOutStates(LinMod.ModelOutput);
 
     %% find effect of state perturbations in the model portion
     ModelStates = (1:1:length(Y0))';
     ModelStates(ControlStates) = [];
     Y1 = Y0(ModelStates);
-    Tags.Options.AssignedInputs =1;%start using assigned inputs in blocks instead of calculating new ones
+    LinMod.Options.AssignedInputs =1;%start using assigned inputs in blocks instead of calculating new ones
     WaitBar.Show = 0;
     A = zeros(length(Y1));
     C = zeros(length(Out0));
@@ -39,7 +39,7 @@ for n = 1:length(SetPoints)
         if ~(modelParam.Scale(ModelStates(i))==1 && Y1(i) ==1) % avoid valve that is full open. Perturbing in wrong direction will cause negatives
             dYplus = RunBlocks(SimSettings.RunTime,Y0+Perturbation(:,ModelStates(i)));%record resulting dY's
             dYplus(ControlStates)=[];%ignore dY's from ignored states
-            OutPlus = InOutStates(Tags.ModelOutput);
+            OutPlus = InOutStates(LinMod.ModelOutput);
         else
             dYplus = 0*Y1;
             OutPlus = Out0;
@@ -48,7 +48,7 @@ for n = 1:length(SetPoints)
         if ~(modelParam.Scale(ModelStates(i))==1 && Y1(i)<1e-9) % avoid valve that is full closed. Perturbing in wrong direction will cause negatives
             dYminus = RunBlocks(SimSettings.RunTime,Y0-Perturbation(:,ModelStates(i)));
             dYminus(ControlStates) = [];
-            OutMinus = InOutStates(Tags.ModelOutput);
+            OutMinus = InOutStates(LinMod.ModelOutput);
         else
             dYminus = 0*Y1;
             OutMinus = Out0;
@@ -65,20 +65,20 @@ for n = 1:length(SetPoints)
     for i = 1:length(U0)%for all inputs
         epsU = 2e-9;
         if U0(i)~=1 % avoid valve that is full open. Perturbing in wrong direction will cause negatives
-            Tags.ModelInput = OverideInput(Tags.ModelInput,U0 + Perturbation(:,i));
+            LinMod.ModelInput = OverideInput(LinMod.ModelInput,U0 + Perturbation(:,i));
             dYplus = RunBlocks(SimSettings.RunTime,Y0);%record resulting dY's
             dYplus(ControlStates)=[];%ignore dY's from ignored states
-            OutPlus = InOutStates(Tags.ModelOutput);
+            OutPlus = InOutStates(LinMod.ModelOutput);
         else
             dYplus = 0*Y1;
             OutPlus = Out0;
             epsU = 1e-9;
         end
         if U0(i)==0 % avoid valve that is full closed. Perturbing in wrong direction will cause negatives
-            Tags.ModelInput = OverideInput(Tags.ModelInput,U0 - Perturbation(:,i));
+            LinMod.ModelInput = OverideInput(LinMod.ModelInput,U0 - Perturbation(:,i));
             dYminus = RunBlocks(SimSettings.RunTime,Y0);
             dYminus(ControlStates) = [];
-            OutMinus = InOutStates(Tags.ModelOutput);
+            OutMinus = InOutStates(LinMod.ModelOutput);
         else
             dYminus = 0*Y1;
             OutMinus = Out0;
@@ -109,7 +109,7 @@ for n = 1:length(SetPoints)
     Model.UX0 = Y0(ControlStates);
     Model.X = Y1;
     Model.GainScale = modelParam.Scale(ControlStates);
-    Tags.Options = [];
+    LinMod.Options = [];
     LinMod.Model{n} = Model;
     disp(strcat('Created linear model_',num2str(n),'_of_',num2str(length(SetPoints))))
 end
@@ -120,9 +120,6 @@ for i = 1:length(controls)
 end
 if isfield(modelParam,'Scope')
     LinMod.Scope = modelParam.Scope;
-end
-if isfield(modelParam,'NominalPower')
-    LinMod.NominalPower = modelParam.NominalPower;
 end
 LinMod.IC = modelParam.IC;
     
@@ -172,6 +169,8 @@ for i = 1:1:length(list)
 end
 
 function Out = CatenateSys(System, Tol)
+Out.ModelInput = System.ModelInput;
+Out.ModelOutput = System.ModelOutput;
 %removes states using balred and hankel singular values
 l = length(System.Model);
 m = round(l/2);

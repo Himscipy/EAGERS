@@ -8,10 +8,6 @@ n = block.zones;
 P = 101.325; %kPa, atmospheric pressure value
 Cp_H2O = 4.184; % kJ/kg H2O
 
-OOB = (Y(1:n)>40) | (Y(1:n)<15); %if something went wrong, use previous to avoid error
-Y(OOB) = Tags.(block.name).Temperature(OOB);
-Y(OOB) = Tags.(block.name).Humidity(OOB);
-
 %ambient air
 AmbientAir = makeAir(Inlet.Tamb,Inlet.Humidity,(1-Inlet.Damper)*Inlet.Flow,'abs');
 %recirculated air
@@ -85,11 +81,15 @@ if strcmp(string1,'Outlet')
 elseif strcmp(string1,'dY')
     h = mod(t/3600,24);
     rho = interp1(linspace(35,-25,13),[1.1463 1.1653 1.1849 1.2052 1.2262 1.2479 1.2704 1.2938 1.3180 1.3432 1.3693 1.3965 1.4248],Y(1:n));%Density of dry air (kg/m^3)
-    Occupancy = interp1(linspace(0,24,length(block.OccupancySchedule)+1),block.Occupancy*[block.OccupancySchedule(end),block.OccupancySchedule]*block.Area,h);
-    IntGains = Occupancy*120; %heat from occupants (W)
-    IntGains  = IntGains  + interp1(linspace(0,24,length(block.PlugSchedule)+1),block.PlugLoad*[block.PlugSchedule(end),block.PlugSchedule]*block.Area,h);%heat from plug loads (W)
-    IntGains  = IntGains  + interp1(linspace(0,24,length(block.LightingSchedule)+1),block.LightingLoad*[block.LightingSchedule(end),block.LightingSchedule]*block.Area,h);% Heat from lighting (W)
-    
+    Occupancy = zeros(1,n);
+    IntGains = zeros(1,n);
+    for i = 1:1:n
+        %% Occupancy and internal gains can be replaced with lookup functions of the smae name where the schedules are stored in SimSettings
+        Occupancy(1,i) = interp1(linspace(0,24,length(block.OccupancySchedule(i,:))+1),block.Occupancy(i)*[block.OccupancySchedule(i,end),block.OccupancySchedule(i,:)]*block.Area(i),h);
+        IntGains(1,i) = Occupancy(1,i)*120; %heat from occupants (W)
+        IntGains(1,i)  = IntGains(1,i)  + interp1(linspace(0,24,length(block.PlugSchedule(i,:))+1),block.PlugLoad(i)*[block.PlugSchedule(i,end),block.PlugSchedule(i,:)]*block.Area(i),h);%heat from plug loads (W)
+        IntGains(1,i)  = IntGains(1,i)  + interp1(linspace(0,24,length(block.LightingSchedule(i,:))+1),block.LightingLoad(i)*[block.LightingSchedule(i,end),block.LightingSchedule(i,:)]*block.Area(i),h);% Heat from lighting (W)
+    end
     OutFlow = makeAir(Y(1:n),Y(n+1:end),Inlet.Flow,'abs');
     Hout = (MassFlow(OutFlow) - 18*OutFlow.H2O).*enthalpyAir(OutFlow);
     Hin = Hsupply + Qheat;

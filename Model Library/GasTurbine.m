@@ -1,6 +1,7 @@
 %This builds a recouperated gas turbine model from the component blocks. 
 function Plant = GasTurbine
-Plant.NominalPower= 60;
+global SimSettings
+SimSettings.NominalPower= 60;
 
 NaturalGas.CH4 = 0.9;
 NaturalGas.CO = 0.04;
@@ -99,7 +100,7 @@ Plant.Components.Turb.TagInf = {'TET';'Power';'PR';'Nflow';'Beta';'NRPM';'Effici
 %% Controls (note: controls can have specification that depends upon a initialized variable of a component)
 Plant.Controls.Controller.type = 'ControlRecouperatedGasTurbine';
 Plant.Controls.Controller.name = 'Controller';
-Plant.Controls.Controller.NominalPower = Plant.NominalPower;
+Plant.Controls.Controller.NominalPower = SimSettings.NominalPower;
 Plant.Controls.Controller.TETset = 907.8;
 Plant.Controls.Controller.RPMdesign = 96000;
 Plant.Controls.Controller.GenEfficiency = 0.97;

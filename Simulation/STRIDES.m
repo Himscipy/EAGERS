@@ -3,6 +3,13 @@
 % It can also run a transient on that model
 % It can also create a linear model, and compare the response for the same transient
 global Model_dir SimSettings WaitBar modelParam LinMod IterCount TagInf TagFinal Tags
+%%clear variables
+LinMod =[];
+modelParam = [];
+TagInf = [];
+TagFinal = [];
+Tags = [];
+SimSettings = [];
 %% Load a Plant
 %%%%-- either load a plant and initialize it, or load a saved Plant & model Parameters
 %%%%-- Working options are: SOFCstack, SOECstack, SOFCsystem, GasTurbine
@@ -25,6 +32,7 @@ if J ==1
         BuildModel(Plant); %%Build & Initialize model
         J2 = center_menu('Save Model?','Yes','No');
         if J2 ==1
+            modelParam.SimSettings = SimSettings;
             [f,p]=uiputfile(fullfile(Model_dir,'Model Library','Saved Models',strcat(modelName,'.mat')),'Save Model As...');
             save([p f],'modelParam')
         end
@@ -41,24 +49,38 @@ elseif J ==2
     else
         modelName = list{s};
         load(fullfile(Model_dir,'Model Library','Saved Models',modelName));
+        SimSettings = modelParam.SimSettings;
     end
 end
 %% Create or load a set of linear models
-J2 = center_menu('Linear model option','Create new linearization','Load previously linearized plant','Skip linearization');
-if J2==1 && J ==3
-    disp('Error: You have not loaded a non-linear model to initialize')
-    J2 =3;
+nom = {};
+if ~isempty(SimSettings)
+    F = fieldnames(SimSettings);
+    for i = 1:1:length(F)
+        if strfind(F{i},'Nominal')
+            nom(1,end+1) = F(i);
+        end
+    end
+end
+if isempty(nom) || J ==3
+    J2 = 2; %load linearization
+else J2 = center_menu('Linear model option','Create new linearization','Load previously linearized plant','Skip linearization');
 end
 if J2 ==1
-    LinMod =[];
+    if length(nom)>1
+        A = center_menu('Choose Nominal Condition to Linearize',nom);
+        linParam = nom{A};
+    else linParam = nom{1};
+    end
     HSVtol = 0; %what should this be set to?
-    Prompt = {'Minimum Power (kW)','Maximum Power','# of Linear Models'};
-    DefaultVal = {num2str(0.2*modelParam.NominalPower),num2str(modelParam.NominalPower),'5'};
-    A= inputdlg(Prompt,'Specify range resolution of lineraization',1,DefaultVal);
+    Prompt = {'Minimum','Maximum','# of Linear Models'};
+    DefaultVal = {num2str(0.2*SimSettings.(linParam)),num2str(SimSettings.(linParam)),'5'};
+    A= inputdlg(Prompt,'Specify range and resolution of lineraization',1,DefaultVal);
     SetPoints = linspace(str2double(A(2)),str2double(A(1)),str2double(A(3)));
-    LinMod = CreateLinModel(SetPoints,HSVtol);
+    CreateLinModel(SetPoints,HSVtol);
     J3 = center_menu('Save Linearized Model?','Yes','No');
     if J3 ==1
+        LinMod.SimSettings = SimSettings;
         [f,p]=uiputfile(fullfile(Model_dir,'Model Library','Saved Linearizations',strcat(modelName,'.mat')),'Save Linearized Model As...');
         save([p f],'LinMod')
     end
@@ -73,73 +95,94 @@ elseif J2 ==2
         disp('Invalid selection. Exiting...')
     else
         load(fullfile(Model_dir,'Model Library','Saved Linearizations',list{s}));
+        if isempty(SimSettings)
+            SimSettings = LinMod.SimSettings;
+        end
         if isfield(LinMod,'NominalPower')
-            modelParam.NominalPower = LinMod.NominalPower;
-        else modelParam.NominalPower = 0;
+            SimSettings.NominalPower = LinMod.NominalPower;
         end
-        controls = fieldnames(modelParam.Controls);
-        for i = 1:1:length(controls)
-            modelParam.(controls{i}) = LinMod.Controls.(controls{i});
-        end
-        modelParam.IC = LinMod.IC;
     end
 elseif J2 ==3
     LinMod =[];
 end
 
-J3 = center_menu('Simulation Options','Simulate non-linear response','Simulate linear response','Simulate both linear and non-linear response','Neither');
-if (J3 ==2 || J3 == 3) && J2 ==3
-    disp('error you have not loaded a linearized model')
-    J3 = 0;
+if J2 ==3
+    if J ==1 || J ==2
+        J3 = center_menu('Simulation Options','Simulate non-linear response','Exit');
+        if J3 == 2;
+            J3 = 4;%exit
+        end
+    else J3 = 4; %no linear or non-linear model loaded, exit
+    end
+elseif J == 3
+    J3 = 2; %simulate linear response
+else
+    J3 = center_menu('Simulation Options','Simulate non-linear response','Simulate linear response','Simulate both linear and non-linear response','Neither');
 end
 if J3 ~=4 
     %set up the transient
     %first identify any controller input (lookup functions), let user pick ones with a schedule
     %then get the variables from that function and allow the user to edit them
-    SimSettings.RunTime = str2double(inputdlg('Test Duration (s)','Specify length of the transient simulation',1,{num2str(24*3600)}));
-    controls = fieldnames(modelParam.Controls);
+    A = (inputdlg('Test Duration (s)','Specify length of the transient simulation',1,{num2str(24*3600)}));
+    SimSettings.RunTime = eval(A{1});
+    if ~isempty(modelParam)
+        controls = fieldnames(modelParam.Controls);
+    elseif ~isempty(LinMod)
+        controls = fieldnames(LinMod.Controls);
+    end
     for i = 1:1:length(controls)
-        connections = modelParam.(controls{i}).connections;
-        for j = 1:1:length(connections)
-            r = strfind(connections{j},'.');
-            if ~isempty(connections{j}) && isempty(r)
-                [globvar,Prompt,DefaultVal] = feval(connections{j},0,'loadparam'); 
-                A = inputdlg(Prompt,strcat('Specify the transient imput parameters for the function',connections{j},'Any string will be evaluated, but must create vertical vectors of equal length.'),1,DefaultVal);
+        if ~isempty(modelParam)
+            Cont = modelParam.(controls{i});
+        elseif ~isempty(LinMod)
+            Cont = LinMod.Controls.(controls{i});
+        end
+        for j = 1:1:length(Cont.connections)
+            r = strfind(Cont.connections{j},'.');
+            if ~isempty(Cont.connections{j}) && ~isnumeric(Cont.connections{j}) && isempty(r) %must be a lookup function
+                [globvar,Prompt,DefaultVal] = feval(Cont.connections{j},0,'loadparam'); 
+                A = inputdlg(Prompt,strcat('Specify the transient imput parameters for the function',Cont.connections{j},'Any string will be evaluated, but must create vectors of equal length.'),1,DefaultVal);
                 for k = 1:1:length(globvar)
                     SimSettings.(globvar{k}) = eval(A{k});
                 end
             end
         end
         %% modify control terms
-        nC = length(modelParam.(controls{i}).Gain);
+        nC = length(Cont.Gain);
         Prompt = {};
         DefaultVal = {};
         for j = 1:1:nC
-            Prompt(end+1) = cellstr(strcat(modelParam.(controls{i}).description{j},'---Proportional'));
-            Prompt(end+1) = cellstr(strcat(modelParam.(controls{i}).description{j},'---Integral'));
-            DefaultVal(end+1) = cellstr(num2str(modelParam.(controls{i}).PropGain(j)));
-            DefaultVal(end+1) = cellstr(num2str(modelParam.(controls{i}).Gain(j)));
+            Prompt(end+1) = cellstr(strcat(Cont.description{j},'---Proportional'));
+            Prompt(end+1) = cellstr(strcat(Cont.description{j},'---Integral'));
+            DefaultVal(end+1) = cellstr(num2str(Cont.PropGain(j)));
+            DefaultVal(end+1) = cellstr(num2str(Cont.Gain(j)));
         end
         A= inputdlg(Prompt,'Specify the controller parameters',1,DefaultVal);
         for j = 1:1:nC
-            modelParam.(controls{i}).PropGain(j) = str2double(A(2*j-1));
-            modelParam.(controls{i}).Gain(j) = str2double(A(2*j));
+            Cont.PropGain(j) = str2double(A(2*j-1));
+            Cont.Gain(j) = str2double(A(2*j));
+        end
+        if ~isempty(modelParam)
+            modelParam.(controls{i}) = Cont;
+%             modelParam.Controls.(controls{i}) = Cont;
+        end
+        if ~isempty(LinMod)
+            LinMod.Controls.(controls{i}) = Cont;
         end
         % %SOFCstack
-        % modelParam.(controls{i}).Gain = [3e-3;1e-3;1e-2];
-        % modelParam.(controls{i}).PropGain = [1;1;1];
+        % Cont.Gain = [3e-3;1e-3;1e-2];
+        % Cont.PropGain = [1;1;1];
 
         %SOFCsystem
-        % modelParam.(controls{i}).Gain = [1e-2;1e-4;1e-2];
-        % modelParam.(controls{i}).PropGain = [.5;.1;1];
+        % Cont.Gain = [1e-2;1e-4;1e-2];
+        % Cont.PropGain = [.5;.1;1];
 
         % %SOECstack
-        % modelParam.(controls{i}).Gain = [3e-3;1e-3;1e-2];
-        % modelParam.(controls{i}).PropGain = [1;1;1];
+        % Cont.Gain = [3e-3;1e-3;1e-2];
+        % Cont.PropGain = [1;1;1];
 
         % %GasTurbine
-        % modelParam.(controls{i}).IntGain = [4e-4; 1e-2; 4e-2;];
-        % modelParam.(controls{i}).PropGain = [8e-3; 5e-0; .75;];
+        % Cont.IntGain = [4e-4; 1e-2; 4e-2;];
+        % Cont.PropGain = [8e-3; 5e-0; .75;];
     end 
 end
 

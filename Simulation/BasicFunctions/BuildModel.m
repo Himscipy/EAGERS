@@ -15,9 +15,21 @@ end
 n = 0; %counter for the states
 if isfield(Plant,'Scope')
     modelParam.Scope = Plant.Scope;
+    h = get(0,'children');
+    for i = 1:1:length(Plant.Scope)
+        if any(h==i)
+            close(i);
+        end
+    end
 end
 if isfield(Plant,'Plot')
     modelParam.Plot = Plant.Plot;
+    h = get(0,'children');
+    for i = length(Plant.Plot)+1:1:max(h)
+        if any(h==i)
+            close(i);
+        end
+    end
 end
 if isfield(Plant,'NominalPower')
     modelParam.NominalPower = Plant.NominalPower;
@@ -149,6 +161,12 @@ for i = 1:1:length(list2)
                     Change = max(New.(port).(f{j})~=Old.(port).(f{j}));
                 end
             end
+        elseif iscell(New.(port))
+            for j = 1:1:length(New.(port));
+                if New.(port){j}~=Old.(port){j}
+                    Change = 1;
+                end
+            end
         end
     end
 end
@@ -160,19 +178,23 @@ for i = 1:1:length(list)
     port = list{i};
     if ~isempty(modelParam.(block).(port).connected)%inlet connected to another outlet
         BlockPort = modelParam.(block).(port).connected{1};
-        r = strfind(BlockPort,'.');
-        if ~isempty(r)
-            connectedBlock = BlockPort(1:r(1)-1);
-            if strcmp(connectedBlock,'Tags')
-                connectedBlock = BlockPort(r(1)+1:r(2)-1);
-                connectedPort = BlockPort(r(2)+1:end);
-                InletBlock.(port) = Tags.(connectedBlock).(connectedPort);
-            else
-                connectedPort = BlockPort(r+1:end);
-                InletBlock.(port) = Outlet.(connectedBlock).(connectedPort);
-            end
+        if isnumeric(BlockPort);
+            InletBlock.(port) = BlockPort;
         else
-            InletBlock.(port) = feval(BlockPort,0);%finds value of look-up function at time = 0
+            r = strfind(BlockPort,'.');
+            if ~isempty(r)
+                connectedBlock = BlockPort(1:r(1)-1);
+                if strcmp(connectedBlock,'Tags')
+                    connectedBlock = BlockPort(r(1)+1:r(2)-1);
+                    connectedPort = BlockPort(r(2)+1:end);
+                    InletBlock.(port) = Tags.(connectedBlock).(connectedPort);
+                else
+                    connectedPort = BlockPort(r+1:end);
+                    InletBlock.(port) = Outlet.(connectedBlock).(connectedPort);
+                end
+            else
+                InletBlock.(port) = feval(BlockPort,0);%finds value of look-up function at time = 0
+            end
         end
     else
         InletBlock.(port) = modelParam.(block).(port).IC; %not connected to an outlet or tag

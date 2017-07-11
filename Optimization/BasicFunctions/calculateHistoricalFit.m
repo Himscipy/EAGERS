@@ -21,7 +21,7 @@ months = sort(unique(m));
 monthNames = cellstr({'Jan';'Feb';'Mar';'Apr';'May';'Jun';'Jul';'Aug';'Sep';'Oct';'Nov';'Dec';});
 dateDay = round(Plant.Data.Timestamp);
 BusDay = ones(length(dateDay),1);
-if license('test','Financial Toolbox')
+if license('test','Financial_Toolbox')
     for i = 1:1:length(dateDay)
         BusDay(i) = isbusday(dateDay(i),Plant.Data.Holidays,[1 0 0 0 0 0 1]);
     end
@@ -85,8 +85,12 @@ for s = 1:1:length(Outs)
                 Z2 = Z(H2non0);
                 Y2 = Y(H2non0);
                 X2 = X(H2non0);
-                Plant.Data.HistProf.(Outs{s})(k).(strcat(monthNames{months(i)},'WeekDay')) = fit([X1, Y1],Z1,'lowess');%'poly23');%'loess');
-                Plant.Data.HistProf.(Outs{s})(k).(strcat(monthNames{months(i)},'WeekEnd')) = fit([X2, Y2],Z2,'lowess');%'poly23');%'loess');
+                if license('test','Financial_Toolbox')
+                    Plant.Data.HistProf.(Outs{s})(k).(strcat(monthNames{months(i)},'WeekDay')) = fit([X1, Y1],Z1,'lowess');%'poly23');%'loess');
+                    Plant.Data.HistProf.(Outs{s})(k).(strcat(monthNames{months(i)},'WeekEnd')) = fit([X2, Y2],Z2,'lowess');%'poly23');%'loess');
+                else
+                    Plant.Data.HistProf.(Outs{s})(k).(monthNames{months(i)}) = fit([X1, Y1],Z1,'lowess');%'poly23');%'loess');
+                end
             end
         end
     end

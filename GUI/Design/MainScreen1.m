@@ -566,14 +566,14 @@ if strcmp(item,'Monthly Costs')
     handlesAll.axesMain = handles.axesMain;
     handlesAll.axesCumulative = handles.axesCumulative;
     handles = handlesAll; %workaround to pass both axes handles and showSys handles
-    for i = 1:1:length(testSystems)
-        if get(handles.(strcat('showSys',num2str(i))),'Value') == 1
+    for i_ts = 1:1:length(testSystems)
+        if get(handles.(strcat('showSys',num2str(i_ts))),'Value') == 1
             if get(handles.DesignDay,'Value') ==1
-                simTime = (testSystems(i).Data.Timestamp(1):1/24*Plant.optimoptions.Resolution:testSystems(i).Data.Timestamp(end))';
+                simTime = (testSystems(i_ts).Data.Timestamp(1):1/24*Plant.optimoptions.Resolution:testSystems(i_ts).Data.Timestamp(end))';
                 [~, m, ~] = datevec(simTime);
                 mUnique = unique(m); %months that be tested
-                dStep = (testSystems(i).Data.Timestamp(2) - testSystems(i).Data.Timestamp(1));
-                fullyear = min(365+1/24*testSystems(i).optimoptions.Resolution,(testSystems(i).Data.Timestamp(end)-testSystems(i).Data.Timestamp(1) + dStep));
+                dStep = (testSystems(i_ts).Data.Timestamp(2) - testSystems(i_ts).Data.Timestamp(1));
+                fullyear = min(365+1/24*testSystems(i_ts).optimoptions.Resolution,(testSystems(i_ts).Data.Timestamp(end)-testSystems(i_ts).Data.Timestamp(1) + dStep));
                 SiTest = [];
                 for j = 1:1:length(mUnique)
                     index = nonzeros((1:1:length(m))'.*(m==mUnique(j)));
@@ -581,20 +581,20 @@ if strcmp(item,'Monthly Costs')
                 end
                 interval = 1;
                 %% need to fix logical statements for when data is not 1 year
-                if isempty(testSystems(i).Design) || length(testSystems(i).Design.Timestamp)~=(fullyear*24/testSystems(i).optimoptions.Resolution) || any(testSystems(i).Design.Timestamp(SiTest+1)==0) %at least some design days have not been run
+                if isempty(testSystems(i_ts).Design) || length(testSystems(i_ts).Design.Timestamp)~=(fullyear*24/testSystems(i_ts).optimoptions.Resolution) || any(testSystems(i_ts).Design.Timestamp(SiTest+1)==0) %at least some design days have not been run
                     repeat = true;
                 else repeat = false;
                 end
             else
                 SiTest = 1;
                 interval = fullyear;
-                if isempty(testSystems(i).Design) || length(testSystems(i).Design.Timestamp)~=fullyear*24/testSystems(i).optimoptions.Resolution || any(testSystems(i).Design.Timestamp==0) %at least some design days have not been run
+                if isempty(testSystems(i_ts).Design) || length(testSystems(i_ts).Design.Timestamp)~=fullyear*24/testSystems(i_ts).optimoptions.Resolution || any(testSystems(i_ts).Design.Timestamp==0) %at least some design days have not been run
                     repeat = true;
                 else repeat = false;
                 end
             end
             if  repeat
-                Plant = testSystems(i);
+                Plant = testSystems(i_ts);
                 TestData = Plant.Data;
                 Xi = nnz(Plant.Data.Timestamp<=Plant.Data.Timestamp(1));
                 Xf = nnz(Plant.Data.Timestamp<=Plant.Data.Timestamp(1)+365);
@@ -613,8 +613,8 @@ if strcmp(item,'Monthly Costs')
                     Plant.Design.GeneratorState = zeros(length(Plant.Design.Timestamp),nG+nL);
                 end
                 RunPlanning(SiTest,interval);%specify starting indices Si, and duration of test in days
-                testSystems(i) = Plant;
-                [testSystems(i).Costs.Design,testSystems(i).Costs.NPC]  = DesignCosts(i);
+                testSystems(i_ts) = Plant;
+                [testSystems(i_ts).Costs.Design,testSystems(i_ts).Costs.NPC]  = DesignCosts(i_ts);
             end
         end
     end

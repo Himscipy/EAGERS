@@ -1,6 +1,7 @@
 %% SOFC stack fed with a pure O2 cathode. Indirect internal reforming manages the internal temperature
 function Plant = OxyFC
-Plant.NominalPower=300;%power in kW
+global SimSettings
+SimSettings.NominalPower= 300;
 
 Steam2Carbon = 2.0;
 Oxidant.O2 = 1;
@@ -102,7 +103,7 @@ Plant.Controls.Controller.Fuel = 'FC1.Fuel';
 Plant.Controls.Controller.Oxidant = 'FC1.Flow2Spec';
 Plant.Controls.Controller.OxidantUtilization = 'FC1.OxidantUtilization';
 Plant.Controls.Controller.Cells = 'FC1.Cells';
-Plant.Controls.Controller.NominalPower = Plant.NominalPower;
+Plant.Controls.Controller.NominalPower = SimSettings.NominalPower;
 Plant.Controls.Controller.InitConditions = {'FC1.Recirc.Anode';'FC1.Flow1.IC';'FC1.Current';}; %Recirculation, fuel flow rate, net current
 Plant.Controls.Controller.Gain = [0;1e-1;1e0];
 Plant.Controls.Controller.PropGain = [0;0;1];

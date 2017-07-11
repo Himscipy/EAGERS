@@ -1,5 +1,7 @@
 %% SOFC system with internal or external reformer
 function Plant = SOFCsystem
+global SimSettings
+SimSettings.NominalPower= 300;
 Reformer = 'external';
 % options are 'internal' for indirect internal reforming, 
 % 'direct' for  direct internal reforming, 
@@ -7,7 +9,6 @@ Reformer = 'external';
 % 'external' for a reformer with heat recovery from the oxidizer, and 
 % 'pox' partial oxidation
 
-Plant.NominalPower=300;
 Utilization = 0.8; %global fuel utilization
 Steam2Carbon = 2.5;
 
@@ -227,7 +228,7 @@ Plant.Controls.Controller.Fuel = Fuel;
 Plant.Controls.Controller.Cells = 'FC1.Cells';
 Plant.Controls.Controller.Utilization = 'FC1.FuelUtilization';
 Plant.Controls.Controller.InitialAnodeRecirc = 'FC1.Recirc.Anode';
-Plant.Controls.Controller.NominalPower = Plant.NominalPower;
+Plant.Controls.Controller.NominalPower = SimSettings.NominalPower;
 Plant.Controls.Controller.InitConditions = {'bypassValve.PercOpen';'Blower.NominalPower';'FC1.Current';}; %heater bypass, blower power, FC current  [note: fuel flow and recirculaion are calculated and are not states]
 % Plant.Controls.Controller.Gain = [1e-1;1e-3;1e-1];
 % Plant.Controls.Controller.PropGain = [.75;4;1];

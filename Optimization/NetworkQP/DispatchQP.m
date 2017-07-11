@@ -2,6 +2,7 @@ function [GenDisp,Feasible] = DispatchQP(QP,Locked)
 [m,n] = size(QP.organize);
 nG = length(QP.constCost);
 nS = m-1;
+
 QP = disableGenerators(QP,Locked,[]);%Disable generators here
 [GenSetting, cost,Feasible] = callQPsolver(QP);
 GenDisp = zeros(nS+1,n);
@@ -30,7 +31,7 @@ else
             GenDisp(t,i) = GenSetting(QP.organize{t,i});%%put solution back into recognizable format
         end
     end
-    GenDisp(abs(GenDisp)<1e-1) = 0;
+    GenDisp(abs(GenDisp)<1e-3) = 0;
 end
 % % Check charging state
 % global Plant

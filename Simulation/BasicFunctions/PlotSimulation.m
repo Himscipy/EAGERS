@@ -10,6 +10,7 @@ if isfield(modelParam,'Plot')
         block = tagName(1:r-1);
         tag = tagName(r+1:end);
         figure(i)
+        hold off
         if isfield(TagInf,block) && isfield(TagInf.(block),tag)
             plot(time,TagInf.(block).(tag))
             hold on

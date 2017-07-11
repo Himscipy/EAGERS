@@ -2,7 +2,8 @@
 %if design voltage is <1.3, then heat must be supplied via the anode side
 %if the design voltage is >1.3, then heat must be removed via the anode flow
 function Plant = SOECstack
-Plant.NominalPower=300;
+global SimSettings
+SimSettings.NominalPower= 300;
 
 Air.N2 = .79;
 Air.O2 = .21;
@@ -55,7 +56,7 @@ Plant.Controls.Controller.Steam = 'EC1.Flow1Spec';
 Plant.Controls.Controller.Cells = 'EC1.Cells';
 Plant.Controls.Controller.Utilization = 'EC1.H2O_Utilization';
 Plant.Controls.Controller.SteamTemperature = 973;
-Plant.Controls.Controller.NominalPower = Plant.NominalPower;
+Plant.Controls.Controller.NominalPower = SimSettings.NominalPower;
 Plant.Controls.Controller.InitConditions = {'EC1.Flow2.IC';'EC1.Current';}; %oxidant flow rate, net current
 Plant.Controls.Controller.Gain = [2e-4;];
 Plant.Controls.Controller.PropGain = [3];

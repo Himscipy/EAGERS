@@ -44,11 +44,15 @@ if length(varargin)==2 %% Have inlets connected, re-initialize
     n = block.zones;
     Cp_H2O = 4.184; % kJ/kg H2O
     h = mod(t/3600,24);
-    Occupancy = interp1(linspace(0,24,length(block.OccupancySchedule)+1),block.Occupancy*[block.OccupancySchedule(end),block.OccupancySchedule]*block.Area,h);
-    IntGains = Occupancy*120; %heat from occupants (W)
-    IntGains  = IntGains  + interp1(linspace(0,24,length(block.PlugSchedule)+1),block.PlugLoad*[block.PlugSchedule(end),block.PlugSchedule]*block.Area,h);%heat from plug loads (W)
-    IntGains  = IntGains  + interp1(linspace(0,24,length(block.LightingSchedule)+1),block.LightingLoad*[block.LightingSchedule(end),block.LightingSchedule]*block.Area,h);% Heat from lighting (W)
-    
+    Occupancy = zeros(1,n);
+    IntGains = zeros(1,n);
+    for i = 1:1:n
+        %% Occupancy and internal gains can be replaced with lookup functions of the smae name where the schedules are stored in SimSettings
+        Occupancy(1,i) = interp1(linspace(0,24,length(block.OccupancySchedule(i,:))+1),block.Occupancy(i)*[block.OccupancySchedule(i,end),block.OccupancySchedule(i,:)]*block.Area(i),h);
+        IntGains(1,i) = Occupancy(1,i)*120; %heat from occupants (W)
+        IntGains(1,i)  = IntGains(1,i)  + interp1(linspace(0,24,length(block.PlugSchedule(i,:))+1),block.PlugLoad(i)*[block.PlugSchedule(i,end),block.PlugSchedule(i,:)]*block.Area(i),h);%heat from plug loads (W)
+        IntGains(1,i)  = IntGains(1,i)  + interp1(linspace(0,24,length(block.LightingSchedule(i,:))+1),block.LightingLoad(i)*[block.LightingSchedule(i,end),block.LightingSchedule(i,:)]*block.Area(i),h);% Heat from lighting (W)
+    end
     %ambient air
     AmbientAir = makeAir(Inlet.Tamb,Inlet.Humidity,(1-Inlet.Damper)*Inlet.Flow,'abs');
     %recirculated air

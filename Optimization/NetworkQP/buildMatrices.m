@@ -472,11 +472,11 @@ for net = 1:1:length(networkNames)%Hydro Equalities
                         
                         states = Organize.States{dam};
                         %SOC of the reservior in 1000 acre ft.
-                        QP.Aeq((t-1)*t1Balances+hydroRowMass(dam)+ic,(t-1)*t1States+states(1)+ic) = 1/dt(t); %SOC at t in acre-ft / hours
+                        QP.Aeq((t-1)*t1Balances+hydroRowMass(dam)+ic,(t-1)*t1States+states(1)+ic) = -1/dt(t); %SOC at t in acre-ft / hours
                         if t==1
-                            QP.Aeq(hydroRowMass(dam)+ic,nnz(Organize.IC(1:dam))) = -1/dt(t);%SOC at IC
+                            QP.Aeq(hydroRowMass(dam)+ic,nnz(Organize.IC(1:dam))) = 1/dt(t);%SOC at IC
                         else
-                            QP.Aeq((t-1)*t1Balances+hydroRowMass(dam)+ic,(t-2)*t1States+states(1)+ic) = -1/dt(t); %SOC at t-1
+                            QP.Aeq((t-1)*t1Balances+hydroRowMass(dam)+ic,(t-2)*t1States+states(1)+ic) = 1/dt(t); %SOC at t-1
                         end
                         %Converting water flow to power
                         QP.Aeq((t-1)*t1Balances+hydroRowEnergy(dam)+ic,(t-1)*t1States+Organize.States{nG+nLcum+J}+ic)= Plant.Generator(dam).QPform.output.E; %Qdownriver * energy conversion factor (1000 ft^3/s to kW)

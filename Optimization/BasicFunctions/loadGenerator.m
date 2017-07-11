@@ -91,9 +91,9 @@ if isfield(Gen.Output,'Heat')&& Gen.Output.Heat(end)>0
     QPform.output.H = Hratio;
 else Hratio = [];
 end
-if license('test','Control_System_Toolbox')
+if license('test','Control_Toolbox')
     [dX_dt,SSi] = RampRateCalc(Gen.VariableStruct.StateSpace,LB,UB,Hratio);
-else dX_dt = Gen.Size/10; SSi = [];
+else dX_dt = Gen.Size/4; SSi = []; %assume 4 hours from off to peak
 end
 dX_dt = dX_dt/Plant.optimoptions.scaletime;    
 QPform.Ramp.A = [-1, 1; 1, -1;]; %-output1+output2=ramp up %output1-output2=-rampdown

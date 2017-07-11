@@ -51,7 +51,7 @@ if ~parallel
             elseif strcmp(Outs{s},'C')
                 req = QP.Organize.Balance.DistrictCool; %rows of Aeq associated with cool demand
             elseif strcmp(Outs{s},'W')
-                req = QP.Organize.Balance.Hydro; %rows of Aeq associated with cool demand
+                req = QP.Organize.Balance.Hydro; %rows of Aeq associated with hydro demand
             end
 
             if length(req) ==1 % The following definitely works with only 1 node

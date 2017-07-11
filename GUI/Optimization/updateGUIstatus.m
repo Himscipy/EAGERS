@@ -29,13 +29,13 @@ end
 if ~isempty(GENINDEX)
     if ~isempty(strfind(Plant.Generator(GENINDEX).Type,'Storage'))
         if strcmp(Plant.Generator(GENINDEX).Type,'Hydro Storage')
-            power = (GenDisp(2,Plant.Generator(GENINDEX).OpMatA.DownRiverSegment) - GenDisp(2,Plant.Generator(GENINDEX).OpMatA.SpillFlow))*Plant.Generator(GENINDEX).OpMatA.output.E;
+            power = (GenDisp(2,Plant.Generator(GENINDEX).QPform.DownRiverSegment) - GenDisp(2,Plant.Generator(GENINDEX).QPform.SpillFlow))*Plant.Generator(GENINDEX).QPform.output.E;
         else
-            power = (GenDisp(1,GENINDEX)- GenDisp(2,GENINDEX))/Plant.optimoptions.Resolution*Plant.Generator(GENINDEX).OpMatA.Stor.DischEff;
+            power = (GenDisp(1,GENINDEX)- GenDisp(2,GENINDEX))/Plant.optimoptions.Resolution*Plant.Generator(GENINDEX).QPform.Stor.DischEff;
         end
         set(handles.GenStatus1,'string', num2str(power));
         set(handles.GenStatus2text,'string','State-Of-Charge (%)');
-        SOC = GenDisp(2,GENINDEX)/Plant.Generator(GENINDEX).OpMatA.Stor.UsableSize*100;
+        SOC = GenDisp(2,GENINDEX)/Plant.Generator(GENINDEX).QPform.Stor.UsableSize*100;
         set(handles.GenStatus2,'string', num2str(SOC));
     else
         set(handles.GenStatus1,'string', num2str(GenDisp(2,GENINDEX)));
