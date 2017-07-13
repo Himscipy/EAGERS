@@ -1,7 +1,9 @@
 %% SOFC stack with basic control of fuel and air flow
 function Plant = SOFCstack
+global SimSettings
+SimSettings.NominalPower= 300;
 Reformer = 'external'; % options are 'internal' for indirect internal reforming, 'direct' for direct internal reforming, 'adiabatic' for external reforming using the heat from the anode (over-rides S2C ratio),'external' for an external reformer with heat captured from oxidixed anode exhaust, 'pox' partial oxidation reformer
-Plant.NominalPower=300;
+
 Utilization = 0.8; %global fuel utilization
 Steam2Carbon = 3.0;
 Air.N2 = .79;
@@ -166,16 +168,19 @@ Plant.Components.FC1.TagFinal = {'Power';'Current';'Voltage';'PENavgT';'Stackdel
 
 Plant.Controls.Controller.type = 'ControlFCstack';
 Plant.Controls.Controller.name = 'Controller';
-Plant.Controls.Controller.Target = {'FC1.TpenAvg';'FC1.deltaTStack';'FC1.Steam2Carbon'};
+Plant.Controls.Controller.Target = {'FC1.TpenAvg';'FC1.deltaTStack';'FC1.Steam2Carbon';SimSettings.NominalPower};
 Plant.Controls.Controller.Fuel = Fuel;
 Plant.Controls.Controller.Cells = 'FC1.Cells';
 Plant.Controls.Controller.Utilization = 'FC1.FuelUtilization';
-Plant.Controls.Controller.InitialAnodeRecirc = 'FC1.Recirc.Anode';
-Plant.Controls.Controller.InitConditions = {'FC1.StackCathTin';'FC1.Flow2.IC';'FC1.Current';}; %OxidentTemp, oxidant flow rate, net current
-Plant.Controls.Controller.Gain = [0;1e-3];%[1e-2;1e-3;1e-1];
-Plant.Controls.Controller.PropGain = [0;0]; %[1;0;1];
+Plant.Controls.Controller.AnodeRecirc = 'FC1.Recirc.Anode';
+Plant.Controls.Controller.OxidantTemp = 'FC1.StackCathTin';
+Plant.Controls.Controller.OxidantFlow = 'FC1.Flow2.IC';
+% Plant.Controls.Controller.NominalPower = SimSettings.NominalPower;
+% Plant.Controls.Controller.InitConditions = {'FC1.StackCathTin';'FC1.Flow2.IC';'FC1.Current';}; %OxidentTemp, oxidant flow rate, net current
+Plant.Controls.Controller.Gain = [1e-3];%[1e-2;1e-3;1e-1];
+Plant.Controls.Controller.PropGain = [0]; %[1;0;1];
 Plant.Controls.Controller.TagInf = {'OxidantTemp';'OxidantFlow';'FuelFlow';'Current';'Recirculation'};
-Plant.Controls.Controller.connections = {'FC1.MeasureTflow2';'Controller.OxidantTemp';'FC1.MeasureVoltage';};
+Plant.Controls.Controller.connections = {'';'';'';'PowerDemandLookup';'FC1.MeasureTflow2';'FC1.MeasureVoltage';};%empty connection remains equal to the target (set as IC for port)
 
 Plant.Scope = {'Controller.OxidantFlow';'Controller.Current';'Controller.OxidantTemp';}; %must be in TagInf of the corresponding block to work here
 Plant.Plot = [Plant.Scope;{'FC1.StackdeltaT';'FC1.PENavgT';'FC1.Voltage';'FC1.TcathOut';}];

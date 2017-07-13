@@ -11,9 +11,7 @@ nodeNames = cell(nodes,1);
 networkNames = fieldnames(Plant.Network);
 networkNames = networkNames(~strcmp('name',networkNames));
 networkNames = networkNames(~strcmp('Equipment',networkNames));
-subNet.lineNames = {};
-subNet.lineEff = [];   %added space for line effeciencies
-subNet.lineLimit = [];
+
 for i = 1:1:nG
     genNames(i,1) = {Plant.Generator(i).Name};
 end
@@ -22,92 +20,111 @@ for i = 1:1:nodes
 end
 for net = 1:1:length(networkNames)
     subNet.(networkNames{net}) = [];
+    subNet.lineNames.(networkNames{net}) = {};
+    subNet.lineLimit.(networkNames{net}) = [];
+    if strcmp(networkNames{net},'Hydro')
+        subNet.lineMinimum.(networkNames{net}) = []; 
+        subNet.lineTime.(networkNames{net}) = []; 
+    else
+        subNet.lineEff.(networkNames{net}) = [];   %added space for line effeciencies
+    end
     n = 0;
     for i = 1:1:nodes
         if ~isempty(Plant.Network(i).(networkNames{net}))
-            %first check and see if this node is already part of a subNet node
-            j = 0;
-            I = false;
-            while ~I && j<n
-                j = j+1;
-                I = any(strcmp(nodeNames(i),subNet.(networkNames{net})(j).nodes));
-            end
-            if I
-                %node was already pulled into a previus sub-net node because transmission factor was = 1
-            else
-                %add a new subnet node, and lump in any nodes with a perfect transmission factor
-                j = 0;
-                load = [];
-                nName = nodeNames(i); %name of current node
-                subNet.(networkNames{net})(n+1).nodes = nName;
-                subNet.(networkNames{net})(n+1).connections = {};
-                if isfield(Plant.Network(i).(networkNames{net}),'Load') && ~isempty(Plant.Network(i).(networkNames{net}).Load)%%note if there is a demand at this node
-                    load(end+1) = Plant.Network(i).(networkNames{net}).Load;
+            if strcmp(networkNames{net},'Hydro')
+                n = n+1;%add a new subnet node
+                subNet.Hydro(n).nodes = nodeNames(i);
+                subNet.Hydro(n).connections = Plant.Network(i).Hydro.connections;
+                subNet.Hydro(n).Load = [];
+                if ~isempty(Plant.Network(i).Hydro.connections)
+                    subNet.lineNames.Hydro(end+1,1) = strcat(nodeNames(i),'_Hydro_',Plant.Network(i).Hydro.connections);
+                else
+                    subNet.lineNames.Hydro(end+1,1) = strcat(nodeNames(i),'_Hydro_');%last dam before the sea
                 end
-                connect = Plant.Network(i).(networkNames{net}).connections;
-                TransEff = Plant.Network(i).(networkNames{net}).Trans_Eff;
-                TransLimit = Plant.Network(i).(networkNames{net}).Trans_Limit;
-                while j<length(connect)
-                    j = j+1;
-                    if TransEff(j) ==1 
-                        %perfect transmission, don't create a line, and pull in new connections from this adjacent node
-                        I = find(strcmp(connect{j},nodeNames),1,'first');
-                        c = 0;
-                        while c<length(Plant.Network(I).(networkNames{net}).connections)
-                            c = c+1;
-                            %make sure the connection doesn't already exist, and that the connection is not to a node already in this subNet node
-                            if nnz(strcmp(Plant.Network(I).(networkNames{net}).connections(c),{subNet.(networkNames{net})(n+1).connections;subNet.(networkNames{net})(n+1).nodes}))==0
-                                connect(end+1) = Plant.Network(I).(networkNames{net}).connections(c);
-                                TransEff(end+1) = Plant.Network(I).(networkNames{net}).Trans_Eff(c);
-                                TransLimit(end+1) = Plant.Network(I).(networkNames{net}).Trans_Limit(c);
-                            end
+                subNet.lineMinimum.Hydro(end+1,1) = Plant.Network(i).Hydro.InstreamFlow;
+                subNet.lineLimit.Hydro(end+1,1) = inf;
+                if ~isempty(Plant.Network(i).Hydro.connections)
+                    subNet.lineTime.Hydro(end+1,1) = Plant.Network(i).Hydro.Time2Sea - Plant.Network(strcmp(Plant.Network(i).Hydro.connections,nodeNames)).Hydro.Time2Sea; %transit time from current river to downstream river
+                else subNet.lineTime.Hydro(end+1,1) = Plant.Network(i).Hydro.Time2Sea; %no downstream dam
+                end
+                equip = Plant.Network(i).Equipment;
+                for j = 1:1:length(equip)
+                    s = strfind(equip{j},'.');
+                    I = find(strcmp(equip{j}(s+1:end),genNames),1,'first');
+                    if ~isempty(I)
+                        if strcmp(Plant.Generator(I).Type,'Hydro Storage') && Plant.Generator(I).VariableStruct.MaxSpillFlow>0
+                            subNet.lineNames.Hydro(end+1,1) = (strcat(nodeNames(i),'_Spill_'));
+                            subNet.lineMinimum.Hydro(end+1,1) = 0;
+                            subNet.lineTime.Hydro(end+1,1) = 0;
+                            subNet.lineLimit.Hydro(end+1,1) = Plant.Generator(I).VariableStruct.MaxSpillFlow;
                         end
-                        subNet.(networkNames{net})(n+1).nodes(end+1) = nodeNames(I,1); %add this node to the current subNet node
-                        if isfield(Plant.Network(I).(networkNames{net}),'Load') && ~isempty(Plant.Network(I).(networkNames{net}).Load)%%note if there is a demand at this node
-                            load(end+1) = Plant.Network(I).(networkNames{net}).Load;
-                        end
-                    else
-                        %imperfect transmission, need a line, make sure one does not already exist
-                        I = false;
-                        k = 0;
-                        while ~I && k<n
-                            k = k+1;
-                            I = any(strcmp(connect{j},subNet.(networkNames{net})(k).nodes));
-                        end
-                        if ~I %connected node has not yet been collected into any subNet node
-                            I = true;
-                            pconnected = connect{j};
-                        else
-                            pconnected = subNet.(networkNames{net})(k).nodes{1}; %name of subNet Node connected to (may not be same as connect if nodes were agregated)
-                            reverseName = strcat(pconnected,'_',networkNames{net},'_',nName{1});
-                            if ismember(reverseName,subNet.lineNames)
-                                I = false; %don't create new line (it already exists)
-                            end
-                        end
-                        if I
-                            subNet.lineNames(end+1,1) = {strcat(nName{1},'_',networkNames{net},'_',pconnected)};
-                            subNet.lineEff(end+1,1) = TransEff(j);
-                            subNet.lineLimit(end+1,1) = TransLimit(j);
-                        end
-                        subNet.(networkNames{net})(n+1).connections(end+1) = {pconnected};
                     end
                 end
-                subNet.(networkNames{net})(n+1).Load = load;
-                n = n+1;
+            else
+                %first check and see if this node is already part of a subNet node
+                %nodes with perfect transmission are agregated into the first node in the nameList that they have perfect 2-way connection with
+                [I,aNodes,connect] = agregatedNode(nodeNames{i},networkNames{net});
+                if I == i
+                    n = n+1;%add a new subnet node
+                    subNet.(networkNames{net})(n).nodes = aNodes;
+                    subNet.(networkNames{net})(n).connections = {};
+                    subNet.(networkNames{net})(n).Load = [];
+                    for j = 1:1:length(aNodes)
+                        I = find(strcmp(aNodes{j},nodeNames),1,'first');
+                        if isfield(Plant.Network(I).(networkNames{net}),'Load') && ~isempty(Plant.Network(I).(networkNames{net}).Load)%%note if there is a demand at this node
+                            subNet.(networkNames{net})(n).Load(end+1) = Plant.Network(I).(networkNames{net}).Load;
+                        end
+                    end
+                    for j=1:1:length(connect(:,1))
+                        if ~any(strcmp(connect{j,2},aNodes))%imperfect transmission, need a line
+                            [J, cNodes,~] = agregatedNode(connect{j,2},networkNames{net});
+                            pconnected = nodeNames{J};%name of node that the connected node will be agregated into if it is perfectly connected to any others
+                            subNet.(networkNames{net})(n).connections(end+1) = {pconnected};
+                            if J>i %new line connection, otherwise this was handled previously in the reverse direction
+                                [eff, limit,dir] = lineProp(subNet.(networkNames{net})(n).nodes,cNodes,networkNames{net});%find forward & reverse transmission efficiency & limit
+                                if strcmp(dir,'none') %no transmission (zero efficiency)
+                                    %do nothing
+                                else
+                                    if strcmp(dir,'reverse')
+                                        subNet.lineNames(end+1,1) = (strcat(pconnected,'_',networkNames{net},'_',nodeNames(i)));
+                                    else
+                                        subNet.lineNames.(networkNames{net})(end+1,1) = (strcat(nodeNames(i),'_',networkNames{net},'_',pconnected));
+                                    end
+                                    if strcmp(dir,'dual')
+                                        subNet.lineEff.(networkNames{net})(end+1,1:2) = eff;
+                                        subNet.lineLimit.(networkNames{net})(end+1,1:2) = limit;
+                                    else
+                                        subNet.lineEff.(networkNames{net})(end+1,1) = eff;
+                                        subNet.lineLimit.(networkNames{net})(end+1,1) = limit;
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
             end
         end
     end
     %identify equipment at each subNet node
+    if strcmp(networkNames{net},'Electrical')
+        out = 'E';
+    elseif strcmp(networkNames{net},'DistrictHeat')
+        out = 'H';
+    elseif strcmp(networkNames{net},'DistrictCool')
+        out = 'C';
+    elseif strcmp(networkNames{net},'Hydro')
+        out = 'W';
+    end
     for m = 1:1:n
+        gen = [];
         for k = 1:1:length(subNet.(networkNames{net})(m).nodes)
-            i = find(strcmp(subNet.(networkNames{net})(m).nodes(k),nodeNames),1,'first');
-            gen = [];
+            i = find(strcmp(subNet.(networkNames{net})(m).nodes{k},nodeNames),1,'first');
             equip = Plant.Network(i).Equipment;
             for j = 1:1:length(equip)
                 s = strfind(equip{j},'.');
                 I = find(strcmp(equip{j}(s+1:end),genNames),1,'first');
                 if ~isempty(I)
-                    if ~isempty(Plant.Generator(I).OpMatA.states) || strcmp(Plant.Generator(I).Source,'Renewable') %avoid things like gas utility with no states
+                    if isfield(Plant.Generator(I).QPform.output,out) && (~isempty(Plant.Generator(I).QPform.states) || strcmp(Plant.Generator(I).Source,'Renewable')) %avoid things like gas utility with no states
                         gen(end+1) = I;
                     end
                 else disp(strcat('error, generator is not in library',equip{j}))
@@ -118,3 +135,127 @@ for net = 1:1:length(networkNames)
     end
 end
 Plant.subNet = subNet;
+%identify upper bound for utility states
+for i = 1:1:nG
+    if strcmp(Plant.Generator(i).Type,'Utility') && isfield(Plant.Generator(i).QPform.output,out)
+        %identify the network
+        out = char(fieldnames(Plant.Generator(i).QPform.output));
+        if strcmp(out,'E')
+            net = 'Electrical';
+        elseif strcmp(out,'H')
+            net = 'DistrictHeat';
+        elseif strcmp(out,'C')
+            net = 'DistrictCool';
+        elseif strcmp(out,'W')
+            net = 'Hydro';
+        end
+        Plant.Generator(i).QPform.X.ub = max(Plant.Data.Demand.(out));%max Purchase
+        if isfield(Plant.Generator(i).QPform,'Y')
+            maxSellback = 0;
+            for m = 1:1:length(subNet.(net))
+                equip = subNet.(net)(m).Equipment;
+                for j = 1:1:length(equip)
+                    s = strfind(equip{j},'.');
+                    I = find(strcmp(equip{j}(s+1:end),genNames),1,'first');
+                    if isfield(Plant.Generator(I).QPform.output,out) && (~isempty(Plant.Generator(I).QPform.states) || strcmp(Plant.Generator(I).Source,'Renewable')) %avoid things like gas utility with no states
+                        maxSellback = maxSellback + Plant.Generator(I).Size*Plant.Generator(I).QPform.output.(out);
+                    end
+                end
+            end
+            Plant.Generator(i).QPform.Y.ub = maxSellback;
+        end
+    end
+end  
+
+function [TransEff,TransLimit,dir] = lineProp(node1,node2,net)
+%find the transmission efficiency and limit between 2 connected nodes
+%if one of the nodes is perfectly connected to another node there may be
+%more than one pathway connecting them, so agregate the lines
+global Plant
+nodes = length(Plant.Network);
+nodeNames = cell(nodes,1);
+for i = 1:1:nodes
+    nodeNames(i) = {Plant.Network(i).name};
+end
+TransEff = zeros(1,2);
+TransLimit = zeros(1,2);
+node1 = unique(node1);
+node2 = unique(node2);
+for j = 1:1:length(node1)
+    I = find(strcmp(node1{j},nodeNames),1,'first');
+    for k = 1:1:length(node2)
+        J = find(strcmp(node2{k},nodeNames),1,'first');
+        %forward direction efficieny & limit
+        c = find(strcmp(node2{k},Plant.Network(I).(net).connections));
+        if ~isempty(c)
+            if isinf(Plant.Network(I).(net).Trans_Limit(c)) || TransLimit(1,1)==0
+                TransEff(1,1) = Plant.Network(I).(net).Trans_Eff(c);
+                TransLimit(1,1) = Plant.Network(I).(net).Trans_Limit(c);
+            else
+                weight = Plant.Network(I).(net).Trans_Limit(c)/(TransLimit(1,1) + Plant.Network(I).(net).Trans_Limit(c));
+                TransEff(1,1) = (1-weight)*TransEff(1,1) + weight*Plant.Network(I).(net).Trans_Eff(c);%weighted efficiency of 2 concurrent lines
+                TransLimit(1,1) = TransLimit(1,1) + Plant.Network(I).(net).Trans_Limit(c);
+            end
+        end
+        %reverse direction efficiency and limit
+        c = find(strcmp(node1{j},Plant.Network(J).(net).connections));
+        if ~isempty(c)
+            if isinf(Plant.Network(J).(net).Trans_Limit(c)) || TransLimit(1,2)==0
+                TransEff(1,2) = Plant.Network(J).(net).Trans_Eff(c);
+                TransLimit(1,2) = Plant.Network(J).(net).Trans_Limit(c);
+            else
+                weight = Plant.Network(J).(net).Trans_Limit(c)/(TransLimit(1,2) + Plant.Network(J).(net).Trans_Limit(c));
+                TransEff(1,2) = (1-weight)*TransEff(1,2) + weight*Plant.Network(J).(net).Trans_Eff(c);
+                TransLimit(1,2) = TransLimit(1,2) + Plant.Network(J).(net).Trans_Limit(c);
+            end
+        end
+    end
+end 
+if TransEff(1,1)==0 && TransEff(1,2)>0
+    dir = 'reverse';
+    TransEff = TransEff(1,2);
+    TransLimit = TransLimit(1,2);
+elseif TransEff(1,1)>0 && TransEff(1,2)==0
+    dir = 'forward';
+    TransEff = TransEff(1,1);
+    TransLimit = TransLimit(1,1);
+elseif TransEff(1,1)==0 && TransEff(1,2)==0
+    dir = 'none';
+    TransEff = [];
+    TransLimit = [];
+else
+    dir = 'dual';
+end
+
+function [I,aNodes,connect] = agregatedNode(node,net)
+%Any connected nodes with perfect bi-directional transfer are agregated into the node earliest in the list of names
+%This function finds which node in the list that is
+global Plant
+nodes = length(Plant.Network);
+nodeNames = cell(nodes,1);
+for i = 1:1:nodes
+    nodeNames(i) = {Plant.Network(i).name};
+end
+I = find(strcmp(node,nodeNames),1,'first');
+aNodes = {node};
+connect = cell(length(Plant.Network(I).(net).connections),2);
+connect(:,2) = Plant.Network(I).(net).connections;
+connect(:,1) = {node};
+[m,~] = size(connect);
+k = 0;
+while k<m
+    k = k+1;
+    if ~any(strcmp(connect(k,2),aNodes))%avoid looking at connections to nodes already in agregated node
+        [TransEff, ~,~] = lineProp(connect(k,1),connect(k,2),net);
+        if ~isempty(TransEff) && length(TransEff) == 2 && min(TransEff)==1 && ~strcmp(net,'Hydro')%perfect bi-directional energy transfer, hydro lines are river segments, can't agregate
+            J = find(strcmp(connect{k,2},nodeNames),1,'first');
+            aNodes(end+1) = nodeNames(J);%add to list of agregated nodes
+            %%add additional connections to check
+            c = length(Plant.Network(J).(net).connections);
+            connect(end+1:end+c,1) = connect(k,2);
+            connect(end-c+1:end,2) = Plant.Network(J).(net).connections;
+            I = min(J,I); %keep lowest number (index in list of node names
+        end
+        [m,~] = size(connect);
+    end
+end

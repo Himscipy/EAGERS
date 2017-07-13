@@ -1,7 +1,6 @@
-function scaleCost = updateGeneratorCost(Time)
-global Plant DateSim %DateSim: Current time in the simulation.
-nS = length(Time);
-Timestamp = Time/24 + DateSim;
+function scaleCost = updateGeneratorCost(Timestamp)
+global Plant
+nS = length(Timestamp);
 Source = {zeros(length(Plant.Generator),1)};
 for i = 1:1:length(Plant.Generator)
     if strcmp(Plant.Generator(i).Type,'Utility')
@@ -26,13 +25,13 @@ for i = 1:1:length(Plant.Generator)
                     Rate(t) = utility.WinRates(utility.WinRateTable(day(t),H(t),1));
                 end
             end
-            Utility(i).Rate = Rate;
+            Utility(i).Rate = Rate;%rate in $/kWh
         elseif strcmp(Source(i), 'NG')
             %gas utility set up as daily prices for a leap year
             date1 = datevec(utility.Timestamp(1));
             year1 = date1(1);
             datenow = datevec(Timestamp);
-            interpDate = datenum([year1*ones(length(Time),1), datenow(:,2:end)]);
+            interpDate = datenum([year1*ones(length(Timestamp),1), datenow(:,2:end)]);
             Utility(i).Rate = interp1(utility.Timestamp,utility.Rate,interpDate)/293.1; %interpolate & convert gas rate from $/MMBTU to $/kWh;
         else
             %% need to add something for district heating/cooling
@@ -44,10 +43,10 @@ scaleCost = zeros(nS,length(Plant.Generator));
 for i = 1:1:length(Plant.Generator)
     if strcmp(Plant.Generator(i).Type,'Utility')
         scaleCost(:,i) = Utility(i).Rate;
-    elseif ~isfield(Plant.Generator(i).OpMatB,'Stor') && ~strcmp(Plant.Generator(i).Source, 'Renewable')
+    elseif isempty(strfind(Plant.Generator(i).Type,'Storage')) && ~strcmp(Plant.Generator(i).Source, 'Renewable') && ~strcmp(Plant.Generator(i).Type, 'Hydro') %not storage or renewable or hydro
         Uindex = find(strcmp(Source,Plant.Generator(i).Source),1);
         if isempty(Uindex)
-           scaleCost(:,i) = 1; %no utility (don't scale costs)
+            scaleCost(:,i) = 1; %no utility (don't scale costs)
         else
             scaleCost(:,i) = Utility(Uindex).Rate;
         end

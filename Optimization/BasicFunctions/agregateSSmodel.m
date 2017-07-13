@@ -3,18 +3,18 @@ function agregateSSmodel(SSi)
 %SSmpc: the agregated state-space model seen by the MPC, the time may be scaled by both Tmpc and scaletime.
 %GenSSindex: A matrix used to relate the primary and secondary states of each generator to their index in the states of the agregated state space model SSmpc.
 %GendX: The derivative of the generator state, assume steady initial condition and GendX=0. Need to keep track of this for MPC
-global Plant GenSSindex SSmpc GendX
+global Plant GenSSindex %SSmpc GendX
 nG = length(Plant.Generator);
 GenSSindex = [];
-include = {'CHP Generator', 'Electric Generator','Chiller','Heater'};
 gen = [];
 nCHP = 0;
-for i=1:1:nG
-    if ismember(cellstr(Plant.Generator(i).Type),include)
-        gen(end+1) = i;
-        Outs = fieldnames(Plant.Generator(i).OpMatB.output);
-        if ismember('H',Outs) && ismember('E',Outs)
-            nCHP = nCHP+1;
+if ~isempty(SSi)
+    for i=1:1:length(SSi)
+        if ~isempty(SSi(i).A)
+            gen(end+1) = i;
+            if isfield(Plant.Generator(i).QPform.output,'H') && isfield(Plant.Generator(i).QPform.output,'E')
+                nCHP = nCHP+1;
+            end
         end
     end
 end
@@ -48,10 +48,12 @@ for i = 1:1:length(gen)
     end 
     r = r+1; %input #
 end
-SS.A = A;
-SS.B = B;
-SS.C = C;
-SS.D = zeros(length(C(:,1)),length(B(1,:)));
-SS.Dt = 1; %sampling time
-SSmpc = changeTimestep(SS,Plant.optimoptions.Tmpc,1);
-GendX = zeros(1,nG);
+if ~isempty(SSi)
+    SS.A = A;
+    SS.B = B;
+    SS.C = C;
+    SS.D = zeros(length(C(:,1)),length(B(1,:)));
+    SS.Dt = 1; %sampling time
+    % SSmpc = changeTimestep(SS,Plant.optimoptions.Tmpc,1);
+    % GendX = zeros(1,nG);
+end

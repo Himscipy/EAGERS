@@ -60,8 +60,8 @@ guidata(hObject, handles);
 
 % UIWAIT makes WelcomeScreen wait for user response (see UIRESUME)
 % uiwait(handles.figure1);
-global Model_dir
-
+global Model_dir testSystems
+testSystems =[];
 handles.output = hObject;
 guidata(hObject, handles);
 movegui(gcf,'center');
@@ -93,11 +93,18 @@ function pushbuttonDesign_Callback(hObject, eventdata, handles)
 % hObject    handle to pushbuttonDesign (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
-global Model_dir Plant
+global Model_dir Plant 
 % Load file that was selected from the popupmenu
 projList = get(handles.ProjectList,'String');
 projName = projList{get(handles.ProjectList,'Value')};
 load(fullfile(Model_dir,'Plant',projName));
+allFieldNames = {'Name';'Data';'Generator';'optimoptions';'Network';'Costs';'subNet';'OpMatA';'OpMatB';'OneStep';'Online';'Design';'Dispatch';'Predicted';'RunData';'Baseline'};
+fNames = fieldnames(Plant);
+for i = 1:1:length(allFieldNames)
+    if ~any(strcmp(allFieldNames{i},fNames))
+        Plant.(allFieldNames{i}) = [];
+    end
+end
 close
 %run(fullfile(Model_dir,'GUI','Design','MainScreen1.m'))
 MainScreen1
@@ -130,6 +137,13 @@ global Model_dir Plant
 list=get(handles.ProjectList,'string');
 plantSel = list{get(handles.ProjectList,'value')};
 load(fullfile(Model_dir,'Plant',plantSel))
+allFieldNames = {'Name';'Data';'Generator';'optimoptions';'Network';'Costs';'subNet';'OpMatA';'OpMatB';'OneStep';'Online';'Design';'Dispatch';'Predicted';'RunData';'Baseline'};
+fNames = fieldnames(Plant);
+for i = 1:1:length(allFieldNames)
+    if ~any(strcmp(allFieldNames{i},fNames))
+        Plant.(allFieldNames{i}) = [];
+    end
+end
 close
 %open new GUI
 DISPATCH
@@ -137,13 +151,13 @@ DISPATCH
 % --- Executes on button press in NewProject.
 function NewProject_Callback(hObject, eventdata, handles)
 global Plant
-Name = char(inputdlg('Specify the project name','Project Name', 1,{'MicroGrid_01'}));
-hCreate = dialog('Visible','off');
-Plant = plant(Name);
+Plant = [];
+Plant.Name = char(inputdlg('Specify the project name','Project Name', 1,{'MicroGrid_01'}));
+% hCreate = dialog('Visible','off');
+% CreateNewProject(Plant.Name,hCreate)
+% waitfor(hCreate)
 close
 MainScreen1
-% CreateNewProject(Name,hCreate)
-% waitfor(hCreate)
 
 
 % --- Executes on selection change in popupmenuProject.

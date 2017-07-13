@@ -1,6 +1,7 @@
 %This builds a recouperated gas turbine model from the component blocks. 
 function Plant = GasTurbine
-Plant.NominalPower= 60;
+global SimSettings
+SimSettings.NominalPower= 60;
 
 NaturalGas.CH4 = 0.9;
 NaturalGas.CO = 0.04;
@@ -42,7 +43,7 @@ Plant.Components.Shaft.Length = .1;%Shaft Length
 Plant.Components.Shaft.Radius = 0.15;
 Plant.Components.Shaft.Density = 800;%Shaft Density
 Plant.Components.Shaft.connections = {'Turb.PowerTurb';'Comp.Work';'Controller.GenPower'};
-Plant.Components.Shaft.TagInf = {'RPM';};
+Plant.Components.Shaft.TagInf = {'RPM';'SteadyPower';};
 
 Plant.Components.HX1.type = 'HeatExchanger';
 Plant.Components.HX1.name = 'HX1';
@@ -99,16 +100,16 @@ Plant.Components.Turb.TagInf = {'TET';'Power';'PR';'Nflow';'Beta';'NRPM';'Effici
 %% Controls (note: controls can have specification that depends upon a initialized variable of a component)
 Plant.Controls.Controller.type = 'ControlRecouperatedGasTurbine';
 Plant.Controls.Controller.name = 'Controller';
-Plant.Controls.Controller.NominalPower = Plant.NominalPower;
-Plant.Controls.Controller.TETset = 907.8;
+Plant.Controls.Controller.Target = {SimSettings.NominalPower;907.8};%power and TET
 Plant.Controls.Controller.RPMdesign = 96000;
+Plant.Controls.Controller.SteadyPower = 'Shaft.Steady_Power';
 Plant.Controls.Controller.GenEfficiency = 0.97;
 Plant.Controls.Controller.EstimatedEfficiency = .25;
-Plant.Controls.Controller.Fuel = Plant.Components.FuelSource.InitialComposition;
+Plant.Controls.Controller.Fuel = Fuel;
 Plant.Controls.Controller.Gain = [4e-4; 4e-3; 5e-4;];%gain for TET control, Power control, fuel control
 Plant.Controls.Controller.PropGain = [8e-3; 2e-0; .3;];
-Plant.Controls.Controller.TagInf = {'TET';'GenPower';'FuelFlow';'SteadyPower';'Efficiency'};
-Plant.Controls.Controller.connections = {'Turb.TET';'Shaft.RPM';'Turb.PowerTurb';'Comp.Work';};
+Plant.Controls.Controller.TagInf = {'TET';'GenPower';'FuelFlow';'Efficiency'};
+Plant.Controls.Controller.connections = {'PowerDemandLookup';'';'Turb.TET';'Shaft.RPM';};
 
 Plant.Scope = {'Controller.FuelFlow';'Shaft.RPM';'Comp.MassFlow';'Turb.TET';}; %must be in TagInf of the corresponding block to work here
 Plant.Plot = [Plant.Scope;{'Controller.Efficiency';'Controller.GenPower';}];

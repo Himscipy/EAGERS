@@ -1,14 +1,8 @@
+function Plant = GasTurbine_Hyper
 %This builds a recouperated gas turbine model from the component blocks. 
-global Plant PowerDemand PowerTime RunTime Model_dir Ru
-Plant = [];
+global SimSettings
+SimSettings.NominalPower= 60;
 
-Ru = 8.314; %Universal gas constant (kJ/kmol*K)
-Model_dir=strrep(which('GasTurbine_Hyper.m'),fullfile('Models','GasTurbine_Hyper.m'),'');
-AddPaths()
-Plant.NetPower= 60;
-RunTime =1e6;
-PowerDemand    = [1 1 0.9 1 1]*Plant.NetPower;
-PowerTime = linspace(0,RunTime,length(PowerDemand));
 NaturalGas.CH4 = 0.9;
 NaturalGas.CO = 0.04;
 NaturalGas.CO2 = 0.04;
@@ -37,11 +31,11 @@ Plant.Components.AirSource.connections = {'';'';'';};
 Plant.Components.FuelSource.type = 'Source';
 Plant.Components.FuelSource.name = 'FuelSource';
 Plant.Components.FuelSource.InitialComposition = Fuel;
-Plant.Components.FuelSource.connections = {'';'';'GTcontrolH.FuelFlow';};
+Plant.Components.FuelSource.connections = {'';'';'Controller.FuelFlow';};
 
 Plant.Components.BleedValve.type = 'LeakageValve';
 Plant.Components.BleedValve.name = 'BleedValve';
-Plant.Components.BleedValve.connections = {'GTcontrolH.BleedValve','Comp.Flow'};
+Plant.Components.BleedValve.connections = {'Controller.BleedValve','Comp.Flow'};
 Plant.Components.BleedValve.leakVal = 0.12;
 
 Plant.Components.ColdBypass.type = 'Valve3Way';
@@ -49,7 +43,7 @@ Plant.Components.ColdBypass.name = 'ColdBypass';
 Plant.Components.ColdBypass.InitialFlowIn = Air;
 Plant.Components.ColdBypass.InitialFlowIn.T = 500;
 Plant.Components.ColdBypass.PercOpen = 0; %INITIAL valve position
-Plant.Components.ColdBypass.connections = {'GTcontrolH.ColdBypass','BleedValve.Flow1'};
+Plant.Components.ColdBypass.connections = {'Controller.ColdBypass','BleedValve.Flow1'};
 
 Plant.Components.Comp.type = 'Compressor';
 Plant.Components.Comp.name = 'Comp';
@@ -69,7 +63,7 @@ Plant.Components.Shaft.RPMinit = 96000;
 Plant.Components.Shaft.Length = .1;%Shaft Length
 Plant.Components.Shaft.Radius = 0.15;
 Plant.Components.Shaft.Density = 800;%Shaft Density
-Plant.Components.Shaft.connections = {'Turb.PowerTurb';'Comp.Work';'GTcontrolH.GenPower'};
+Plant.Components.Shaft.connections = {'Turb.PowerTurb';'Comp.Work';'Controller.GenPower'};
 Plant.Components.Shaft.TagInf = {'RPM';};
 
 Plant.Components.HX1.type = 'HeatExchanger';
@@ -95,7 +89,7 @@ Plant.Components.HotBypass.name = 'HotBypass';
 Plant.Components.bypassValve.InitialFlowIn = Air;
 Plant.Components.bypassValve.InitialFlowIn.T = 800;
 Plant.Components.bypassValve.PercOpen = 0; %INITIAL valve position
-Plant.Components.HotBypass.connections = {'GTcontrolH.HotBypass','HX1.ColdOut'};
+Plant.Components.HotBypass.connections = {'Controller.HotBypass','HX1.ColdOut'};
 
 Plant.Components.SOFCVol.type = 'PlenumVolume';
 Plant.Components.SOFCVol.name = 'SOFCVol';
@@ -124,30 +118,19 @@ Plant.Components.Turb.connections = {'Mix1.Outlet';'HX1.HotPin';'Shaft.RPM'};
 Plant.Components.Turb.TagInf = {'TET';'Power';'PR';'Nflow';'NRPM';'Efficiency';'MassFlow'};
 
 %% Controls (note: controls can have specification that depends upon a initialized variable of a component)
-Plant.Controls.GTcontrolH.type = 'Control_Hyper';
-Plant.Controls.GTcontrolH.name = 'GTcontrolH';
-Plant.Controls.GTcontrolH.NominalPower = Plant.NetPower;
-Plant.Controls.GTcontrolH.TETset = 907.8;
-Plant.Controls.GTcontrolH.RPMdesign = 96000;
-Plant.Controls.GTcontrolH.GenEfficiency = 0.97;
-Plant.Controls.GTcontrolH.EstimatedEfficiency = .25;
-Plant.Controls.GTcontrolH.Fuel = Plant.Components.FuelSource.InitialComposition;
-Plant.Controls.GTcontrolH.IntGain = [3e-3; 4e-3; 0; 0;];%Load control, Fuel control, Cold Bypass control, Hot Bypass valve control
-Plant.Controls.GTcontrolH.PropGain = [1e-2; 2e-0; 0; 0;];
-Plant.Controls.GTcontrolH.TagInf = {'TET';'GenPower';'FuelFlow';'SteadyPower';'Efficiency'};
-Plant.Controls.GTcontrolH.connections = {'Turb.TET';'Shaft.RPM';'Turb.PowerTurb';'Comp.Work';};%needs leakage valve interp value
+Plant.Controls.Controller.type = 'Control_Hyper';
+Plant.Controls.Controller.name = 'Controller';
+Plant.Controls.Controller.Target = {SimSettings.NominalPower; 907.8;};
+Plant.Controls.Controller.RPMdesign = 96000;
+Plant.Controls.Controller.SteadyPower = 'Shaft.Steady_Power';
+Plant.Controls.Controller.GenEfficiency = 0.97;
+Plant.Controls.Controller.EstimatedEfficiency = .25;
+Plant.Controls.Controller.Fuel = Fuel;
+Plant.Controls.Controller.IntGain = [3e-3; 4e-3; 0; 0; 0;];%Load control, Fuel control, Cold Bypass control, Hot Bypass valve control, bleed control
+Plant.Controls.Controller.PropGain = [1e-2; 2e-0; 0; 0; 0;];
+Plant.Controls.Controller.TagInf = {'TET';'GenPower';'FuelFlow';'Efficiency'};
+Plant.Controls.Controller.connections = {'PowerDemandLookup';'';'Turb.TET';'Shaft.RPM';};
 
-Plant.Plot = {'GTcontrolH.Efficiency';'Turb.MassFlow';'Shaft.RPM';'Turb.TET';'GTcontrolH.GenPower';'GTcontrolH.FuelFlow';};
-%% run initialization
-global modelParam
-tic; BuildModel([]); disp(strcat('Time to build/initialize model:',num2str(toc),' seconds'));
-
-CTmap(modelParam.Comp,modelParam.Turb)
-%modify control terms
-modelParam.GTcontrol.IntGain = [5e-3; 4e-3; 7e-3; 1e-6];
-modelParam.GTcontrol.PropGain = [3e-1; 2e-0; 2e-1; 0];
-
-% Run Model
-tic; [T, Y] = RunModel; disp(strcat('Time to run model:',num2str(toc),' seconds'));
-
-CTmap(modelParam.Comp,modelParam.Turb)
+Plant.Scope = {'Controller.FuelFlow';'Shaft.RPM';'Comp.MassFlow';'Turb.TET';}; %must be in TagInf of the corresponding block to work here
+Plant.Plot = {Plant.Scope;'Controller.Efficiency';'Turb.MassFlow';'Shaft.RPM';'Turb.TET';'Controller.GenPower';'Controller.FuelFlow';};
+end%Ends function GasTurbine_Hyper

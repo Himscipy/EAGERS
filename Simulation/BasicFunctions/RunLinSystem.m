@@ -1,5 +1,8 @@
 function dX = RunLinSystem(t,X)
-%Finds dX's of a system with LinMod's array of LTI models
+%% RunLinSystem: Simulates the transinet response by interpolating a set 
+%% of linear time invarient models that have the same states
+%% The model is linear, but it can be connected to any controller function
+%% The inputs are time (in seconds) and X, the vector of states
 global Tags LinMod IterCount TagInf WaitBar SimSettings Jcount
 if isempty(TagInf) %create TagInf Fields
     TagInf.Time(1) =0;
@@ -18,7 +21,7 @@ elseif IterCount>1 && t<TagInf.Time(IterCount)
 end
 TagInf.Time(IterCount,1) = t;
 
-InterpVal = X(1); 
+InterpVal = X(LinMod.InterpState); 
 c= [0 0 0 0];
 n = length(LinMod.InterpVec);
 if LinMod.InterpVec(1) > LinMod.InterpVec(2) %values of InterpVec are decreasing
@@ -137,27 +140,27 @@ global LinMod Tags TagInf IterCount
 
 n=0; %counter for inlet values
 m = 0; %counter for outlet values
-list = fieldnames(Tags.ModelInput);
+list = fieldnames(LinMod.ModelInput);
 for b = 1:1:length(list)
     block = list{b};
-    ports = fieldnames(Tags.ModelOutput.(block)); %outputs of model (inputs to controller)
+    ports = fieldnames(LinMod.ModelOutput.(block)); %outputs of model (inputs to controller)
     for j = 1:1:length(ports)
         port = ports{j};
-        if isstruct(Tags.ModelOutput.(block).(port))
-            f = fieldnames(Tags.ModelOutput.(block).(port));
+        if isstruct(LinMod.ModelOutput.(block).(port))
+            f = fieldnames(LinMod.ModelOutput.(block).(port));
             for k = 1:1:length(f)
-                s = Tags.ModelOutput.(block).(port).(f{k});
+                s = LinMod.ModelOutput.(block).(port).(f{k});
                 Inlet.(port).(f{k}) = ModelOut(n+1:n+length(s));
                 n = n+length(s);
             end
         else
-            s = Tags.ModelOutput.(block).(port);
+            s = LinMod.ModelOutput.(block).(port);
             Inlet.(port) = ModelOut(n+1:n+length(s));
             n = n+length(s);
         end
     end
     Out = feval(LinMod.Controls.(block).type,t,ControlStates,Inlet,LinMod.Controls.(block),'Outlet');
-    ports = fieldnames(Tags.ModelInput.(block)); %inputs to model (outputs from controller)
+    ports = fieldnames(LinMod.ModelInput.(block)); %inputs to model (outputs from controller)
     for j = 1:1:length(ports)
         port = ports{j};
         if isstruct(Out.(port))

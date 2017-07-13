@@ -1,12 +1,24 @@
-function [Forecast, Renewable] = updateForecast(Date,Time)
+function Forecast = updateForecast(Date,Data)
 %Date is the date number, Time is a vector of times (in hours)
 global Plant
-Forecast =  CreateForecast(Date,Time);
-nS = length(Time);
+switch Plant.optimoptions.forecast
+    case 'SNIWPE'
+        Forecast = CreateSNIWPEForecast(Date,Data);
+    case 'ARIMA'
+        Forecast = CreateARIMAForecast(Date,Data);
+    case 'NeuralNet'
+        %%
+    case 'Surface'
+        Forecast = SurfaceForecast(Date,Data);
+    case 'Perfect'
+        Forecast = GetCurrentData(Date);
+end
+
+nS = length(Date);
 nG = length(Plant.Generator);
-Renewable = zeros(nS,nG);
+Forecast.Renewable = zeros(nS,nG);
 for i = 1:1:nG
     if strcmp(Plant.Generator(i).Source,'Renewable') && Plant.Generator(i).Enabled
-        Renewable(:,i) = RenewableOutput(Plant.Generator(i).VariableStruct,Date,Time,'Predict');
+        Forecast.Renewable(:,i) = RenewableOutput(i,Date,'Predict');
     end
 end
