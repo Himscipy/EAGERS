@@ -8,6 +8,7 @@ if strcmp(string1,'Outlet')
     Out.Steady_Power = Inlet.WTurbine - Inlet.WCompressor;
     Out.RPM = Y(1)*60/(2*pi);%Converts from Radians per Second to RPM
     Tags.(block.name).RPM = Out.RPM;
+    Tags.(block.name).SteadyPower = Out.Steady_Power;
 elseif strcmp(string1,'dY')
     dY = 0*Y;
     ShaftPower = (Inlet.WTurbine - Inlet.WCompressor - Inlet.Gen_Power)*1000;%all units should be W

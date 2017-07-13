@@ -1,5 +1,5 @@
-%This builds a recouperated gas turbine model from the component blocks. 
 function Plant = GasTurbine_Hyper
+%This builds a recouperated gas turbine model from the component blocks. 
 global SimSettings
 SimSettings.NominalPower= 60;
 
@@ -120,16 +120,17 @@ Plant.Components.Turb.TagInf = {'TET';'Power';'PR';'Nflow';'NRPM';'Efficiency';'
 %% Controls (note: controls can have specification that depends upon a initialized variable of a component)
 Plant.Controls.Controller.type = 'Control_Hyper';
 Plant.Controls.Controller.name = 'Controller';
-Plant.Controls.Controller.NominalPower = SimSettings.NominalPower;
-Plant.Controls.Controller.TETset = 907.8;
+Plant.Controls.Controller.Target = {SimSettings.NominalPower; 907.8;};
 Plant.Controls.Controller.RPMdesign = 96000;
+Plant.Controls.Controller.SteadyPower = 'Shaft.Steady_Power';
 Plant.Controls.Controller.GenEfficiency = 0.97;
 Plant.Controls.Controller.EstimatedEfficiency = .25;
-Plant.Controls.Controller.Fuel = Plant.Components.FuelSource.InitialComposition;
-Plant.Controls.Controller.IntGain = [3e-3; 4e-3; 0; 0;];%Load control, Fuel control, Cold Bypass control, Hot Bypass valve control
-Plant.Controls.Controller.PropGain = [1e-2; 2e-0; 0; 0;];
-Plant.Controls.Controller.TagInf = {'TET';'GenPower';'FuelFlow';'SteadyPower';'Efficiency'};
-Plant.Controls.Controller.connections = {'Turb.TET';'Shaft.RPM';'Turb.PowerTurb';'Comp.Work';'PowerDemandLookup';};%needs leakage valve interp value
+Plant.Controls.Controller.Fuel = Fuel;
+Plant.Controls.Controller.IntGain = [3e-3; 4e-3; 0; 0; 0;];%Load control, Fuel control, Cold Bypass control, Hot Bypass valve control, bleed control
+Plant.Controls.Controller.PropGain = [1e-2; 2e-0; 0; 0; 0;];
+Plant.Controls.Controller.TagInf = {'TET';'GenPower';'FuelFlow';'Efficiency'};
+Plant.Controls.Controller.connections = {'PowerDemandLookup';'';'Turb.TET';'Shaft.RPM';};
 
 Plant.Scope = {'Controller.FuelFlow';'Shaft.RPM';'Comp.MassFlow';'Turb.TET';}; %must be in TagInf of the corresponding block to work here
-Plant.Plot = [Plant.Scope;'Controller.Efficiency';'Turb.MassFlow';'Shaft.RPM';'Turb.TET';'Controller.GenPower';'Controller.FuelFlow';};
+Plant.Plot = {Plant.Scope;'Controller.Efficiency';'Turb.MassFlow';'Shaft.RPM';'Turb.TET';'Controller.GenPower';'Controller.FuelFlow';};
+end%Ends function GasTurbine_Hyper

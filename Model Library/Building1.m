@@ -1,4 +1,6 @@
 function Plant = Building1
+global SimSettings
+SimSettings.NominalTemperature = 22;
 %% Components
 Plant.Components.Building.type = 'Building'; %fresh air 
 Plant.Components.Building.name = 'Building';
@@ -18,7 +20,7 @@ Plant.Components.Building.connections = {'HVAC.Flow';'HVAC.Tset';'HVAC.Damper';'
 %% Controls (note: controls can have specification that depends upon a initialized variable of a component)
 Plant.Controls.HVAC.type = 'HVAC_VSF';
 Plant.Controls.HVAC.name = 'HVAC';
-Plant.Controls.HVAC.Target = [22.2; 11;]; %target dry bulb and dew point temperatures 
+Plant.Controls.HVAC.Target = {22.2; 11;}; %target dry bulb and dew point temperatures 
 Plant.Controls.HVAC.Tolerance = 0.5; % deviation in temperature that triggers chiller
 Plant.Controls.HVAC.ColdAirSetpoint = 12.8; %minimum temperature of cooling air supplied by HVAC
 Plant.Controls.HVAC.HotAirSetpoint = 40; %temperature of heating air supplied by HVAC when furnace is on
@@ -32,7 +34,8 @@ Plant.Controls.HVAC.Entrainment = 40; % percent of fresh air
 Plant.Controls.HVAC.Gain = 1e-2;%gain for T control
 Plant.Controls.HVAC.PropGain = 10;
 Plant.Controls.HVAC.TagInf = {'FlowRate';'Temperature';};
-Plant.Controls.HVAC.connections = {'Building.Temperature';'Building.Humidity';'Building.Mode';};
+Plant.Controls.HVAC.connections = {'';'';'Building.Temperature';'Building.Humidity';'Building.Mode';};
 
 Plant.Scope = {'Building.Temperature';}; %must be in TagInf of the corresponding block to work here
 Plant.Plot = [Plant.Scope;{'Building.Humidity';'HVAC.Temperature';'HVAC.FlowRate';}];
+end%Ends function Building1

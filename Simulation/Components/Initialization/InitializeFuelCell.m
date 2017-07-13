@@ -360,6 +360,7 @@ elseif length(varargin)==2 %% Have inlets connected, re-initialize
     block.MeasureTflow1.IC = block.T.Flow1(block.Flow1Dir(:,end));
     block.HumidifiedFuelTemp.IC = block.T.FuelMix;
 end
+end %Ends function InitializeFuelCell
 
 function [Flow1,Flow2,block,Inlet] = solveInitCond(Inlet,block,firstSolve)
 global F
@@ -447,6 +448,7 @@ Flow2 = FCin2Out(block.T.Flow2,Inlet.Flow2,block.Flow2Dir, block.FCtype,block.Ce
 block.Pfactor1 = NetFlow(Inlet.Flow1)/block.Flow1Pdrop;
 block.Pfactor2 = NetFlow(Inlet.Flow2)/block.Flow2Pdrop;
 block = Set_IC(block,Flow1,Flow2,Flow3);
+end %Ends function solveInitCond
 
 function Inlet = InletFlow(block,Inlet) %only used 1st time through initialization (before we know what is connected to inlet
 % Anode
@@ -485,6 +487,7 @@ switch block.FCtype
             end
         end
 end
+end %Ends function InletFlow
 
 function block = Set_IC(block,Flow1,Flow2,Flow3)
 global Ru
@@ -559,7 +562,7 @@ block.tC(n+1) = (block.Vol_flow1*block.nodes*block.Cells); %pressure
 block.tC(n+2) = (block.Vol_flow2*block.nodes*block.Cells);  %pressure
 block.Scale(n+1) = block.Flow1_Pinit;%pressure
 block.Scale(n+2) = block.Flow2_Pinit;%pressure
-
+end %Ends function Set_IC
 
 function dY = DynamicTemps(t,Y,block,Flow1,Flow2,Flow3,Inlet)
 global F Ru
@@ -670,3 +673,4 @@ switch block.Reformer
     case 'internal'
         dY(1+5*nodes:6*nodes)= (block.RefSpacing*QT(1+5*nodes:6*nodes) + Hin3 - Hout3)./tC(1+5*nodes:6*nodes);  %Fuel Reformer Channels
 end
+end %Ends function DynamicTemps

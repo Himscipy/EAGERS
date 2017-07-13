@@ -66,7 +66,7 @@ while any(blockSteady)
                 Co = 'Controls';
             else Co = 'Components';
             end
-            Outlet.(block) = feval(modelParam.(Co).(block).type,t,Y(modelParam.(block).States),Inlet.(block),modelParam.(block),'Outlet');
+            Outlet.(block) = feval(modelParam.(Co).(block).type,t,Y(modelParam.(Co).(block).States),Inlet.(block),modelParam.(Co).(block),'Outlet');
             blockSteady(blockCount) = true;
         else
             blockSteady(blockCount) = false;
@@ -79,15 +79,15 @@ dY = 0*Y;
 list = [CompNames;controls;];
 for k = 1:1:length(list) %run components with states %% record All tags
     block = list{k};
-    if nnz(strcmp(CompNames,block))>0
-        Co = 'Components';
-    else Co = 'Controls';
+    if any(strcmp(controls,block))
+        Co = 'Controls';
+    else Co = 'Components';
     end
-    if ~isempty(modelParam.(block).IC)%blocks with states
-        dY(modelParam.(block).States) = feval(modelParam.(Co).(block).type,t,Y(modelParam.(block).States),Inlet.(block),modelParam.(block),'dY');
+    if ~isempty(modelParam.(Co).(block).IC)%blocks with states
+        dY(modelParam.(Co).(block).States) = feval(modelParam.(Co).(block).type,t,Y(modelParam.(Co).(block).States),Inlet.(block),modelParam.(Co).(block),'dY');
     end
-    if isfield(modelParam.(block),'TagInf')
-        tagNames = modelParam.(block).TagInf;
+    if isfield(modelParam.(Co).(block),'TagInf')
+        tagNames = modelParam.(Co).(block).TagInf;
         for i = 1:1:length(tagNames)
             if isnumeric(Tags.(block).(tagNames{i}))
                 TagInf.(block).(tagNames{i})(IterCount,:)=Tags.(block).(tagNames{i});
@@ -100,8 +100,8 @@ for k = 1:1:length(list) %run components with states %% record All tags
         end
     end
     if t== SimSettings.RunTime
-        if isfield(modelParam.(block),'TagFinal')
-            tagNames = modelParam.(block).TagFinal;
+        if isfield(modelParam.(Co).(block),'TagFinal')
+            tagNames = modelParam.(Co).(block).TagFinal;
             for i = 1:1:length(tagNames)
                 if isnumeric(Tags.(block).(tagNames{i}))
                     TagFinal.(block).(tagNames{i})(IterCount,:)=Tags.(block).(tagNames{i});
@@ -149,6 +149,7 @@ end
 if WaitBar.Show == 1
     waitbar(x,WaitBar.Handle,Text);
 end
+end %ends function RunBlocks
 
 function Change = HasInletChanged(New,Old)
 Change = false;
@@ -191,6 +192,7 @@ else
         end
     end
 end
+end %ends function HasInletChanged
 
 function C = comparePort(Old,New)
 tolerance = eps;%1e-14;
@@ -203,15 +205,21 @@ if  abs(Error) >= tolerance;
     C = true;
 else C = false;
 end
+end %ends function comparePort
 
 function InletBlock = RefreshInlet(block,t)
 global modelParam LinMod Outlet Tags
-list = modelParam.(block).InletPorts;
+
 controls = fieldnames(modelParam.Controls);
+if any(strcmp(controls,block))
+    Co = 'Controls';
+else Co = 'Components';
+end
+list = modelParam.(Co).(block).InletPorts;
 for i = 1:1:length(list)
     port = list{i};
-    if ~isempty(modelParam.(block).(port).connected)%inlet connected to another outlet
-        BlockPort = char(modelParam.(block).(port).connected);
+    if ~isempty(modelParam.(Co).(block).(port).connected)%inlet connected to another outlet
+        BlockPort = char(modelParam.(Co).(block).(port).connected);
         if isnumeric(BlockPort);
             InletBlock.(port) = BlockPort;
         else
@@ -226,7 +234,12 @@ for i = 1:1:length(list)
                     connectedPort = BlockPort(r+1:end);
                     if isfield(Outlet.(connectedBlock),connectedPort)
                         InletBlock.(port) = Outlet.(connectedBlock).(connectedPort);
-                    else InletBlock.(port) = modelParam.(connectedBlock).(connectedPort).IC;
+                    else
+                        if any(strcmp(controls,connectedBlock))
+                            Co2 = 'Controls';
+                        else Co2 = 'Components';
+                        end
+                        InletBlock.(port) = modelParam.(Co2).(connectedBlock).(connectedPort).IC;
                     end
                 end
                 %%forced interupt between controller and component ports when linearizing model
@@ -245,9 +258,10 @@ for i = 1:1:length(list)
             LinMod.ModelOutput.(block).(port) = InletBlock.(port);%collect outputs of model (inputs to controller)
         end
     else
-        InletBlock.(port) = modelParam.(block).(port).IC;
+        InletBlock.(port) = modelParam.(Co).(block).(port).IC;
     end
 end
+end %ends function RefreshInlet
 
 function yesNan = IsInletNaN(Inlet)
 %% use to help find algebraic loops during initialization
@@ -271,3 +285,4 @@ for i = 1:1:length(list2)
         end
     end
 end
+end %ends function yesNan

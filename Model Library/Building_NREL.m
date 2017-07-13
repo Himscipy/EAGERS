@@ -1,4 +1,6 @@
 function Plant = Building_NREL
+global SimSettings
+SimSettings.NominalTemperature = 22;
 %% Components
 Plant.Components.Building.type = 'BuildingNREL'; %fresh air 
 Plant.Components.Building.name = 'Building';
@@ -19,13 +21,14 @@ Plant.Components.Building.connections = {'HVAC.massflow';'HVAC.temperature';'Amb
 %% Controls (note: controls can have specification that depends upon a initialized variable of a component)
 Plant.Controls.HVAC.type = 'HVAC_NREL';
 Plant.Controls.HVAC.name = 'HVAC';
-Plant.Controls.HVAC.Target = 22.2; %target dry bulb temperature 
+Plant.Controls.HVAC.Target = {22.2}; %target dry bulb temperature 
 Plant.Controls.HVAC.COP = 3.5;
 Plant.Controls.HVAC.Entrainment = 40; % percent of fresh air
 Plant.Controls.HVAC.Gain = 1e-2;%gain for T control
 Plant.Controls.HVAC.PropGain = 10;
 Plant.Controls.HVAC.TagInf = {'FlowRate';'Temperature';};
-Plant.Controls.HVAC.connections = {'Building.Temperature';'Building.Mode';'AmbientTemperature';};
+Plant.Controls.HVAC.connections = {'';'Building.Temperature';'Building.Mode';'AmbientTemperature';};
 
 Plant.Scope = {'Building.Temperature';}; %must be in TagInf of the corresponding block to work here
 Plant.Plot = [Plant.Scope;{'Building.WallTemperature';'HVAC.Temperature';'HVAC.FlowRate';}];
+end%Ends function BuildingNREL

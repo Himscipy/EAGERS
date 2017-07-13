@@ -32,18 +32,36 @@ if length(varargin)==1 % first initialization
     for i = 1:1:length(block.spec)
         Flow.(block.spec{i}) = block.InitialComposition.(block.spec{i})*block.FlowDesign/Mmass;
     end
-    Cp = SpecHeat(Flow);
+    
+%     %ideal gas calculations
+%     Cp = SpecHeat(Flow);
+%     H1 = enthalpy(Flow);
+%     T2s = Flow.T*(block.Pdesign)^((1.4 -1)/1.4);
+%     Flow.T = T2s;
+%     Cp = (SpecHeat(Flow)+Cp)/2;
+%     Gamma = Cp/(Cp - Ru);
+%     T2s = Flow.T*(block.Pdesign)^((Gamma -1)/Gamma);
+%     Flow.T = T2s;
+%     H2s = enthalpy(Flow);  
+%     H2a = H1+(H2s-H1)/block.PeakEfficiency;
+%     block.NominalPower = H2a - H1;
+    
+    %% engineering calculation (https://www.pdblowers.com/admin/uploads/rotary_positive_displacement_blowr_calculations_1.pdf)
+    cfm = NetFlow(Flow)*1000*22.4*0.0353147*60; %convert kmol/s * 1000 mol/kmol * 22.4L/mol *0.0353147 ft^3/L * 60s/min
+    psi = (block.Pdesign-1)*14.7;
+    BHP = cfm*psi*.00436; 
+    block.NominalPower = BHP/block.PeakEfficiency*0.7457;%converting horsepower to kW
     H1 = enthalpy(Flow);
-    T2s = Flow.T*(block.Pdesign)^((1.4 -1)/1.4);
-    Flow.T = T2s;
-    Cp = (SpecHeat(Flow)+Cp)/2;
+    Cp = SpecHeat(Flow);
     Gamma = Cp/(Cp - Ru);
-    T2s = Flow.T*(block.Pdesign)^((Gamma -1)/Gamma);
-    Flow.T = T2s;
-    H2s = enthalpy(Flow);  
-    H2a = H1+(H2s-H1)/block.PeakEfficiency;
-    block.NominalPower = H2a - H1;
-       
+    Flow.T = Flow.T*(block.Pdesign)^((Gamma -1)/Gamma);
+    error = 1;
+    while abs(error)>1e-4
+        H2 = enthalpy(Flow);
+        error = (H1+block.NominalPower - H2)/(Cp*NetFlow(Flow));
+        Flow.T = Flow.T + error;
+    end
+
     %% set up dM/dP*Pout - C*Pin = mdot
     i = find(block.RPM>=1,1);
     j = ceil(length(block.NflowGMap(i,:))/2);
@@ -155,6 +173,7 @@ if length(varargin)==2 %% Have inlets connected, re-initialize
     Tags.(block.name).MassFlow = MassFlow(Flow);
     Tags.(block.name).Temperature = Flow.T;
 end
+end %Ends function InitializeBlower
 
 function [Power,Flow,block] = OpPoint(nRPM,Inlet,block)
 global Ru
@@ -184,14 +203,33 @@ Flow.T = Inlet.Temperature;
 for i = 1:1:length(block.spec)
     Flow.(block.spec{i}) = Inlet.Species.(block.spec{i})*NetFlowOut;
 end
-Cp = SpecHeat(Flow);
+
+% %Ideal gas calculation
+% Cp = SpecHeat(Flow);
+% H1 = enthalpy(Flow);
+% T2s = Flow.T*(Inlet.Pout/Inlet.Pin)^((1.4 -1)/1.4);
+% Flow.T = T2s;
+% Cp = (SpecHeat(Flow)+Cp)/2;
+% Gamma = Cp/(Cp - Ru);
+% T2s = Flow.T*(Inlet.Pout/Inlet.Pin)^((Gamma -1)/Gamma);
+% Flow.T = T2s;
+% H2s = enthalpy(Flow);  
+% H2a = H1+(H2s-H1)/Eff;
+% Power = (H2a - H1);
+
+%% engineering calculation (https://www.pdblowers.com/admin/uploads/rotary_positive_displacement_blowr_calculations_1.pdf)
+cfm = NetFlow(Flow)*1000*22.4*0.0353147*60; %convert kmol/s * 1000 mol/kmol * 22.4L/mol *0.0353147 ft^3/L * 60s/min
+psi = (Inlet.Pout - Inlet.Pin)*14.7/101.325;
+BHP = cfm*psi*.00436; 
+Power = BHP/Eff*0.7457;%converting horsepower to kW
 H1 = enthalpy(Flow);
-T2s = Flow.T*(Inlet.Pout/Inlet.Pin)^((1.4 -1)/1.4);
-Flow.T = T2s;
-Cp = (SpecHeat(Flow)+Cp)/2;
+Cp = SpecHeat(Flow);
 Gamma = Cp/(Cp - Ru);
-T2s = Flow.T*(Inlet.Pout/Inlet.Pin)^((Gamma -1)/Gamma);
-Flow.T = T2s;
-H2s = enthalpy(Flow);  
-H2a = H1+(H2s-H1)/Eff;
-Power = (H2a - H1);
+Flow.T = Flow.T*(Inlet.Pout/Inlet.Pin)^((Gamma -1)/Gamma);
+error = 1;
+while abs(error)>1e-4
+    H2 = enthalpy(Flow);
+    error = (H1+Power - H2)/(Cp*NetFlow(Flow));
+    Flow.T = Flow.T + error;
+end
+end %Ends function OpPoint

@@ -64,7 +64,7 @@ Plant.Components.Blower.PeakEfficiency = 0.65;
 Plant.Components.Blower.Tdesign = 300;%Design temp(K)
 Plant.Components.Blower.RPMdesign = 30000;%Design RPM
 Plant.Components.Blower.FlowDesign = 2;%design flow rate(kg/Sec)
-Plant.Components.Blower.Pdesign = 1.25;%design pressure ratio
+Plant.Components.Blower.Pdesign = 1.2;%design pressure ratio
 Plant.Components.Blower.connections = {'';'';'';'HX1.ColdPin';'Controller.Blower';}; %no species or temperature connection, stick to IC
 Plant.Components.Blower.TagInf = {'Flow';'NRPM';'Power';'PR';'Nflow';'Temperature';'MassFlow';'Eff'};
 
@@ -185,7 +185,7 @@ Plant.Components.FC1.Reformer = Reformer;
 Plant.Components.FC1.direction = 'counterflow'; % 'coflow', or 'counterflow' or 'crossflow'
 Plant.Components.FC1.ClosedCathode = 0; %0 means air or some excess flow of O2 in the cathode used as primary means of temerature control (initializations hold to design fuel utilization), 1 means closed end cathode, or simply a fixed oxygen utilization, cooling is done with excess fuel, and the design voltage is met during initialization
 Plant.Components.FC1.CoolingStream = 'cathode'; % choices are 'anode' or 'cathode'. Determines which flow is increased to reach desired temperature gradient.
-Plant.Components.FC1.PressureRatio = 1.2;
+Plant.Components.FC1.PressureRatio = 1.1;
 Plant.Components.FC1.columns = 4;
 Plant.Components.FC1.rows = 4;
 Plant.Components.FC1.RatedStack_kW = 300; %Nominal Stack Power in kW
@@ -200,8 +200,8 @@ Plant.Components.FC1.SpecificationValue = 450; % power density specified in mW/c
 Plant.Components.FC1.deltaTStack = 70; %temperature difference from cathode inlet to cathode outlet
 Plant.Components.FC1.TpenAvg = 1023;% 750 C, average electrolyte operating temperature
 Plant.Components.FC1.FuelUtilization = Utilization; %fuel utilization (net hydrogen consumed/ maximum hydrogen produced with 100% Co and CH4 conversion
-Plant.Components.FC1.Flow1Pdrop = 2; %design anode pressure drop
-Plant.Components.FC1.Flow2Pdrop = 10; %Design cathode pressure drop
+Plant.Components.FC1.Flow1Pdrop = 1; %design anode pressure drop
+Plant.Components.FC1.Flow2Pdrop = 3; %Design cathode pressure drop
 Plant.Components.FC1.Map = 'SOFC_map'; %Radiative heat transfer view factors, imported from CAD
 switch Reformer
     case 'direct'
@@ -223,19 +223,21 @@ Plant.Components.FC1.TagFinal = {'Power';'Current';'Voltage';'PENavgT';'Stackdel
 % Controller %% order is heater bypass, blower power, anode recirculation
 Plant.Controls.Controller.type = 'ControlSOFCsystem';
 Plant.Controls.Controller.name = 'Controller';
-Plant.Controls.Controller.Target = {'FC1.TpenAvg';'FC1.deltaTStack';'FC1.Steam2Carbon';};
+Plant.Controls.Controller.Target = {'FC1.TpenAvg';'FC1.deltaTStack';'FC1.Steam2Carbon';SimSettings.NominalPower;};
 Plant.Controls.Controller.Fuel = Fuel;
 Plant.Controls.Controller.Cells = 'FC1.Cells';
 Plant.Controls.Controller.Utilization = 'FC1.FuelUtilization';
-Plant.Controls.Controller.InitialAnodeRecirc = 'FC1.Recirc.Anode';
-Plant.Controls.Controller.NominalPower = SimSettings.NominalPower;
-Plant.Controls.Controller.InitConditions = {'bypassValve.PercOpen';'Blower.NominalPower';'FC1.Current';}; %heater bypass, blower power, FC current  [note: fuel flow and recirculaion are calculated and are not states]
+Plant.Controls.Controller.AnodeRecirc = 'FC1.Recirc.Anode';
+Plant.Controls.Controller.HeaterBypass = 'bypassValve.PercOpen';
+Plant.Controls.Controller.Blower = 'Blower.NominalPower';
+% Plant.Controls.Controller.NominalPower = SimSettings.NominalPower;
+% Plant.Controls.Controller.InitConditions = {'bypassValve.PercOpen';'Blower.NominalPower';'FC1.Current';}; %heater bypass, blower power, FC current  [note: fuel flow and recirculaion are calculated and are not states]
 % Plant.Controls.Controller.Gain = [1e-1;1e-3;1e-1];
 % Plant.Controls.Controller.PropGain = [.75;4;1];
 Plant.Controls.Controller.Gain = [1e-1;1e-3;];
 Plant.Controls.Controller.PropGain = [.75;4;];
 Plant.Controls.Controller.TagInf = {'Bypass';'Blower';'Recirculation';'FuelFlow';'Current';'Utilization'};
-Plant.Controls.Controller.connections = {'FC1.MeasureTflow2';'Mix2.Temperature';'FC1.MeasureVoltage';'PowerDemandLookup';};
+Plant.Controls.Controller.connections = {'';'';'';'PowerDemandLookup';'FC1.MeasureTflow2';'Mix2.Temperature';'FC1.MeasureVoltage';};
 
-Plant.Scope = {'FC1.PENavgT';'FC1.TcathOut';'Mix2.Temperature';'Controller.Bypass';'Controller.Utilization';'FC1.StackdeltaT';'Controller.Blower';'Blower.MassFlow';'Blower.NRPM';}; %must be in TagInf of the corresponding block to work here
+Plant.Scope = {'FC1.PENavgT';'Blower.PR';'Mix2.Temperature';'Controller.Bypass';'Controller.Utilization';'FC1.StackdeltaT';'Controller.Blower';'Blower.MassFlow';'Blower.NRPM';}; %must be in TagInf of the corresponding block to work here
 Plant.Plot = [Plant.Scope;{'FC1.Voltage';'Controller.Current';'Oxidizer.Temperature';}];

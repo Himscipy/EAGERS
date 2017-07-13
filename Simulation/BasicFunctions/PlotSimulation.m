@@ -1,6 +1,5 @@
 function PlotSimulation(T,Y,plotFC,animateFC,PlotTurbos)
 global TagInf  modelParam
-
 time = TagInf.Time;
 if isfield(modelParam,'Plot')
     n = length(modelParam.Plot);
@@ -22,7 +21,7 @@ if plotFC
     CompNames = fieldnames(modelParam.Components);
     for i = 1:1:length(CompNames)
         if strcmp(modelParam.Components.(CompNames{i}).type,'FuelCell') || strcmp(modelParam.Components.(CompNames{i}).type,'Electrolyzer')
-            block = modelParam.(CompNames{i});
+            block = modelParam.Components.(CompNames{i});
             CellMap(Y(end,:),block,n+1);
             n = n+1;
         end
@@ -32,7 +31,7 @@ if animateFC
     CompNames = fieldnames(modelParam.Components);
     for i = 1:1:length(CompNames)
         if strcmp(modelParam.Components.(CompNames{i}).type,'FuelCell') || strcmp(modelParam.Components.(CompNames{i}).type,'Electrolyzer')
-            block = modelParam.(CompNames{i});
+            block = modelParam.Components.(CompNames{i});
             Animate(T,Y,block,n+1)
             n = n+1;
         end
@@ -42,18 +41,19 @@ if PlotTurbos
     CompNames = fieldnames(modelParam.Components);
     for i = 1:1:length(CompNames)
         if strcmp(modelParam.Components.(CompNames{i}).type,'Blower') 
-            CTmap(modelParam.(CompNames{i}),[],n+1)
+            CTmap(modelParam.Components.(CompNames{i}),[],n+1)
             n = n+1;
         end
         if strcmp(modelParam.Components.(CompNames{i}).type,'Compressor') 
-            comp = modelParam.(CompNames{i});
+            comp = modelParam.Components.(CompNames{i});
             CTmap(comp,[],n+1)
             n = n+1;
         end
         if strcmp(modelParam.Components.(CompNames{i}).type,'Turbine') 
-            turb = modelParam.(CompNames{i});
+            turb = modelParam.Components.(CompNames{i});
             CTmap([],turb,n+1)
             n = n+1;
         end
     end
 end
+end %Ends function PlotSimulation

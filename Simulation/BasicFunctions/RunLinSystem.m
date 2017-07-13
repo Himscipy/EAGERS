@@ -1,5 +1,8 @@
 function dX = RunLinSystem(t,X)
-%Finds dX's of a system with LinMod's array of LTI models
+%% RunLinSystem: Simulates the transinet response by interpolating a set 
+%% of linear time invarient models that have the same states
+%% The model is linear, but it can be connected to any controller function
+%% The inputs are time (in seconds) and X, the vector of states
 global Tags LinMod IterCount TagInf WaitBar SimSettings Jcount
 if isempty(TagInf) %create TagInf Fields
     TagInf.Time(1) =0;
@@ -18,7 +21,7 @@ elseif IterCount>1 && t<TagInf.Time(IterCount)
 end
 TagInf.Time(IterCount,1) = t;
 
-InterpVal = X(1); 
+InterpVal = X(LinMod.InterpState); 
 c= [0 0 0 0];
 n = length(LinMod.InterpVec);
 if LinMod.InterpVec(1) > LinMod.InterpVec(2) %values of InterpVec are decreasing

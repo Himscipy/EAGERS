@@ -6,6 +6,7 @@ if isempty(strfind(p,dir1))% && isempty(strfind(p,'Plant'))
     SubPaths2Add = {fullfile(Model_dir);
                     fullfile(Model_dir,'data','solarData');
                     fullfile(Model_dir,'data');
+                    fullfile(Model_dir,'Calibration_Testing');
                     fullfile(Model_dir,'Design');
                     fullfile(Model_dir,'Design','ClimateZonesByState');
                     fullfile(Model_dir,'DesignProjects');
@@ -27,6 +28,7 @@ if isempty(strfind(p,dir1))% && isempty(strfind(p,'Plant'))
                     fullfile(Model_dir,'Optimization','Forecasting');
                     fullfile(Model_dir,'Optimization','NetworkQP');
                     fullfile(Model_dir,'Optimization','Threshold');
+                    fullfile(Model_dir,'Optimization','NRELmethod');
                     fullfile(Model_dir,'results');
                     fullfile(Model_dir,'results','LoggedData');
                     fullfile(Model_dir,'results','OptimalMap');
@@ -38,7 +40,6 @@ if isempty(strfind(p,dir1))% && isempty(strfind(p,'Plant'))
                     fullfile(Model_dir,'Simulation','Components','Initialization');
                     fullfile(Model_dir,'Simulation','CompressorMaps');
                     fullfile(Model_dir,'Simulation','Controls');
-                    fullfile(Model_dir,'Simulation','Controls','Initialization');
                     fullfile(Model_dir,'Simulation','FCMaps');
                     fullfile(Model_dir,'Simulation','LookupFunctions');
                     fullfile(Model_dir,'System Library');

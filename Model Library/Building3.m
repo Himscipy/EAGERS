@@ -1,4 +1,6 @@
 function Plant = Building3
+global SimSettings
+SimSettings.NominalTemperature = 22;
 %multi-zone building
 %% Components
 Plant.Components.Building.type = 'ZonalBuilding'; %fresh air 
@@ -23,7 +25,7 @@ Plant.Components.Building.connections = {'AmbientTemperature';'AmbientHumidity';
 Plant.Controls.HVAC.type = 'HVACproportional';
 Plant.Controls.HVAC.name = 'HVAC';
 Plant.Controls.HVAC.zones = 1;
-Plant.Controls.HVAC.Target = [22.2; 11;]; %target dry bulb and dew point temperatures 
+Plant.Controls.HVAC.Target = {22.2; 11;}; %target dry bulb and dew point temperatures 
 Plant.Controls.HVAC.Tolerance = 0.5; % deviation in temperature that triggers chiller
 Plant.Controls.HVAC.Entrainment = 40; % percent of fresh air
 Plant.Controls.HVAC.ColdAirSetpoint = 12.8; %minimum temperature of cooling air supplied by HVAC
@@ -34,7 +36,8 @@ Plant.Controls.HVAC.COP = 3.5;
 Plant.Controls.HVAC.Gain = [1e-2; 0; 1e-2; 1e-2;];% integral gain for fan speed, damper position, coold water flow, hot water flow
 Plant.Controls.HVAC.PropGain = [10; 0; 0; 0;];
 Plant.Controls.HVAC.TagInf = {'FlowRate';'Temperature';};
-Plant.Controls.HVAC.connections = {'Building.Temperature';'AmbientTemperature';'Building.Qcool';'Building.Qheat';'Building.Mode';};
+Plant.Controls.HVAC.connections = {'';'';'Building.Temperature';'AmbientTemperature';'Building.Qcool';'Building.Qheat';'Building.Mode';};
 
 Plant.Scope = {'Building.Temperature';}; %must be in TagInf of the corresponding block to work here
 Plant.Plot = [Plant.Scope;{'Building.Humidity';'HVAC.Temperature';'HVAC.FlowRate';'HVAC.Cooling';'HVAC.Heating';}];
+end%Ends function Building3

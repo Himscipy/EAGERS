@@ -51,17 +51,17 @@ Plant.Components.EC1.TagFinal = {'Power';'Current';'Voltage';'PENavgT';'Stackdel
 
 Plant.Controls.Controller.type = 'ControlECstack';
 Plant.Controls.Controller.name = 'Controller';
-Plant.Controls.Controller.Target = {'EC1.TpenAvg';'EC1.deltaTStack';};
+Plant.Controls.Controller.Target = {'EC1.TpenAvg';SimSettings.NominalPower;};
+Plant.Controls.Controller.deltaTStack = 'EC1.deltaTStack';
 Plant.Controls.Controller.Steam = 'EC1.Flow1Spec';
 Plant.Controls.Controller.Cells = 'EC1.Cells';
 Plant.Controls.Controller.Utilization = 'EC1.H2O_Utilization';
 Plant.Controls.Controller.SteamTemperature = 973;
-Plant.Controls.Controller.NominalPower = SimSettings.NominalPower;
-Plant.Controls.Controller.InitConditions = {'EC1.Flow2.IC';'EC1.Current';}; %oxidant flow rate, net current
+Plant.Controls.Controller.OxidantFlow = 'EC1.Flow2.IC';
 Plant.Controls.Controller.Gain = [2e-4;];
 Plant.Controls.Controller.PropGain = [3];
 Plant.Controls.Controller.TagInf = {'OxidantFlow';'OxidantTemp';'Tsteam';'SteamFlow';'Current';};
-Plant.Controls.Controller.connections = {'EC1.MeasureTflow2';'Controller.OxidantTemp';'EC1.MeasureVoltage';'EC1.MeasureTpen';'PowerDemandLookup';};
+Plant.Controls.Controller.connections = {'';'PowerDemandLookup';'EC1.MeasureTpen';'EC1.MeasureVoltage';};
 
 Plant.Scope = {'Controller.OxidantFlow';'Controller.Current';'Controller.OxidantTemp';'EC1.Voltage';}; %must be in TagInf of the corresponding block to work here
 Plant.Plot = [Plant.Scope;{'EC1.StackdeltaT';'EC1.PENavgT';'EC1.TcathOut';}];

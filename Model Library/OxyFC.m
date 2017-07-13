@@ -97,18 +97,21 @@ Plant.Components.FC1.TagFinal = {'Power';'Current';'Voltage';'PENavgT';'Stackdel
 %Controller
 Plant.Controls.Controller.type = 'ControlFCstack';
 Plant.Controls.Controller.name = 'Controller';
-Plant.Controls.Controller.Target = {'FC1.TpenAvg';'FC1.deltaTStack';'FC1.Steam2Carbon'};
+Plant.Controls.Controller.Target = {'FC1.TpenAvg';'FC1.deltaTStack';'FC1.Steam2Carbon';SimSettings.NominalPower;};
 Plant.Controls.Controller.OxyFC = 'yes';
-Plant.Controls.Controller.Fuel = 'FC1.Fuel';
+Plant.Controls.Controller.Fuel = 'FC1.Flow1.IC';
 Plant.Controls.Controller.Oxidant = 'FC1.Flow2Spec';
+Plant.Controls.Controller.OxidantTemp = 'FC1.TpenAvg';
 Plant.Controls.Controller.OxidantUtilization = 'FC1.OxidantUtilization';
+Plant.Controls.Controller.FuelFlow = 'FC1.Flow1.IC';
+Plant.Controls.Controller.AnodeRecirc = 'FC1.Recirc.Anode';
 Plant.Controls.Controller.Cells = 'FC1.Cells';
-Plant.Controls.Controller.NominalPower = SimSettings.NominalPower;
-Plant.Controls.Controller.InitConditions = {'FC1.Recirc.Anode';'FC1.Flow1.IC';'FC1.Current';}; %Recirculation, fuel flow rate, net current
+% Plant.Controls.Controller.NominalPower = SimSettings.NominalPower;
+% Plant.Controls.Controller.InitConditions = {'FC1.Recirc.Anode';'FC1.Flow1.IC';'FC1.Current';}; %Recirculation, fuel flow rate, net current
 Plant.Controls.Controller.Gain = [0;1e-1;1e0];
 Plant.Controls.Controller.PropGain = [0;0;1];
 Plant.Controls.Controller.TagInf = {'OxidantFlow';'OxidantTemp';'FuelFlow';'Current';'Recirculation';'Power';};
-Plant.Controls.Controller.connections = {'FC1.MeasureTflow1';'Controller.OxidantTemp';'FC1.MeasureVoltage';'PowerDemandLookup';};
+Plant.Controls.Controller.connections = {'';'';'';'PowerDemandLookup';'FC1.MeasureTflow1';'FC1.MeasureVoltage';};
 
 Plant.Scope = {'Controller.FuelFlow';'Controller.Current';'Controller.Recirculation';'Controller.Power';}; %must be in TagInf of the corresponding block to work here
 Plant.Plot = [Plant.Scope;{'FC1.StackdeltaT';'FC1.PENavgT';'FC1.Voltage';'FC1.TcathOut';'FC1.LocalNernst';}];

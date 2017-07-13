@@ -57,13 +57,12 @@ Plant.Components.Chiller.connections = {'Controller.Chiller1';'ColdWaterPump.Flo
 %% Controls (note: controls can have specification that depends upon a initialized variable of a component)
 Plant.Controls.Controller.type = 'SingleChiller';
 Plant.Controls.Controller.name = 'Controller';
-Plant.Controls.Controller.Target = [4; 22;]; %target chilled water temperatures (chiller/cooling tower)
-Plant.Controls.Controller.NominalCoolingCapacity = SimSettings.NominalCooling;
+Plant.Controls.Controller.Target = {SimSettings.NominalCooling; 4; 22;}; %target cooling production, chiller chilled water temperature, cooling tower chilled water temperature
 Plant.Controls.Controller.EstimatedCOP = 5;
 Plant.Controls.Controller.Gain = [1e-4; 1e-4; 1e-4; 1e-4;];%integral gain for power control
 Plant.Controls.Controller.PropGain = [.5 .5 .5 .5];%proportional gain for power control
 Plant.Controls.Controller.TagInf = {'Power';'COP'};
-Plant.Controls.Controller.connections = {'CoolingDemand';11;'Chiller.ColdWaterTemp';'Tags.ColdWaterPump.Flow_GPS';'Chiller.CTreturnTemp';'CoolingTower.Temperature';'Tags.CoolingTowerPump.Flow_GPS';};
+Plant.Controls.Controller.connections = {'CoolingDemand';'';'';11;'Chiller.ColdWaterTemp';'Tags.ColdWaterPump.Flow_GPS';'Chiller.CTreturnTemp';'CoolingTower.Temperature';'Tags.CoolingTowerPump.Flow_GPS';};
 
 Plant.Scope = {'Chiller.Cooling';'Chiller.RPM';'CoolingTower.WetBulbTemperature'}; %must be in TagInf of the corresponding block to work here
 Plant.Plot = [Plant.Scope;{'CoolingTower.Temperature';'Controller.NetPower';'Controller.COP';}];

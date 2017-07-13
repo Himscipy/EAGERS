@@ -1,8 +1,8 @@
 %% STRIDES %%
-% this function can initialize and run a non-linear systems model
-% It can also run a transient on that model
-% It can also create a linear model, and compare the response for the same transient
-global Model_dir SimSettings WaitBar modelParam LinMod IterCount TagInf TagFinal Tags
+% This script gives the option to initialize or load a saved non-linear systems model
+% Next it offers to linearize that model,or load a saved linearization. 
+% Finally it is able to run a transient on either/both the linear or non-linear model
+global Model_dir SimSettings WaitBar modelParam LinMod IterCount TagInf TagFinal Tags Inlet Outlet
 %%clear variables
 LinMod =[];
 modelParam = [];
@@ -10,6 +10,8 @@ TagInf = [];
 TagFinal = [];
 Tags = [];
 SimSettings = [];
+Inlet = [];
+Outlet = [];
 %% Load a Plant
 %%%%-- either load a plant and initialize it, or load a saved Plant & model Parameters
 %%%%-- Working options are: SOFCstack, SOECstack, SOFCsystem, GasTurbine
@@ -27,14 +29,14 @@ if J ==1
     else
         modelName = list{s};
         Plant = feval(modelName);
-
         WaitBar.Show = 1;
         BuildModel(Plant); %%Build & Initialize model
         J2 = center_menu('Save Model?','Yes','No');
         if J2 ==1
-            modelParam.SimSettings = SimSettings;
+%             modelParam.SimSettings = SimSettings;
+%             modelParam.Outlet = Outlet;
             [f,p]=uiputfile(fullfile(Model_dir,'Model Library','Saved Models',strcat(modelName,'.mat')),'Save Model As...');
-            save([p f],'modelParam')
+            save([p f],'modelParam','SimSettings','Outlet')
         end
     end
 elseif J ==2
@@ -48,8 +50,10 @@ elseif J ==2
         disp('Invalid selection. Exiting...')
     else
         modelName = list{s};
+        modelName = strrep(modelName,'.mat','');
         load(fullfile(Model_dir,'Model Library','Saved Models',modelName));
-        SimSettings = modelParam.SimSettings;
+%         SimSettings = modelParam.SimSettings;
+%         Outlet = modelParam.Outlet;
     end
 end
 %% Create or load a set of linear models
@@ -80,9 +84,9 @@ if J2 ==1
     CreateLinModel(SetPoints,HSVtol);
     J3 = center_menu('Save Linearized Model?','Yes','No');
     if J3 ==1
-        LinMod.SimSettings = SimSettings;
+%         LinMod.SimSettings = SimSettings;
         [f,p]=uiputfile(fullfile(Model_dir,'Model Library','Saved Linearizations',strcat(modelName,'.mat')),'Save Linearized Model As...');
-        save([p f],'LinMod')
+        save([p f],'LinMod','SimSettings','Outlet')
     end
 elseif J2 ==2
     ModelFiles=dir(fullfile(Model_dir,'Model Library','Saved Linearizations','*.mat'));
@@ -95,12 +99,12 @@ elseif J2 ==2
         disp('Invalid selection. Exiting...')
     else
         load(fullfile(Model_dir,'Model Library','Saved Linearizations',list{s}));
-        if isempty(SimSettings)
-            SimSettings = LinMod.SimSettings;
-        end
-        if isfield(LinMod,'NominalPower')
-            SimSettings.NominalPower = LinMod.NominalPower;
-        end
+%         if isempty(SimSettings)
+%             SimSettings = LinMod.SimSettings;
+%         end
+%         if isfield(LinMod,'NominalPower')
+%             SimSettings.NominalPower = LinMod.NominalPower;
+%         end
     end
 elseif J2 ==3
     LinMod =[];
@@ -132,7 +136,7 @@ if J3 ~=4
     end
     for i = 1:1:length(controls)
         if ~isempty(modelParam)
-            Cont = modelParam.(controls{i});
+            Cont = modelParam.Controls.(controls{i});
         elseif ~isempty(LinMod)
             Cont = LinMod.Controls.(controls{i});
         end
@@ -151,8 +155,8 @@ if J3 ~=4
         Prompt = {};
         DefaultVal = {};
         for j = 1:1:nC
-            Prompt(end+1) = cellstr(strcat(Cont.description{j},'---Proportional'));
-            Prompt(end+1) = cellstr(strcat(Cont.description{j},'---Integral'));
+            Prompt(end+1) = cellstr(strcat(Cont.PIdescription{j},'---Proportional'));
+            Prompt(end+1) = cellstr(strcat(Cont.PIdescription{j},'---Integral'));
             DefaultVal(end+1) = cellstr(num2str(Cont.PropGain(j)));
             DefaultVal(end+1) = cellstr(num2str(Cont.Gain(j)));
         end
@@ -162,8 +166,7 @@ if J3 ~=4
             Cont.Gain(j) = str2double(A(2*j));
         end
         if ~isempty(modelParam)
-            modelParam.(controls{i}) = Cont;
-%             modelParam.Controls.(controls{i}) = Cont;
+            modelParam.Controls.(controls{i}) = Cont;
         end
         if ~isempty(LinMod)
             LinMod.Controls.(controls{i}) = Cont;

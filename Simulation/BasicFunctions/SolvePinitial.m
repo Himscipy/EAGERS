@@ -6,22 +6,27 @@ Pplus = {};
 Pminus = {};
 Pdifference = [];
 OutPort = {};
+controls = fieldnames(modelParam.Controls);
 for k = 1:1:length(list) %look at all blocks that have pressure inlets and outlets
     block = list{k};
-    [m,n] = size(modelParam.(block).P_Difference);%some blocks like heat exchangers can have 2 Pin and 2 Pout, some have none
+    if any(strcmp(controls,block))
+        Co = 'Controls';
+    else Co = 'Components';
+    end
+    [m,n] = size(modelParam.(Co).(block).P_Difference);%some blocks like heat exchangers can have 2 Pin and 2 Pout, some have none
     for i = 1:1:m
         r = r+1;
-        Port1 = modelParam.(block).P_Difference{i,1}; %The higher pressure term, usually Pin
-        Port2 = modelParam.(block).P_Difference{i,2}; %The lower pressure term, usually Pout
-        if any(strcmp(Port1,modelParam.(block).OutletPorts))
+        Port1 = modelParam.(Co).(block).P_Difference{i,1}; %The higher pressure term, usually Pin
+        Port2 = modelParam.(Co).(block).P_Difference{i,2}; %The lower pressure term, usually Pout
+        if any(strcmp(Port1,modelParam.(Co).(block).OutletPorts))
             OutPort{r} = {'Port1',block,Port1};
-        elseif any(strcmp(Port2,modelParam.(block).OutletPorts))
+        elseif any(strcmp(Port2,modelParam.(Co).(block).OutletPorts))
             OutPort{r} = {'Port2',block,Port2};
         end
-        Pdifference(r) = modelParam.(block).(Port1).IC - modelParam.(block).(Port2).IC; %the difference in pressure
-        if isfield(modelParam.(block),'dMdP')
-            dMdP(r,1:2) = modelParam.(block).dMdP(i,1:2); %if it is a known function of flow rate (compressor or turbine, scale by dM/dP
-            mFlow(r) = modelParam.(block).mFlow(i); % the nominal flow rate being targeted
+        Pdifference(r) = modelParam.(Co).(block).(Port1).IC - modelParam.(Co).(block).(Port2).IC; %the difference in pressure
+        if isfield(modelParam.(Co).(block),'dMdP')
+            dMdP(r,1:2) = modelParam.(Co).(block).dMdP(i,1:2); %if it is a known function of flow rate (compressor or turbine, scale by dM/dP
+            mFlow(r) = modelParam.(Co).(block).mFlow(i); % the nominal flow rate being targeted
         else dMdP(r,1:2) = [0,0];
         end
         %find the model state associated with the pressure of port 1 & port 2
@@ -84,59 +89,77 @@ for i = 1:1:lA
         block = OutPort2{i}{1};
         port = OutPort2{i}{2};
         Outlet.(block).(port) = Pguess(i); %update outlets based on calculated pressure
-        modelParam.(block).(port).IC = Pguess(i);
+        if any(strcmp(controls,block))
+            Co = 'Controls';
+        else Co = 'Components';
+        end
+        modelParam.(Co).(block).(port).IC = Pguess(i);
     end
 end
 modelParam.Pstates = stateP(1:lA);
 modelParam.Poutlets = OutPort2(1:lA);
 for k = 1:1:length(list) %push pressure states back into sub-block scaling factors and port initial conditions
     block = list{k};
-    modelParam.(block).Scale = modelParam.Scale(modelParam.(block).States);
+    if any(strcmp(controls,block))
+        Co = 'Controls';
+    else Co = 'Components';
+    end
+    modelParam.(Co).(block).Scale = modelParam.Scale(modelParam.(Co).(block).States);
 end
+end %Ends function SolvePinitial
 
 function StateNum = findPstate(block,Port)
 %find the model state associated with the pressure of port 1
 global modelParam
-if ~isempty(modelParam.(block).(Port).Pstate)
-    StateNum = modelParam.(block).States(modelParam.(block).(Port).Pstate); %the state # in the IC vector corresponding to the pressure state
-elseif isempty(modelParam.(block).(Port).connected)%unconected inlet pressure port (stays at initial condition)
-    StateNum = num2str(modelParam.(block).(Port).IC);%put into a string so that is moved to the b side of Ax = b
+controls = fieldnames(modelParam.Controls);
+if any(strcmp(controls,block))
+    Co = 'Controls';
+else Co = 'Components';
+end
+if ~isempty(modelParam.(Co).(block).(Port).Pstate)
+    StateNum = modelParam.(Co).(block).States(modelParam.(Co).(block).(Port).Pstate); %the state # in the IC vector corresponding to the pressure state
+elseif isempty(modelParam.(Co).(block).(Port).connected)%unconected inlet pressure port (stays at initial condition)
+    StateNum = num2str(modelParam.(Co).(block).(Port).IC);%put into a string so that is moved to the b side of Ax = b
 else %go to level #2
-    BlockPort = char(modelParam.(block).(Port).connected);
+    BlockPort = char(modelParam.(Co).(block).(Port).connected);
     ni = strfind(BlockPort,'.');
     if isempty(ni) %connected to a function or lookup (not a component)
         StateNum = num2str(feval(BlockPort,0));%finds value of look-up function at time = 0 & converts to string
     else
         connectedBlock = BlockPort(1:ni-1);
         connectedPort = BlockPort(ni+1:end);
-        if ~isempty(modelParam.(connectedBlock).(connectedPort).Pstate)
-            StateNum = modelParam.(connectedBlock).States(modelParam.(connectedBlock).(connectedPort).Pstate);%the state # in the IC vector corresponding to the pressure state
-        elseif isempty(modelParam.(connectedBlock).(connectedPort).connected)%unconected inlet pressure port (stays at initial condition)
-            StateNum = num2str(modelParam.(connectedBlock).(connectedPort).IC);%put into a string so that is moved to the b side of Ax = b
+        if any(strcmp(controls,connectedBlock))
+            Co = 'Controls';
+        else Co = 'Components';
+        end
+        if ~isempty(modelParam.(Co).(connectedBlock).(connectedPort).Pstate)
+            StateNum = modelParam.(Co).(connectedBlock).States(modelParam.(Co).(connectedBlock).(connectedPort).Pstate);%the state # in the IC vector corresponding to the pressure state
+        elseif isempty(modelParam.(Co).(connectedBlock).(connectedPort).connected)%unconected inlet pressure port (stays at initial condition)
+            StateNum = num2str(modelParam.(Co).(connectedBlock).(connectedPort).IC);%put into a string so that is moved to the b side of Ax = b
         else %go to level #3
-            BlockPort = char(modelParam.(connectedBlock).(connectedPort).connected);
+            BlockPort = char(modelParam.(Co).(connectedBlock).(connectedPort).connected);
             ni = strfind(BlockPort,'.');
             if isempty(ni)
                 StateNum = num2str(feval(BlockPort,0));%finds value of look-up function at time = 0 & converts to string
             else
                 connectedBlock = BlockPort(1:ni-1);
                 connectedPort = BlockPort(ni+1:end);
-                if ~isempty(modelParam.(connectedBlock).(connectedPort).Pstate)
-                    StateNum = modelParam.(connectedBlock).States(modelParam.(connectedBlock).(connectedPort).Pstate);%the state # in the IC vector corresponding to the pressure state
-                elseif isempty(modelParam.(connectedBlock).(connectedPort).connected)%unconected inlet pressure port (stays at initial condition)
-                    StateNum = num2str(modelParam.(connectedBlock).(connectedPort).IC);%put into a string so that is moved to the b side of Ax = b
+                if ~isempty(modelParam.(Co).(connectedBlock).(connectedPort).Pstate)
+                    StateNum = modelParam.(Co).(connectedBlock).States(modelParam.(Co).(connectedBlock).(connectedPort).Pstate);%the state # in the IC vector corresponding to the pressure state
+                elseif isempty(modelParam.(Co).(connectedBlock).(connectedPort).connected)%unconected inlet pressure port (stays at initial condition)
+                    StateNum = num2str(modelParam.(Co).(connectedBlock).(connectedPort).IC);%put into a string so that is moved to the b side of Ax = b
                 else%go to level #4
-                    BlockPort = char(modelParam.(connectedBlock).(connectedPort).connected);
+                    BlockPort = char(modelParam.(Co).(connectedBlock).(connectedPort).connected);
                     ni = strfind(BlockPort,'.');
                     if isempty(ni)
                         StateNum = num2str(feval(BlockPort,0));%finds value of look-up function at time = 0 & converts to string
                     else
                         connectedBlock = BlockPort(1:ni-1);
                         connectedPort = BlockPort(ni+1:end);
-                        if ~isempty(modelParam.(connectedBlock).(connectedPort).Pstate)
-                            StateNum = modelParam.(connectedBlock).States(modelParam.(connectedBlock).(connectedPort).Pstate);%the state # in the IC vector corresponding to the pressure state
-                        else isempty(modelParam.(connectedBlock).(connectedPort).connected)%unconected inlet pressure port (stays at initial condition)
-                            StateNum = num2str(modelParam.(connectedBlock).(connectedPort).IC);%put into a string so that is moved to the b side of Ax = b
+                        if ~isempty(modelParam.(Co).(connectedBlock).(connectedPort).Pstate)
+                            StateNum = modelParam.(Co).(connectedBlock).States(modelParam.(Co).(connectedBlock).(connectedPort).Pstate);%the state # in the IC vector corresponding to the pressure state
+                        else isempty(modelParam.(Co).(connectedBlock).(connectedPort).connected)%unconected inlet pressure port (stays at initial condition)
+                            StateNum = num2str(modelParam.(Co).(connectedBlock).(connectedPort).IC);%put into a string so that is moved to the b side of Ax = b
                         end
                     end
                 end
@@ -144,3 +167,4 @@ else %go to level #2
         end
     end
 end
+end %Ends function findPstate
