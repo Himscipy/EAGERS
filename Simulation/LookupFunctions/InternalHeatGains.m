@@ -22,3 +22,4 @@ if length(varargin)==2
                     '[.4 .4 .4 .4 .4 .4 .4 .4 .4 .9 .9 .9 .9 .8 .9 .9 .9 .9 .5 .4 .4 .4 .4 .4 .4]'...
                     '8.07007'};
 end
+end%Ends function InternalHeatGains

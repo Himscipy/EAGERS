@@ -99,3 +99,4 @@ if exist('Inlet','var')
     end
     Cp = CPnet;
 end
+end%Ends function SpecHeat

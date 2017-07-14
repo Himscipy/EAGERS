@@ -149,9 +149,11 @@ R.WGS = R.WGS/block.Cells;
 block.KineticCoeff1 = K;
 block.R_CH4 = R.CH4;
 block.R_WGS = R.WGS;
+end%Ends function KineticCoef
 
 function [R, Flow, KinCoef] = FindKineticCoef(Inlet,T_Out,R, Dir, referenceR_CH4,Current,Pressure,Type,Cells,method,Tol)
-global Ru F
+F=96485.339; % %Faraday's constant in Coulomb/mole
+Ru = 8.314472; % Universal gas constant in kJ/K*kmol
 specInterest = {'CH4','CO','CO2','H2','H2O'};
 [m,~] = size(Dir);
 for i = 1:1:m
@@ -253,9 +255,10 @@ while abs(error)>Tol %iterate to converge on a kinetic coefficients (if less CH4
 %     end
 end
 % disp(strcat('FindKineticCoef count is:',num2str(count)))
+end%Ends function FindKineticCoef
 
 function [R_CH4,valid] = loopConverge(Flow,R,T_Out,Pressure,KinCoef,Dir,method)
-global Ru
+Ru = 8.314472; % Universal gas constant in kJ/K*kmol
 valid = 1;
 %% find new reforming reaction rates
 k = Dir(:,1);
@@ -297,3 +300,4 @@ for j= 1:1:length(Dir(1,:))
 %     errorJ = (X_CH4(k) - X_CH4in)./X_CH4in; %remaining error after 1 newton step
 end
 R_CH4 = R.CH4;
+end%Ends function loopConverge

@@ -100,3 +100,4 @@ else
         S = S + s.(spec{i}).*Inlet.(spec{i});
     end
 end
+end%Ends function entropy

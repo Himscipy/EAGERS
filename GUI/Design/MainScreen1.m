@@ -1142,6 +1142,9 @@ if OK && ~strcmp(list{s},emptyStr)
             'Enabled',1, ...
             'VariableStruct',rmfield(component, {'Type','Source'}));
     else
+        if isfield(testSystems(SYSINDEX).Generator(1),'QPform')
+            component.QPform = [];
+        end
         testSystems(SYSINDEX).Generator(GENINDEX) = component;
     end
     testSystems(SYSINDEX).Network(1).Equipment(end+1) = {strcat( ...

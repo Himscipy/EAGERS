@@ -159,3 +159,4 @@ close(vidObj);
     
 %     movie2avi(Electrolyte, 'SOFCPowerSweep')%%Make frames into a movie
 % movie(h,Electrolyte,1);
+end%Ends function AnimateCurrent

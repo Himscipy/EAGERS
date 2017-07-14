@@ -43,7 +43,7 @@ for i = 1:1:length(map.RPM)
 end
 
 save(fullfile(Save_dir,savename),'map')
-
+end%Ends function BuildCompressorMapFile
 %% -%% Compressor Maps %
 % %% Radial Compressor %from file IPC01
 % map.RPM = [0.359	0.528	0.661	0.791	0.88	0.952	1	1.028	1.144]';

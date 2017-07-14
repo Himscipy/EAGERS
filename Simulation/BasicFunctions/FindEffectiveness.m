@@ -22,3 +22,4 @@ else
     QT = enthalpy(Hot) - enthalpy(HotOut)*scaleHot;
 end
 Effectiveness = QT/min(maxQT1,maxQT2);
+end%Ends function FindEffectiveness

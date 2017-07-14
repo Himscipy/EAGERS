@@ -7,3 +7,4 @@ for i = 1:1:length(spec)
         Out.(spec{i}) = max(0,sum(Flow.(spec{i})(Dir(:,end)))*Cells);%avoid sending negative outflows to other blocks
     end
 end
+end%Ends function MergeLastColumn

@@ -78,7 +78,7 @@ for k = 1:1:n %treat each node independently
     Out.H2O(k) = InFlow.H2O(k) - R.CH4(k) - R.WGS(k) +H2consume(k);
 end
 Out.T = T;
-
+end%Ends function equilibrium2D
 
 function [x0,y0] = Newton2D(Inlet,R_CH4min,R_CH4max,H2consume,COconsume,Type,T,P,g0,x0,y0,Tol)
 %standard 2-D newtonian method (gradient search) for a minimum Gibbs energy
@@ -163,6 +163,7 @@ while error>Tol && count<15
     end
     count = count+1;
 end
+end%Ends function Newton2D
 
 function [X,WGS] = FlowOut(Inlet,x,y,R_CH4min,R_CH4max,H2consume,COconsume,Type)
 %Calculates outlet concentrations without accounting for WGS reaction (done in GibbVal)
@@ -187,3 +188,4 @@ X.H2O = Inlet.H2O - CH4 + H2consume;% water produced
 if any(strcmp(Type,{'MCFC';'MCEC'}))
     X.CO2 = X.CO2 + H2consume; % CO2 brought over
 end
+end%Ends function FlowOut

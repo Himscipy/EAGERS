@@ -7,7 +7,8 @@ function Out = ControlECstack(varargin)
 % those targets, while the first n outlets correspond to the controllers 
 % ability to hit that target
 % The model can thus be linearized around any of these targets
-global Tags F
+global Tags
+F=96485.339; % %Faraday's constant in Coulomb/mole
 if length(varargin)==1 %first initialization
     block = varargin{1};
     block.PIdescription = {'Oxidant Flow Rate';'Fuel Cell Current';};
@@ -52,12 +53,17 @@ if length(varargin)==1 %first initialization
     block.P_Difference = {};
 
     block.IC = 1; % inital condition
+        
     if OxFlow>0
         block.HasFlow = true;
         block.Scale = [OxFlow;];
+        block.UpperBound = inf;
+        block.LowerBound = 0;
     else 
         block.HasFlow = false;
         block.Scale = [Current;];
+        block.UpperBound = inf;
+        block.LowerBound = -inf;
     end
     Out = block;
 elseif length(varargin)==2 %% Have inlets connected, re-initialize

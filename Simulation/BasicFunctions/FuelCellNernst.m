@@ -1,5 +1,7 @@
 function FuelCellNernst(Flow1,Flow2,Current,T,P,block)
-global F Ru Tags
+global Tags
+F=96485.339; % %Faraday's constant in Coulomb/mole
+Ru = 8.314472; % Universal gas constant in kJ/K*kmol
 if isstruct(Current)
     netCurrent = (Current.H2+Current.CO);
 else netCurrent = Current;
@@ -116,14 +118,15 @@ end
 nVoltage = V_Nernst_H2 - pow*Vloss;%this is the voltage from the fuel cell
 ASR = mean(Vloss./(currentDen/(100^2))); %should be in neighborhood of 0.25 for SOFC
 Tags.(block.name).ASR = ASR;
-Tags.(block.name).LocalCurrentDensity = netCurrent/block.A_Node/1e4;%current in A/cm2
-Tags.(block.name).nCurrent = netCurrent;
-Tags.(block.name).nVoltage = nVoltage;
-Tags.(block.name).nPower = abs(netCurrent).*Tags.(block.name).nVoltage;% power per node in W
-Tags.(block.name).Power = sum(Tags.(block.name).nPower)*block.Cells/1000;%power for stack in kW
-Tags.(block.name).LocalNernst = V_Nernst_H2;
-Tags.(block.name).LocalActivation = V_activation;
-Tags.(block.name).LocalConcentration = V_concentration;
-Tags.(block.name).LocalOhmic = V_ohmic;
-Tags.(block.name).I_CO = I_CO;
-Tags.(block.name).I_H2 = I_H2;
+Tags.(block.name).LocalCurrentDensity = netCurrent'/block.A_Node/1e4;%current in A/cm2
+Tags.(block.name).nCurrent = netCurrent';
+Tags.(block.name).nVoltage = nVoltage';
+Tags.(block.name).nPower = abs(netCurrent)'.*nVoltage';% power per node in W
+Tags.(block.name).Power = sum(abs(netCurrent).*nVoltage)*block.Cells/1000;%power for stack in kW
+Tags.(block.name).LocalNernst = V_Nernst_H2';
+Tags.(block.name).LocalActivation = V_activation';
+Tags.(block.name).LocalConcentration = V_concentration';
+Tags.(block.name).LocalOhmic = V_ohmic';
+Tags.(block.name).I_CO = I_CO';
+Tags.(block.name).I_H2 = I_H2';
+end%Ends function FuelCellNernst

@@ -1,5 +1,6 @@
 function [R,Out] = KineticReformation(method,Flow,Pressure,KineticCoeff,Current,block)%find new reforming reaction rates
-global Ru F
+F=96485.339; % %Faraday's constant in Coulomb/mole
+Ru = 8.314472; % Universal gas constant in kJ/K*kmol
 spec = fieldnames(Flow.Inlet);
 spec = spec(~strcmp('T',spec));
 K_WGS = exp(4189.8./Flow.Outlet.T -3.8242);% Water gas shift equilibrium constant
@@ -49,3 +50,4 @@ for i = 1:1:length(spec)
         Out.(spec{i}) = Flow.Inlet.(spec{i});  
     end
 end 
+end%Ends function KineticReformation

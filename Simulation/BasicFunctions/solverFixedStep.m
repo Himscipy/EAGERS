@@ -7,3 +7,4 @@ for t = 1:1:n
     dY = RunBlocks((t-1)*Step,Y(t,:)');
     Y(t+1,:) = Y(t,:) + Step*dY';
 end
+end%Ends function solverFixedStep

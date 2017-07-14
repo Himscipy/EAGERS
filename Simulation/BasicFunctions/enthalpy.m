@@ -126,3 +126,4 @@ else
         Out2 = Out2 + h_s.(spec{i}).*Inlet.(spec{i});
     end
 end
+end%Ends function enthalpy

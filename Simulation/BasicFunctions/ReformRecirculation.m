@@ -58,3 +58,4 @@ while abs(errorR)>1
     end    
     count2 = count2+1;
 end
+end%Ends function ReformRecirculation

@@ -1,7 +1,7 @@
 function Flow = FCin2Out(T,Inlet,Dir, Type,Cells,Current,R,c_or_a) 
 %flow of species out after steam reformation & water gas shift
 %(does not normalize back to 1) this is important for finding G correctly)
-global F
+F=96485.339; % %Faraday's constant in Coulomb/mole
 k = Dir(:,1);
 r = length(k);
 Flow.Outlet.T = T;
@@ -86,3 +86,4 @@ for j= 1:1:length(Dir(1,:))
         end
     end
 end
+end%Ends function FCin2Out

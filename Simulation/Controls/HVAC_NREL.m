@@ -28,18 +28,20 @@ if length(varargin)==1 %first initialization
     block.Mode.IC = 'cooling';
     block.Tamb.IC = 25;
     
+    block.ColdAirSetpoint = 12.8; %minimum temperature of cooling air supplied by HVAC
+    block.HotAirSetpoint = 40; %temperature of heating air supplied by HVAC when furnace is on
+    block.Cp = 1e3; % J/kg*K
+    
     block.OutletPorts(end+1:end+4) = {'massflow';'temperature';'Cooling';'Heating';};   
     block.massflow.IC = 1;
     block.temperature.IC = block.ColdAirSetpoint;
     block.Cooling.IC = 0;
     block.Heating.IC = 0;
     
-    block.ColdAirSetpoint = 12.8; %minimum temperature of cooling air supplied by HVAC
-    block.HotAirSetpoint = 40; %temperature of heating air supplied by HVAC when furnace is on
-    block.Cp = 1e3; % J/kg*K
-
     block.Scale = 1;
     block.IC = 1; % inital condition 
+    block.UpperBound = inf;
+    block.LowerBound = 0;
     block.P_Difference = {};
     Out = block;
 elseif length(varargin)==2 %% Have inlets connected, re-initialize

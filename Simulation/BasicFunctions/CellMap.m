@@ -149,3 +149,4 @@ view([0 90])
 xlabel(Xlabel,'FontSize',14)
 ylabel(Ylabel,'FontSize',14)
 % c.Label.String = 'Temperature (C)';
+end%Ends function CellMap

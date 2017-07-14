@@ -1,15 +1,15 @@
 function [block,error,scale] = redistributeCurrent(block,Inlet,count,firstSolve)
 %find the distribution of current that matches the desired power or current, and equalizes voltages
 global Tags
-Voltage = Tags.(block.name).nVoltage;
+Voltage = Tags.(block.name).nVoltage';
 OldVoltage = block.Voltage;
 OldCurrent = abs(sum(block.Current.H2 + block.Current.CO));
 block.Voltage = sum(Tags.(block.name).nVoltage)/block.nodes;
-block.Current.CO = Tags.(block.name).I_CO;
-block.Current.H2 = Tags.(block.name).I_H2;
+block.Current.CO = Tags.(block.name).I_CO';
+block.Current.H2 = Tags.(block.name).I_H2';
 netCurrent = block.Current.H2+block.Current.CO;
 TotCurrent = abs(sum(netCurrent));
-localR = Tags.(block.name).LocalOhmic./abs(netCurrent);
+localR = Tags.(block.name).LocalOhmic'./abs(netCurrent);
 
 if strcmp(block.Specification,'power density')
     error = (block.RatedStack_kW - Tags.(block.name).Power)/block.RatedStack_kW;
@@ -52,3 +52,4 @@ netCurrent = (netCurrent+dCurrent)*scale2;%re-distribute current to achieve aver
 
 block.Current.CO = ratio.*netCurrent;
 block.Current.H2 = (1-ratio).*netCurrent;
+end%Ends function 

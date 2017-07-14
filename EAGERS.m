@@ -37,7 +37,6 @@ if isempty(strfind(p,dir1))% && isempty(strfind(p,'Plant'))
                     fullfile(Model_dir,'Simulation');
                     fullfile(Model_dir,'Simulation','BasicFunctions');
                     fullfile(Model_dir,'Simulation','Components');
-                    fullfile(Model_dir,'Simulation','Components','Initialization');
                     fullfile(Model_dir,'Simulation','CompressorMaps');
                     fullfile(Model_dir,'Simulation','Controls');
                     fullfile(Model_dir,'Simulation','FCMaps');

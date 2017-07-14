@@ -43,3 +43,4 @@ else
     end
 end
 % disp(strcat('Newton1D count is:',num2str(count)))
+end%Ends function Newton1D

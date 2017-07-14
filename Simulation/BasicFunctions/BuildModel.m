@@ -35,19 +35,17 @@ for k = 1:1:length(list)
     block = list{k};
     if any(strcmp(controls,block))
         Co = 'Controls';
-        modelParam.(Co).(block) = feval(modelParam.Controls.(block).type,modelParam.Controls.(block));
     else Co = 'Components';
-        F = strcat('Initialize',modelParam.Components.(block).type);
-        modelParam.(Co).(block) = feval(F,modelParam.Components.(block));
     end
-    
+    modelParam.(Co).(block) = feval(modelParam.(Co).(block).type,modelParam.(Co).(block));
     states = modelParam.(Co).(block).IC; %initial condition
-    scale = modelParam.(Co).(block).Scale; %scalar on states so they are all ~ 1
     s = length(states);
     modelParam.(Co).(block).States = n+1:n+s;
     if s>0
         modelParam.IC(n+1:n+s,1) = states; 
-        modelParam.Scale(n+1:n+s,1) = scale; 
+        modelParam.Scale(n+1:n+s,1) = modelParam.(Co).(block).Scale; %scalar on states so they are all ~ 1 
+        modelParam.UpperBound(n+1:n+s,1) = modelParam.(Co).(block).UpperBound;
+        modelParam.LowerBound(n+1:n+s,1) = modelParam.(Co).(block).LowerBound;
         n = n+s;
     end 
 end
@@ -69,29 +67,28 @@ while abs(Error)>Tol %repeat several times to propogate inlets to outlets
     SolvePinitial(list)%% Solve for initial Pressures 
     for k = 1:1:length(list)
         block = list{k};
-                  
         Inlet.(block) = RefreshInlet(block);
         if HasInletChanged(Inlet.(block),OldInlet.(block))
             if any(strcmp(controls,block))
                 Co = 'Controls';
-                modelParam.(Co).(block) = feval(modelParam.(Co).(block).type,modelParam.(Co).(block),Inlet.(block));
             else Co = 'Components';
-                F = strcat('Initialize',modelParam.Components.(block).type);
-                modelParam.(Co).(block) = feval(F,modelParam.(Co).(block),Inlet.(block));
             end 
-            
+            modelParam.(Co).(block) = feval(modelParam.(Co).(block).type,modelParam.(Co).(block),Inlet.(block));
             newStates = length(modelParam.(Co).(block).Scale)-length(modelParam.(Co).(block).States);
             if newStates ==0
-                modelParam.Scale(modelParam.(Co).(block).States,1) = modelParam.(Co).(block).Scale;
-                modelParam.IC(modelParam.(Co).(block).States,1) = modelParam.(Co).(block).IC;
+                if ~isempty(modelParam.(Co).(block).IC)
+                    modelParam.Scale(modelParam.(Co).(block).States,1) = modelParam.(Co).(block).Scale;
+                    modelParam.IC(modelParam.(Co).(block).States,1) = modelParam.(Co).(block).IC;
+                    modelParam.UpperBound(modelParam.(Co).(block).States,1) = modelParam.(Co).(block).UpperBound;
+                    modelParam.LowerBound(modelParam.(Co).(block).States,1) = modelParam.(Co).(block).LowerBound;
+                end
             else
-                PrevStates = modelParam.Scale(1:modelParam.(Co).(block).States(1)-1,1);
-                AfterStates = modelParam.Scale(modelParam.(Co).(block).States(end)+1:end,1);
-                modelParam.Scale = [PrevStates; modelParam.(Co).(block).Scale;AfterStates;];
-                PrevIC = modelParam.IC(1:modelParam.(Co).(block).States(1)-1,1);
-                AfterIC = modelParam.IC(modelParam.(Co).(block).States(end)+1:end,1);
-                modelParam.IC = [PrevIC; modelParam.(Co).(block).IC;AfterIC;];
-                modelParam.(Co).(block).States = modelParam.(Co).(block).States(1):(modelParam.(Co).(block).States(1)+length(modelParam.(Co).(block).Scale)-1);
+                n = modelParam.(Co).(block).States(1)-1;
+                modelParam.Scale = [modelParam.Scale(1:n);modelParam.(Co).(block).Scale;modelParam.Scale(modelParam.(Co).(block).States(end)+1:end,1);];
+                modelParam.IC = [modelParam.IC(1:n); modelParam.(Co).(block).IC;modelParam.IC(modelParam.(Co).(block).States(end)+1:end,1);];
+                modelParam.UpperBound = [modelParam.UpperBound(1:n); modelParam.(Co).(block).UpperBound;modelParam.UpperBound(modelParam.(Co).(block).States(end)+1:end,1);];
+                modelParam.LowerBound = [modelParam.LowerBound(1:n); modelParam.(Co).(block).LowerBound;modelParam.LowerBound(modelParam.(Co).(block).States(end)+1:end,1);];
+                modelParam.(Co).(block).States = n+1:n+length(modelParam.(Co).(block).Scale);
                 for n = k+1:1:length(list) 
                     block2 = list{n};
                     if any(strcmp(controls,block2))

@@ -3,9 +3,13 @@ function dX = RunLinSystem(t,X)
 %% of linear time invarient models that have the same states
 %% The model is linear, but it can be connected to any controller function
 %% The inputs are time (in seconds) and X, the vector of states
-global Tags LinMod IterCount TagInf WaitBar SimSettings Jcount
+global LinMod IterCount TagInf Tags WaitBar SimSettings Jcount
 if isempty(TagInf) %create TagInf Fields
     TagInf.Time(1) =0;
+    for i = 1:1:length(LinMod.Scope)
+        r = strfind(LinMod.Scope{i},'.');
+        TagInf.(LinMod.Scope{i}(1:r-1)).(LinMod.Scope{i}(r+1:end)) = Tags.(LinMod.Scope{i}(1:r-1)).(LinMod.Scope{i}(r+1:end));
+    end
     Jcount = 0;
 end
 if t==0 || t == TagInf.Time(IterCount)
@@ -21,7 +25,10 @@ elseif IterCount>1 && t<TagInf.Time(IterCount)
 end
 TagInf.Time(IterCount,1) = t;
 
-InterpVal = X(LinMod.InterpState); 
+ControlInlet = ModelOutlet(LinMod.Model{1}.Out0);%will update inlets, specifically the controller target that we linearized around
+r = strfind(LinMod.LinearizedTarget,'.');
+Target = LinMod.LinearizedTarget;
+InterpVal = ControlInlet.(Target(1:r-1)).(Target(r+1:end)); 
 c= [0 0 0 0];
 n = length(LinMod.InterpVec);
 if LinMod.InterpVec(1) > LinMod.InterpVec(2) %values of InterpVec are decreasing
@@ -66,7 +73,7 @@ nS = length(LinMod.Model{1}.A);%number of model states
 ControlStates = X(nS+1:end,1); %seperate the controller states (at end of vector)
 X = X(1:nS,1); %reduce to just the model states
 
-U = Tags.U; %controller outputs
+U = LinMod.Input; %controller outputs
 O = zeros(length(LinMod.Model{1}.Out0),1); %model Out
 dX = zeros(length(X),1); %change in plant states
 dUX = zeros(length(ControlStates),1); %change in controller states
@@ -94,9 +101,7 @@ while repeat
     end
     count = count+1;
 end
-% TagInf.U(IterCount,:) = U;
-% TagInf.O(IterCount,:) = O;
-Tags.U = U;
+LinMod.Input = U;
 dX(end+1:end+length(ControlStates)) = dUX;
 
 if t>0 && WaitBar.Show == 1 && Jcount==length(X) && isfield(LinMod,'Scope')
@@ -133,62 +138,149 @@ end
 if WaitBar.Show == 1
     waitbar(x,WaitBar.Handle,Text);
 end
+end%Ends function RunLinSystem
 
 function [U,dUx] = Controller(t,ModelOut,ControlStates)
 % what to do if the controller outputs and # of states don't align?
 global LinMod Tags TagInf IterCount
-
-n=0; %counter for inlet values
-m = 0; %counter for outlet values
-list = fieldnames(LinMod.ModelInput);
+ControlInlet = ModelOutlet(ModelOut);
+list = fieldnames(LinMod.Controls);
+n = 0;
 for b = 1:1:length(list)
     block = list{b};
-    ports = fieldnames(LinMod.ModelOutput.(block)); %outputs of model (inputs to controller)
-    for j = 1:1:length(ports)
-        port = ports{j};
-        if isstruct(LinMod.ModelOutput.(block).(port))
-            f = fieldnames(LinMod.ModelOutput.(block).(port));
-            for k = 1:1:length(f)
-                s = LinMod.ModelOutput.(block).(port).(f{k});
-                Inlet.(port).(f{k}) = ModelOut(n+1:n+length(s));
-                n = n+length(s);
-            end
+    ControllerOut.(block) = feval(LinMod.Controls.(block).type,t,ControlStates,ControlInlet.(block),LinMod.Controls.(block),'Outlet');
+    dY = feval(LinMod.Controls.(block).type,t,ControlStates,ControlInlet.(block),LinMod.Controls.(block),'dY');
+    s = length(dY);
+    dUx(n+1:n+s,1) = dY;
+    n = n+s;
+end
+U = ModelInlet(ControllerOut);  
+if isfield(LinMod.Controls.(block),'TagInf')
+    tagNames = LinMod.Controls.(block).TagInf;
+    for i = 1:1:length(tagNames)
+        if isnumeric(Tags.(block).(tagNames{i}))
+            TagInf.(block).(tagNames{i})(IterCount,:)=Tags.(block).(tagNames{i});
         else
-            s = LinMod.ModelOutput.(block).(port);
-            Inlet.(port) = ModelOut(n+1:n+length(s));
-            n = n+length(s);
-        end
-    end
-    Out = feval(LinMod.Controls.(block).type,t,ControlStates,Inlet,LinMod.Controls.(block),'Outlet');
-    ports = fieldnames(LinMod.ModelInput.(block)); %inputs to model (outputs from controller)
-    for j = 1:1:length(ports)
-        port = ports{j};
-        if isstruct(Out.(port))
-            f = fieldnames(Out.(port));
-            for k = 1:1:length(f)
-                s = Out.(port).(f{k});
-                U(m+1:m+length(s),1) = s;
-                m = m+length(s);
-            end
-        else
-            s = Out.(port);
-            U(m+1:m+length(s),1) = s;
-            m = m+length(s);
-        end
-    end
-    dUx = feval(LinMod.Controls.(block).type,t,ControlStates,Inlet,LinMod.Controls.(block),'dY');
-    
-    if isfield(LinMod.Controls.(block),'TagInf')
-        tagNames = LinMod.Controls.(block).TagInf;
-        for i = 1:1:length(tagNames)
-            if isnumeric(Tags.(block).(tagNames{i}))
-                TagInf.(block).(tagNames{i})(IterCount,:)=Tags.(block).(tagNames{i});
-            else
-                f = fieldnames(Tags.(block).(tagNames{i}));
-                for j = 1:1:length(f)
-                    TagInf.(block).(tagNames{i}).(f{j})(IterCount,:)=Tags.(block).(tagNames{i}).(f{j}); 
-                end
+            f = fieldnames(Tags.(block).(tagNames{i}));
+            for j = 1:1:length(f)
+                TagInf.(block).(tagNames{i}).(f{j})(IterCount,:)=Tags.(block).(tagNames{i}).(f{j}); 
             end
         end
     end
 end
+end%Ends function Controller
+
+
+function U0 = ModelInlet(ControllerOut)
+global LinMod Tags
+%this creates a vector (U0) of values from the controller and any lookup functions or tags that feed into the linear model
+components = fieldnames(LinMod.Components);
+controls = fieldnames(LinMod.Controls);
+U0 = []; 
+for k = 1:1:length(components)
+    list = fieldnames(LinMod.Components.(components{k})); %only field should be ports with a connection to a block, lookup function or tag
+    for i = 1:1:length(list)
+        port = list{i};
+        A = [];
+        BlockPort = char(LinMod.Components.(components{k}).(port));
+        r = strfind(BlockPort,'.');
+        if ~isempty(r)
+            connectedBlock = BlockPort(1:r-1);
+            if strcmp(connectedBlock,'Tags')
+                connectedBlock = BlockPort(r(1)+1:r(2)-1);
+                connectedPort = BlockPort(r(2)+1:end);
+                A = Tags.(connectedBlock).(connectedPort);
+            elseif ismember(connectedBlock,controls)
+                connectedPort = BlockPort(r+1:end);
+                A = ControllerOut.(connectedBlock).(connectedPort);
+            end
+        else
+            A = feval(BlockPort,0);%finds value of look-up function at time = 0
+        end
+        if ~isempty(A)
+            if isstruct(A)
+                F = fieldnames(A);
+                for j = 1:1:length(F)
+                    s = length(A.(F{j}));
+                    U0(end+1:end+s,1) = A.(F{j});
+                end
+            else
+                s = length(A);
+                U0(end+1:end+s,1) = A;
+            end
+        end
+    end
+end
+end%Ends function ModelInlet
+
+function ControlInlet = ModelOutlet(Out)
+global LinMod TagInf IterCount
+%this creates a vector (Out0) of values for the controller inlet and any scopes, these will be the outputs of the linear model
+controls = fieldnames(LinMod.Controls);
+components = fieldnames(LinMod.Components);
+n = 0;
+for k = 1:1:length(controls)
+    block = controls{k};
+    list = LinMod.Controls.(block).InletPorts; 
+    for i = 1:1:length(list)
+        port = list{i};
+        A = [];
+        if ~isempty(LinMod.Controls.(block).(port).connected)%inlet connected to another outlet
+            BlockPort = char(LinMod.Controls.(block).(port).connected);
+            if isnumeric(BlockPort) 
+                ControlInlet.(block).(port) = BlockPort;
+            else
+                r = strfind(BlockPort,'.');
+                if ~isempty(r)
+                    connectedBlock = BlockPort(1:r-1);
+                    if strcmp(connectedBlock,'Tags') || ismember(connectedBlock,components)
+                        A = LinMod.Controls.(block).(port).IC; %port is connected to the model or a tag
+                    end
+                else
+                    ControlInlet.(block).(port) = feval(BlockPort,0);%finds value of look-up function at time = 0
+                end
+            end
+        else
+            ControlInlet.(block).(port) = LinMod.Controls.(block).(port).IC;%not connected use constant value
+        end
+        if ~isempty(A)
+            if isstruct(A)
+                F = fieldnames(A);
+                for j = 1:1:length(F)
+                    s = length(A.(F{j}));
+                    ControlInlet.(block).(port).(F{j}) = Out(n+1:n+s,1);
+                    n = n+s;
+                end
+            else
+                s = length(A);
+                ControlInlet.(block).(port) = Out(n+1:n+s,1);
+                n = n+s;
+            end
+        end
+    end
+end
+%append with any scopes
+for i = 1:1:length(LinMod.Scope)
+    BlockPort = LinMod.Scope{i};
+    r = strfind(BlockPort,'.');
+    connectedBlock = BlockPort(1:r-1);
+    connectedTag = BlockPort(r+1:end);
+    A = TagInf.(connectedBlock).(connectedTag)(1,:);
+    if isstruct(A)
+        F = fieldnames(A);
+        for j = 1:1:length(F)
+            s = length(A.(F{j}));
+            TagInf.(connectedBlock).(connectedTag).(F{j})(IterCount,:) = Out(n+1:n+s,1)';
+            n = n+s;
+        end
+    else
+        
+        s = length(A);
+%         if s>1
+%             disp('WTF')
+%         end
+        TagInf.(connectedBlock).(connectedTag)(IterCount,:) = Out(n+1:n+s,1)';
+        n = n+s;
+    end
+end
+end%Ends function ModelOutlet
