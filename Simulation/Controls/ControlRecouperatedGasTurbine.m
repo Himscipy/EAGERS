@@ -39,6 +39,8 @@ if length(varargin)==1 %first initialization
     
     block.Scale = [block.RPMdesign; block.Target1.IC/block.GenEfficiency; block.FuelFlow.IC;];
     block.IC = [1; 1; 1;]; % inital condition 
+    block.UpperBound = [2,inf,inf];
+    block.LowerBound = [0,0,0];
     block.P_Difference = {};
     Out = block;
 elseif length(varargin)==2 %% Have inlets connected, re-initialize

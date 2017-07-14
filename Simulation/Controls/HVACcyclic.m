@@ -41,6 +41,8 @@ if length(varargin)==1 %first initialization
     
     block.Scale = [block.maxFlow;];
     block.IC = [block.minFlow/block.maxFlow;]; % inital condition for flow rate
+    block.UpperBound = inf;
+    block.LowerBound = 0;
     block.P_Difference = {};
     Out = block;
 elseif length(varargin)==2 %% Have inlets connected, re-initialize

@@ -33,10 +33,8 @@ if J ==1
         BuildModel(Plant); %%Build & Initialize model
         J2 = center_menu('Save Model?','Yes','No');
         if J2 ==1
-%             modelParam.SimSettings = SimSettings;
-%             modelParam.Outlet = Outlet;
             [f,p]=uiputfile(fullfile(Model_dir,'Model Library','Saved Models',strcat(modelName,'.mat')),'Save Model As...');
-            save([p f],'modelParam','SimSettings','Outlet')
+            save([p f],'modelParam','SimSettings','Outlet','Tags')
         end
     end
 elseif J ==2
@@ -52,41 +50,19 @@ elseif J ==2
         modelName = list{s};
         modelName = strrep(modelName,'.mat','');
         load(fullfile(Model_dir,'Model Library','Saved Models',modelName));
-%         SimSettings = modelParam.SimSettings;
-%         Outlet = modelParam.Outlet;
     end
 end
 %% Create or load a set of linear models
-nom = {};
-if ~isempty(SimSettings)
-    F = fieldnames(SimSettings);
-    for i = 1:1:length(F)
-        if strfind(F{i},'Nominal')
-            nom(1,end+1) = F(i);
-        end
-    end
-end
-if isempty(nom) || J ==3
+if J ==3
     J2 = 2; %load linearization
 else J2 = center_menu('Linear model option','Create new linearization','Load previously linearized plant','Skip linearization');
 end
 if J2 ==1
-    if length(nom)>1
-        A = center_menu('Choose Nominal Condition to Linearize',nom);
-        linParam = nom{A};
-    else linParam = nom{1};
-    end
-    HSVtol = 0; %what should this be set to?
-    Prompt = {'Minimum','Maximum','# of Linear Models'};
-    DefaultVal = {num2str(0.2*SimSettings.(linParam)),num2str(SimSettings.(linParam)),'5'};
-    A= inputdlg(Prompt,'Specify range and resolution of lineraization',1,DefaultVal);
-    SetPoints = linspace(str2double(A(2)),str2double(A(1)),str2double(A(3)));
-    CreateLinModel(SetPoints,HSVtol);
+    CreateLinModel;
     J3 = center_menu('Save Linearized Model?','Yes','No');
     if J3 ==1
-%         LinMod.SimSettings = SimSettings;
         [f,p]=uiputfile(fullfile(Model_dir,'Model Library','Saved Linearizations',strcat(modelName,'.mat')),'Save Linearized Model As...');
-        save([p f],'LinMod','SimSettings','Outlet')
+        save([p f],'LinMod','SimSettings','Outlet','Tags')
     end
 elseif J2 ==2
     ModelFiles=dir(fullfile(Model_dir,'Model Library','Saved Linearizations','*.mat'));
@@ -99,15 +75,7 @@ elseif J2 ==2
         disp('Invalid selection. Exiting...')
     else
         load(fullfile(Model_dir,'Model Library','Saved Linearizations',list{s}));
-%         if isempty(SimSettings)
-%             SimSettings = LinMod.SimSettings;
-%         end
-%         if isfield(LinMod,'NominalPower')
-%             SimSettings.NominalPower = LinMod.NominalPower;
-%         end
     end
-elseif J2 ==3
-    LinMod =[];
 end
 
 if J2 ==3
@@ -144,7 +112,7 @@ if J3 ~=4
             r = strfind(Cont.connections{j},'.');
             if ~isempty(Cont.connections{j}) && ~isnumeric(Cont.connections{j}) && isempty(r) %must be a lookup function
                 [globvar,Prompt,DefaultVal] = feval(Cont.connections{j},0,'loadparam'); 
-                A = inputdlg(Prompt,strcat('Specify the transient imput parameters for the function',Cont.connections{j},'Any string will be evaluated, but must create vectors of equal length.'),1,DefaultVal);
+                A = inputdlg(Prompt,strcat('Specify the transient input parameters for the function',Cont.connections{j},'Any string will be evaluated, but must create vectors of equal length.'),1,DefaultVal);
                 for k = 1:1:length(globvar)
                     SimSettings.(globvar{k}) = eval(A{k});
                 end
@@ -171,21 +139,6 @@ if J3 ~=4
         if ~isempty(LinMod)
             LinMod.Controls.(controls{i}) = Cont;
         end
-        % %SOFCstack
-        % Cont.Gain = [3e-3;1e-3;1e-2];
-        % Cont.PropGain = [1;1;1];
-
-        %SOFCsystem
-        % Cont.Gain = [1e-2;1e-4;1e-2];
-        % Cont.PropGain = [.5;.1;1];
-
-        % %SOECstack
-        % Cont.Gain = [3e-3;1e-3;1e-2];
-        % Cont.PropGain = [1;1;1];
-
-        % %GasTurbine
-        % Cont.IntGain = [4e-4; 1e-2; 4e-2;];
-        % Cont.PropGain = [8e-3; 5e-0; .75;];
     end 
 end
 
@@ -201,15 +154,12 @@ end
 if J3 ==2 || J3 ==3
     % need to find better initial condition (won't always start at nominal power)
     IC =  [LinMod.Model{1}.X0;LinMod.Model{1}.UX0];
-%     Tags.O = LinMod.Model{1}.Out0;
     Tags.U = LinMod.Model{1}.U0;
-%     Tags.dX = zeros(length(LinMod.Model{1}.X0),1);
-%     Tags.dUX = zeros(length(LinMod.Model{1}.UX0),1);
     IterCount = 1; TagInf =[]; TagFinal =[]; WaitBar.Show = 1; WaitBar.Text = 'Running linear model with transient';WaitBar.Handle =waitbar(0,WaitBar.Text);
     tic; [T, Y] = ode15s(@RunLinSystem, [0, SimSettings.RunTime], IC); disp(strcat('Time to run model:',num2str(toc),' seconds'));close(WaitBar.Handle);
-    if J3 == 3
-        PlotSimulation(T,Y,0,0,0) % have already plotted the maps, just adding non-linear response to linear response
-    else
-        PlotSimulation(T,Y,1,0,1)
-    end
+%     if J3 == 3
+%         PlotSimulation(T,Y,0,0,0) % have already plotted the maps, just adding linear response to non-linear response
+%     else
+%         PlotSimulation(T,Y,1,0,1)
+%     end
 end

@@ -3,7 +3,7 @@ function [T,HTcond,HTconv,HTrad]= SteadyTemps(block,Flow1,Flow2)
 %final solution is x = A\b;
 %states represent  heat transfer into each node/layer, the temperatures of each node/layers, and inlet Flow2 and Flow1 temperatures, Qerror term associated with the small error in air flow rate so that the deltaT and Tavg constraints can both be satisfied
 %like the heat exchanger this averages the inlet and exit temperature for the gas streams, and assumes the solid temperature states correspond to the average for the node
-global F
+F=96485.339; % %Faraday's constant in Coulomb/mole
 a = .5; %weighting of previous node temperature on convection HT calculation
 nodes = block.nodes;
 if isfield(block,'Cells')
@@ -505,3 +505,4 @@ T = x(s*nodes+1:2*s*nodes);
 %     end
 % end
 % %     QT = x(1:s*nodes);
+end%Ends function SteadyTemps

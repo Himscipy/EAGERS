@@ -44,6 +44,7 @@ switch Gen.Type
         for i = 1:1:length(show)
             set(handles.(show{i}),'Visible','on')
         end
+        %clearGenAxes(handles)
         OutNames = {'Capacity';'Electricity';};
         Data(:,1) = Gen.Output.Capacity;
         Data(:,2) = Gen.Output.Electricity;
@@ -51,9 +52,21 @@ switch Gen.Type
             Data(:,3) = Gen.Output.Heat;
             OutNames = {'Capacity';'Electricity';'Heat';};
         end
+        tablepos = get(handles.uitableEffCurve,'Position');
+        tablesize = get(handles.uitableEffCurve,'Extent');
+        tablepos(3:4) = tablesize(3:4);
+        set(handles.uitableEffCurve,'Position',tablepos);
+        pos = [get(handles.compText1,'Position');get(handles.textEdit1,'Position');get(handles.textEdit1Units,'Position')];
         set(handles.compText1,'String',num2str(Gen.Size));
         set(handles.textEdit1,'String','Capacity ');
         set(handles.textEdit1Units,'String','(kW)');
+        width = [get(handles.textEdit1,'Extent');get(handles.textEdit1Units,'Extent')];
+        pos(2,1) = pos(1,1) - width(1,3) - width(2,3);
+        pos(3,1) = pos(1,1) - width(2,3);
+        pos(2,3) = width(1,3);
+        pos(3,3) = width(2,3);
+        set(handles.textEdit1,'Position',pos(2,:));
+        set(handles.textEdit1Units,'Position',pos(3,:));
         set(handles.uitableEffCurve,'Data',Data);
         set(handles.uitableEffCurve,'RowName',{});
         set(handles.uitableEffCurve,'ColumnName',OutNames);
@@ -73,17 +86,38 @@ switch Gen.Type
             end
             clearGenAxes(handles) % clear all figures
             % Populate text boxes
+            pos = [get(handles.compText1,'Position');get(handles.textEdit1,'Position');get(handles.textEdit1Units,'Position');
+                get(handles.compText2,'Position');get(handles.textEdit2,'Position');get(handles.textEdit2Units,'Position');
+                get(handles.compText3,'Position');get(handles.textEdit3,'Position')];
             set(handles.compText1,'String', ...
                 strcat('[',num2str(Gen.VariableStruct.SumRates(:,1)'),']'));
-            set(handles.textEdit1,'String','Summer Rates');
+            set(handles.textEdit1,'String','Summer Rates ');
             set(handles.textEdit1Units,'String','[l m h]');
             set(handles.compText2,'String', ...
                 strcat('[',num2str(Gen.VariableStruct.WinRates(:,1)'),']'));
-            set(handles.textEdit2,'String','Winter Rates');
+            set(handles.textEdit2,'String','Winter Rates ');
             set(handles.textEdit2Units,'String','[l m h]');
             set(handles.compText3,'String', ...
                 num2str(Gen.VariableStruct.SellBackPerc));
             set(handles.textEdit3,'String','Sell Back %');
+            width = [get(handles.textEdit1,'Extent');get(handles.textEdit1Units,'Extent');
+                get(handles.textEdit2,'Extent');get(handles.textEdit2Units,'Extent');
+                get(handles.textEdit3,'Extent')];
+            pos(2,1) = pos(1,1) - width(1,3) - width(2,3);
+            pos(3,1) = pos(1,1) - width(2,3);
+            pos(2,3) = width(1,3);
+            pos(3,3) = width(2,3);
+            pos(5,1) = pos(4,1) - width(3,3) - width(4,3);
+            pos(6,1) = pos(4,1) - width(4,3);
+            pos(5,3) = width(3,3);
+            pos(6,3) = width(4,3);
+            pos(8,1) = pos(7,1) - width(5,3);
+            pos(8,3) = width(5,3);
+            set(handles.textEdit1,'Position',pos(2,:));
+            set(handles.textEdit1Units,'Position',pos(3,:));
+            set(handles.textEdit2,'Position',pos(5,:));
+            set(handles.textEdit2Units,'Position',pos(6,:));
+            set(handles.textEdit3,'Position',pos(8,:));
             set(handles.uitableEffCurve,'Data',Gen.VariableStruct.SumRateTable);
             set(handles.uitableEffCurve,'RowName', ...
                 {'Sun';'Mon';'Tue';'Wed';'Thu';'Fri';'Sat';});
@@ -92,6 +126,9 @@ switch Gen.Type
                 hrs{i} = num2str(i);
             end
             set(handles.uitableEffCurve,'ColumnName',hrs);
+            tablepos = get(handles.uitableEffCurve,'Position');
+            tablepos(3) = 100;
+            set(handles.uitableEffCurve,'Position',tablepos);
             for i = 1:1:length(hide)
                 set(handles.(hide{i}),'Visible','off')
             end
@@ -102,9 +139,17 @@ switch Gen.Type
                 set(handles.(show{i}),'Visible','on')
             end
             clearGenAxes(handles) % clear all figures
+            pos = [get(handles.compText1,'Position');get(handles.textEdit1,'Position');get(handles.textEdit1Units,'Position')];
             set(handles.compText1,'String',num2str(Gen.VariableStruct.Rate(1)));
             set(handles.textEdit1,'String','Fuel Rate');
             set(handles.textEdit1Units,'String','($/MMBTU)');
+            width = [get(handles.textEdit1,'Extent');get(handles.textEdit1Units,'Extent')];
+            pos(2,1) = pos(1,1) - width(1,3) - width(2,3);
+            pos(3,1) = pos(1,1) - width(2,3);
+            pos(2,3) = width(1,3);
+            pos(3,3) = width(2,3);
+            set(handles.textEdit1,'Position',pos(2,:));
+            set(handles.textEdit1Units,'Position',pos(3,:)); 
             for i = 1:1:length(hide)
                 set(handles.(hide{i}),'Visible','off')
             end
@@ -116,9 +161,17 @@ switch Gen.Type
             set(handles.(show{i}),'Visible','on')
         end
         clearGenAxes(handles) % clear all figures
+        pos = [get(handles.compText1,'Position');get(handles.textEdit1,'Position');get(handles.textEdit1Units,'Position')];
         set(handles.compText1,'String',num2str(Gen.Size));
         set(handles.textEdit1,'String','Capacity ');
         set(handles.textEdit1Units,'String','(kW)');
+        width = [get(handles.textEdit1,'Extent');get(handles.textEdit1Units,'Extent')];
+        pos(2,1) = pos(1,1) - width(1,3) - width(2,3);
+        pos(3,1) = pos(1,1) - width(2,3);
+        pos(2,3) = width(1,3);
+        pos(3,3) = width(2,3);
+        set(handles.textEdit1,'Position',pos(2,:));
+        set(handles.textEdit1Units,'Position',pos(3,:)); 
         for i = 1:1:length(hide)
             set(handles.(hide{i}),'Visible','off')
         end
@@ -128,9 +181,17 @@ switch Gen.Type
         for i = 1:1:length(show)
             set(handles.(show{i}),'Visible','on')
         end
+        pos = [get(handles.compText1,'Position');get(handles.textEdit1,'Position');get(handles.textEdit1Units,'Position')];
         set(handles.compText1,'String',num2str(Gen.VariableStruct.Size));
-        set(handles.textEdit1,'String','Solar Capacity');
+        set(handles.textEdit1,'String','Solar Capacity ');
         set(handles.textEdit1Units,'String','(kW)');
+        width = [get(handles.textEdit1,'Extent');get(handles.textEdit1Units,'Extent')];
+        pos(2,1) = pos(1,1) - width(1,3) - width(2,3);
+        pos(3,1) = pos(1,1) - width(2,3);
+        pos(2,3) = width(1,3);
+        pos(3,3) = width(2,3);
+        set(handles.textEdit1,'Position',pos(2,:));
+        set(handles.textEdit1Units,'Position',pos(3,:));
         clearGenAxes(handles) % clear all figures
         for i = 1:1:length(hide)
             set(handles.(hide{i}),'Visible','off')
@@ -141,9 +202,17 @@ switch Gen.Type
         for i = 1:1:length(show)
             set(handles.(show{i}),'Visible','on')
         end
+        pos = [get(handles.compText1,'Position');get(handles.textEdit1,'Position');get(handles.textEdit1Units,'Position')];
         set(handles.compText1,'String',num2str(Gen.Size));
-        set(handles.textEdit1,'String','Storage Capacity');
+        set(handles.textEdit1,'String','Storage Capacity ');
         set(handles.textEdit1Units,'String','(kW)');
+        width = [get(handles.textEdit1,'Extent');get(handles.textEdit1Units,'Extent')];
+        pos(2,1) = pos(1,1) - width(1,3) - width(2,3);
+        pos(3,1) = pos(1,1) - width(2,3);
+        pos(2,3) = width(1,3);
+        pos(3,3) = width(2,3);
+        set(handles.textEdit1,'Position',pos(2,:));
+        set(handles.textEdit1Units,'Position',pos(3,:));
         clearGenAxes(handles) % clear all figures
         for i = 1:1:length(hide)
             set(handles.(hide{i}),'Visible','off')
@@ -154,9 +223,17 @@ switch Gen.Type
         for i = 1:1:length(show)
             set(handles.(show{i}),'Visible','on')
         end
+        pos = [get(handles.compText1,'Position');get(handles.textEdit1,'Position');get(handles.textEdit1Units,'Position')];
         set(handles.compText1,'String',num2str(Gen.Size));
-        set(handles.textEdit1,'String','Storage Capacity');
+        set(handles.textEdit1,'String','Storage Capacity ');
         set(handles.textEdit1Units,'String','(kW)');
+        width = [get(handles.textEdit1,'Extent');get(handles.textEdit1Units,'Extent')];
+        pos(2,1) = pos(1,1) - width(1,3) - width(2,3);
+        pos(3,1) = pos(1,1) - width(2,3);
+        pos(2,3) = width(1,3);
+        pos(3,3) = width(2,3);
+        set(handles.textEdit1,'Position',pos(2,:));
+        set(handles.textEdit1Units,'Position',pos(3,:));
         clearGenAxes(handles) % clear all figures
         for i = 1:1:length(hide)
             set(handles.(hide{i}),'Visible','off')
@@ -167,9 +244,17 @@ switch Gen.Type
         for i = 1:1:length(show)
             set(handles.(show{i}),'Visible','on')
         end
+        pos = [get(handles.compText1,'Position');get(handles.textEdit1,'Position');get(handles.textEdit1Units,'Position')];
         set(handles.compText1,'String',num2str(Gen.Demand));
-        set(handles.textEdit1,'String','Demand');
+        set(handles.textEdit1,'String','Demand ');
         set(handles.textEdit1Units,'String','(kW)');
+        width = [get(handles.textEdit1,'Extent');get(handles.textEdit1Units,'Extent')];
+        pos(2,1) = pos(1,1) - width(1,3) - width(2,3);
+        pos(3,1) = pos(1,1) - width(2,3);
+        pos(2,3) = width(1,3);
+        pos(3,3) = width(2,3);
+        set(handles.textEdit1,'Position',pos(2,:));
+        set(handles.textEdit1Units,'Position',pos(3,:));
         clearGenAxes(handles) % clear all figures
         for i = 1:1:length(hide)
             set(handles.(hide{i}),'Visible','off')
@@ -180,9 +265,17 @@ switch Gen.Type
         for i = 1:1:length(show)
             set(handles.(show{i}),'Visible','on')
         end
+        pos = [get(handles.compText1,'Position');get(handles.textEdit1,'Position');get(handles.textEdit1Units,'Position')];
         set(handles.compText1,'String',num2str(Gen.Demand));
-        set(handles.textEdit1,'String','Demand');
+        set(handles.textEdit1,'String','Demand ');
         set(handles.textEdit1Units,'String','(kW)');
+        width = [get(handles.textEdit1,'Extent');get(handles.textEdit1Units,'Extent')];
+        pos(2,1) = pos(1,1) - width(1,3) - width(2,3);
+        pos(3,1) = pos(1,1) - width(2,3);
+        pos(2,3) = width(1,3);
+        pos(3,3) = width(2,3);
+        set(handles.textEdit1,'Position',pos(2,:));
+        set(handles.textEdit1Units,'Position',pos(3,:));
         clearGenAxes(handles) % clear all figures
         for i = 1:1:length(hide)
             set(handles.(hide{i}),'Visible','off')
@@ -193,9 +286,17 @@ switch Gen.Type
         for i = 1:1:length(show)
             set(handles.(show{i}),'Visible','on')
         end
+        pos = [get(handles.compText1,'Position');get(handles.textEdit1,'Position');get(handles.textEdit1Units,'Position')];
         set(handles.compText1,'String',num2str(Gen.Demand));
-        set(handles.textEdit1,'String','Demand');
+        set(handles.textEdit1,'String','Demand ');
         set(handles.textEdit1Units,'String','(kW)');
+        width = [get(handles.textEdit1,'Extent');get(handles.textEdit1Units,'Extent')];
+        pos(2,1) = pos(1,1) - width(1,3) - width(2,3);
+        pos(3,1) = pos(1,1) - width(2,3);
+        pos(2,3) = width(1,3);
+        pos(3,3) = width(2,3);
+        set(handles.textEdit1,'Position',pos(2,:));
+        set(handles.textEdit1Units,'Position',pos(3,:));
         clearGenAxes(handles) % clear all figures
         for i = 1:1:length(hide)
             set(handles.(hide{i}),'Visible','off')
@@ -206,9 +307,17 @@ switch Gen.Type
         for i = 1:1:length(show)
             set(handles.(show{i}),'Visible','on')
         end
+        pos = [get(handles.compText1,'Position');get(handles.textEdit1,'Position');get(handles.textEdit1Units,'Position')];
         set(handles.compText1,'String',num2str(Gen.Efficiency*100));
-        set(handles.textEdit1,'String','Conversion Efficiency');
+        set(handles.textEdit1,'String','Conversion Efficiency ');
         set(handles.textEdit1Units,'String','(%)');
+        width = [get(handles.textEdit1,'Extent');get(handles.textEdit1Units,'Extent')];
+        pos(2,1) = pos(1,1) - width(1,3) - width(2,3);
+        pos(3,1) = pos(1,1) - width(2,3);
+        pos(2,3) = width(1,3);
+        pos(3,3) = width(2,3);
+        set(handles.textEdit1,'Position',pos(2,:));
+        set(handles.textEdit1Units,'Position',pos(3,:));
         clearGenAxes(handles) % clear all figures
         for i = 1:1:length(hide)
             set(handles.(hide{i}),'Visible','off')

@@ -1,5 +1,5 @@
 function G = GibbVal(X,WGS,T,P,g0)
-global Ru
+Ru = 8.314472; % Universal gas constant in kJ/K*kmol
 X.CO = X.CO - WGS;
 X.CO2 = X.CO2 + WGS;
 X.H2 = X.H2  + WGS;
@@ -17,3 +17,4 @@ for i = 1:1:length(spec)
     %     G = G+X.(spec{i})*(g0.(spec{i})/(Ru*T)+log(X.(spec{i})/sumX*P));
     %     G = G+X.(spec{i})*(g0.(spec{i}) + Ru*T*log(P)+Ru*T*log(X.(spec{i})/sumX));
 end
+end%Ends function GibbVal

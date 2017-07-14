@@ -15,7 +15,8 @@ function Out = ControlFCstack(varargin)
 % those targets, while the first n outlets correspond to the controllers 
 % ability to hit that target
 % The model can thus be linearized around any of these targets
-global Tags F
+global Tags
+F=96485.339; % %Faraday's constant in Coulomb/mole
 if length(varargin)==1 %first initialization
     block = varargin{1};
     if isfield(block,'OxyFC')
@@ -79,9 +80,13 @@ if length(varargin)==1 %first initialization
     if isfield(block,'OxyFC')
         block.IC = [Recirculation;1;1;]; % inital condition
         block.Scale = [1;FuelFlow;Current];
+        block.UpperBound = [1,inf,inf];
+        block.LowerBound = [0,0,0];
     else
         block.IC = [1]; % inital condition
         block.Scale =  [OxidantFlow;];
+        block.UpperBound = inf;
+        block.LowerBound = 0;
     end
     
     block.P_Difference = {};

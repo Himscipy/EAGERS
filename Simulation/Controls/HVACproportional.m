@@ -42,6 +42,8 @@ if length(varargin)==1 %first initialization
     
     block.Scale = [block.maxFlow; 1;1;1;];
     block.IC = [block.minFlow/block.maxFlow; block.Damper.IC; block.ColdWater.IC.H2O; block.HotWater.IC.H2O;]; % inital condition for flow rate, damper position (fraction of recirculated air), heating coil valve, cooling coil valve
+    block.UpperBound = [inf,1,1,1];
+    block.LowerBound = [0,0,0,0];
     block.P_Difference = {};
     Out = block;
 elseif length(varargin)==2 %% Have inlets connected, re-initialize

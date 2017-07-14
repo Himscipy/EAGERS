@@ -2,7 +2,7 @@ function Out = Control_Hyper(varargin)
 % Controls for recoperated micro-turbine with hot bypass, cold bypass, and bleed valves
 % Four (4) inlets: Two targets (Power, turbine exhaust temperature setpoint), Turbine exit temperature (TET), RPM, Combustor equivelance
 % Five (5) outlets: Two corresponding to the targets, Generator Power, fuel flow rate, hot byass valve postion, cold bypass valve position, and compressor bleed valve position
-% Six (6) states: desired RPM, generator power, molar fuel flow, cold bypass, hot bypass, and bleed valve
+% Five (5) states: dgenerator power, molar fuel flow, cold bypass, hot bypass, and bleed valve
 % Like all controllers, if there are n targets, the first n inlets set 
 % those targets, while the first n outlets correspond to the controllers 
 % ability to hit that target
@@ -40,6 +40,8 @@ if length(varargin)==1 %first initialization
 
     block.Scale = [block.NominalPower/block.GenEfficiency; block.FuelFlow.IC; 1; 1; 1];
     block.IC = [1; 1; block.ColdBypass.IC;block.HotBypass.IC; block.BleedValve.IC;];% inital condition 
+    block.UpperBound = [inf,inf,1,1,1];
+    block.LowerBound = [0,0,0,0,0];
     block.InitializeError = 1;
     block.P_Difference = {};
     Out = block;

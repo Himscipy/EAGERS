@@ -79,3 +79,4 @@ xlabel(Xlabel,'FontSize',14)
 ylabel(Ylabel,'FontSize',14)
 c = colorbar;
 % c.Label.String = 'Current Density(A/cm^2)';
+end%Ends function CurrentMap

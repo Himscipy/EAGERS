@@ -1,10 +1,6 @@
 function dY = RunBlocks(t,Y)
 global modelParam LinMod IterCount Inlet Outlet TagInf TagFinal Tags SimSettings WaitBar Jcount
-
 Y = Y.*modelParam.Scale;
-if ~isfield(LinMod,'Options');
-    LinMod.Options = [];
-end
 CompNames = fieldnames(modelParam.Components);
 controls = fieldnames(modelParam.Controls);
 list = [CompNames;controls;];
@@ -72,6 +68,14 @@ while any(blockSteady)
             blockSteady(blockCount) = false;
         end
     end
+    %if linearizing the model, reset the perturbed outlet or tag or lookup function 
+    if ~isempty(LinMod) && ~isempty(LinMod.Interupt)
+        if ~isempty(LinMod.Interupt.struct)
+            Inlet.(LinMod.Interupt.block).(LinMod.Interupt.port).(LinMod.Interupt.struct)(LinMod.Interupt.index) = LinMod.Interupt.value;
+        else
+            Inlet.(LinMod.Interupt.block).(LinMod.Interupt.port)(LinMod.Interupt.index) = LinMod.Interupt.value;
+        end
+    end
 end
 
 %% run blocks to find dY
@@ -89,13 +93,17 @@ for k = 1:1:length(list) %run components with states %% record All tags
     if isfield(modelParam.(Co).(block),'TagInf')
         tagNames = modelParam.(Co).(block).TagInf;
         for i = 1:1:length(tagNames)
-            if isnumeric(Tags.(block).(tagNames{i}))
+            if isempty(TagInf.(block).(tagNames{i}))
+                TagInf.(block).(tagNames{i}) = Tags.(block).(tagNames{i});
+            elseif isnumeric(Tags.(block).(tagNames{i}))
                 TagInf.(block).(tagNames{i})(IterCount,:)=Tags.(block).(tagNames{i});
-            else
+            elseif isstruct(Tags.(block).(tagNames{i}))
                 f = fieldnames(Tags.(block).(tagNames{i}));
                 for j = 1:1:length(f)
                     TagInf.(block).(tagNames{i}).(f{j})(IterCount,:)=Tags.(block).(tagNames{i}).(f{j}); 
                 end
+            else
+                disp('WTF')
             end
         end
     end
@@ -208,8 +216,7 @@ end
 end %ends function comparePort
 
 function InletBlock = RefreshInlet(block,t)
-global modelParam LinMod Outlet Tags
-
+global modelParam Outlet Tags
 controls = fieldnames(modelParam.Controls);
 if any(strcmp(controls,block))
     Co = 'Controls';
@@ -232,30 +239,11 @@ for i = 1:1:length(list)
                     InletBlock.(port) = Tags.(connectedBlock).(connectedPort);
                 else
                     connectedPort = BlockPort(r+1:end);
-                    if isfield(Outlet.(connectedBlock),connectedPort)
-                        InletBlock.(port) = Outlet.(connectedBlock).(connectedPort);
-                    else
-                        if any(strcmp(controls,connectedBlock))
-                            Co2 = 'Controls';
-                        else Co2 = 'Components';
-                        end
-                        InletBlock.(port) = modelParam.(Co2).(connectedBlock).(connectedPort).IC;
-                    end
-                end
-                %%forced interupt between controller and component ports when linearizing model
-                if ismember(connectedBlock,controls) && ~ismember(block,controls)
-                    if isfield(LinMod.Options,'AssignedInputs') && LinMod.Options.AssignedInputs == 1
-                        InletBlock.(port) = LinMod.ModelInput.(connectedBlock).(connectedPort);%assign inputs
-                    else
-                        LinMod.ModelInput.(connectedBlock).(connectedPort) = InletBlock.(port);%Collect inputs to model (outputs from controller)
-                    end
+                    InletBlock.(port) = Outlet.(connectedBlock).(connectedPort);
                 end
             else
                 InletBlock.(port) = feval(BlockPort,t);%finds value of look-up function at time = 0
             end
-        end
-        if ismember(block,controls) 
-            LinMod.ModelOutput.(block).(port) = InletBlock.(port);%collect outputs of model (inputs to controller)
         end
     else
         InletBlock.(port) = modelParam.(Co).(block).(port).IC;
@@ -285,4 +273,4 @@ for i = 1:1:length(list2)
         end
     end
 end
-end %ends function yesNan
+end %ends function IsInletNaN

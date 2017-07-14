@@ -99,6 +99,4 @@ for i = 1:mapLen
 
     end
 end
-
-end
-
+end%Ends function RTdownscaling

@@ -44,3 +44,4 @@ block.HTadjacent(1:columns:end,1)=linspace(1,nodes-columns+1,rows);%first node i
 block.HTadjacent(columns:columns:end,2)=linspace(columns,nodes,rows)';%last node in each row has nothing after it
 block.HTadjacent(1:columns,3)=linspace(1,columns,columns);%first row has nothing to left
 block.HTadjacent(end-columns+1:end,4)=linspace(nodes-columns+1,nodes,columns);%last row has nothing to right
+end%Ends function FlowDir

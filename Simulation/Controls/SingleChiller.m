@@ -46,6 +46,8 @@ if length(varargin)==1 % first initialization
     
     block.Scale = [block.Chiller1.IC;block.CoolingTowerFan.IC;block.ColdWaterPump.IC;block.CoolingTowerPump.IC;]; 
     block.IC = ones(length(block.Scale),1);
+    block.UpperBound = [inf,inf,inf,inf];
+    block.LowerBound = [0,0,0,0];
     Tags.(block.name).COP =  block.Target1.IC/sum(block.Scale);
     block.P_Difference = {};
     Out = block;

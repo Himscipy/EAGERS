@@ -15,3 +15,4 @@ while abs(error)>1e-6
     dSdr = (S2C2 - S2C)/dr;
     r = r + error/dSdr;
 end
+end%Ends function anodeRecircHumidification

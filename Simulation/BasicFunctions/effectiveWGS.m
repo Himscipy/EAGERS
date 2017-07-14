@@ -20,3 +20,4 @@ while abs(error)>1e-6
         WGSeffective = WGSeffective + error/dSdWGS;
     end
 end
+end%Ends function effectiveWGS

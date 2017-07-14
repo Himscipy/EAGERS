@@ -6,3 +6,4 @@ for i = 1:1:length(speciesName)
         netflow = netflow+ Flow.(speciesName{i});
     end
 end
+end%Ends function NetFlow

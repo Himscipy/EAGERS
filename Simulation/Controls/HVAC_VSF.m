@@ -39,6 +39,8 @@ if length(varargin)==1 %first initialization
     
     block.Scale = [block.maxFlow;];
     block.IC = [block.minFlow/block.maxFlow;]; % inital condition 
+    block.UpperBound = inf;
+    block.LowerBound = 0;
     block.P_Difference = {};
     Out = block;
 elseif length(varargin)==2 %% Have inlets connected, re-initialize
@@ -106,13 +108,16 @@ else
             end
         end
         if Inlet.Humidity>block.maxHumidity %if de-humidifying, cool to the dew point
-            Out.T = {block.Target(2),T};
+            Out.Tset = {block.Target(2),T};
         else
-            Out.T = {T,T};
+            Out.Tset = {T,T};
         end
         Out.Flow = max(min(Y(1)+block.PropGain(1)*Terror,block.maxFlow),block.minFlow);
         Out.Damper = block.Damper.IC ;
         Tags.(block.name).FlowRate = Out.Flow;
+        if isempty(T)
+            T = Inlet.Temperature;
+        end
         Tags.(block.name).Temperature = T;
         Tags.(block.name).CoolingPower = Tags.(block.building).Cooling/block.COP;
     elseif strcmp(string1,'dY')

@@ -7,7 +7,8 @@ function Out = ControlSOFCsystem(varargin)
 % Nine (9) outlets: Four associated with the targets, Heater bypass, blower power, fuel flow rate, current, anode recirculation
 % Two (2) states: Heater bypass, blower power
 % May need to add state for current back in to avoid fuel starvation during step changes
-global Tags F
+global Tags
+F=96485.339; % %Faraday's constant in Coulomb/mole
 if length(varargin)==1 %first initialization
     block = varargin{1};
     block.PIdescription = {'Heater Bypass';'Blower Power';'Fuel Cell Current';};
@@ -66,6 +67,8 @@ if length(varargin)==1 %first initialization
     
     block.IC = [Bypass;1;]; % inital condition
     block.Scale = [1;Blower;];
+    block.UpperBound = [1,inf];
+    block.LowerBound = [0,0];
     Out = block;
 elseif length(varargin)==2 %second initialization
     block = varargin{1};

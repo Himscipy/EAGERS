@@ -45,3 +45,4 @@ for i = 1:1:length(spec)
             MF = MF + Flow.(spec{i})*78;
     end
 end
+end%Ends function MassFlow

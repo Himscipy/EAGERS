@@ -15,3 +15,4 @@ while error>1e-3
     error = (enthalpyAir(NewAir)*(Air1_mass + Air2_mass) - H1 - H2);
     NewAir.T = NewAir.T - error/(1.5*(Air1_mass+Air2_mass));
 end
+end%Ends function MixAir
