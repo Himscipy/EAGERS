@@ -1,11 +1,22 @@
 function K = createCombinations(QP,netDemand)
 global Plant
-Outs = fieldnames(Plant.Data.Demand);
+if~isempty(Plant.Building)
+    %% This is temporary to only do electric dispatch
+    Outs = {'E'};
+else
+    Outs = fieldnames(Plant.Data.Demand);
+end
 nG = length(Plant.Generator);
+Type = cell(nG,1);
+for i = 1:1:nG
+    Type(i) = {Plant.Generator(i).Type};
+end
+
 isCHP = false;
+Outs = Outs(~strcmp('W',Outs)); %no dams are dispatchable
 if any(strcmp('E',Outs)) && any(strcmp('H',Outs))%check if there is a CHP system
     for i = 1:1:nG
-        if strcmp(Plant.Generator(i).Type,'CHP Generator')
+        if strcmp(Type{i},'CHP Generator')
             isCHP = true;
             break
         end
@@ -14,23 +25,33 @@ if any(strcmp('E',Outs)) && any(strcmp('H',Outs))%check if there is a CHP system
         Outs = Outs(~strcmp('H',Outs)); %heaters are part of electricity case
     end
 end
+if any(strcmp('E',Outs)) && any(strcmp('C',Outs)) && Plant.optimoptions.sequential == 0
+    Outs = Outs(~strcmp('C',Outs)); %Chillers are part of electricity case
+end
 K = zeros(0,nG);
 lines = 0;
 for s = 1:1:length(Outs)
+    if strcmp(Outs{s},'E')
+        include = {'Electric Generator';'CHP Generator';};%no utilities are dispatchable
+        if Plant.optimoptions.sequential == 0
+            include(end+1) = {'Chiller';};%no utilities are dispatchable ___ Need to do something to link absorption chiller to when CHP is on 'Absorption Chiller';
+        end
+        if isCHP
+            include(end+1) = {'Heater'};
+        end
+        req = QP.Organize.Balance.Electrical; %rows of Aeq associated with electric demand
+    elseif strcmp(Outs{s},'C')
+        include = {'Chiller'};
+        req = QP.Organize.Balance.DistrictCool; %rows of Aeq associated with cool demand
+    elseif strcmp(Outs{s},'H')
+        include = {'Heater'};
+        req = QP.Organize.Balance.DistrictHeat; %rows of Aeq associated with heat demand
+    end
     inc = false(nG,1);
     for i = 1:1:nG
-        if isfield(Plant.Generator(i).QPform.output,Outs{s}) && ~strcmp(Plant.Generator(i).Source,'Renewable')
-            if isempty(strfind(Plant.Generator(i).Type,'Utility')) &&  isempty(strfind(Plant.Generator(i).Type,'Storage')) && Plant.Generator(i).Enabled
-                inc(i) = true;
-            end
-            if strcmp(Outs{s},'E') && strcmp(Plant.Generator(i).Type,'Chiller')
-                inc(i) = false; %avoid chillers during electric combinations
-            end
-        end
-    end
-    if (strcmp(Outs{s},'E') && isCHP) %combine heaters into CHP case
-        for i = 1:1:nG
-            if  isempty(strfind(Plant.Generator(i).Type,'Utility')) &&  isempty(strfind(Plant.Generator(i).Type,'Storage')) && Plant.Generator(i).Enabled && isfield(Plant.Generator(i).QPform.output,'H')
+        if ismember(Type{i},include)
+            states = QP.Organize.States{i};
+            if sum(QP.lb(states))>0 %has a lower threshold, and can be shut off
                 inc(i) = true;
             end
         end
@@ -57,52 +78,58 @@ for s = 1:1:length(Outs)
     %if the generators lower bounds are higher than the demand, then the case is invalid and should be removed. 
     %if the generators upper bounds are lower than the demand, then this case does not produce enough and should be removed.
     %%could improve this section to check if feasible with network losses (not sure how)
-    req = [];
-    if strcmp(Outs{s},'E')
-        req = QP.Organize.Balance.Electrical; %rows of Aeq associated with electric demand
-    elseif strcmp(Outs{s},'H')
+    limitL = zeros(1,nG);
+    if strcmp(Outs{s},'H') && Plant.optimoptions.excessHeat
+        limitL = limitL - inf;
+    end
+    K = UpperLowerLimit(K,lines,QP,req,netDemand.(Outs{s}),limitL);
+    if isCHP && strcmp(Outs{s},'E') && ~isempty(K)
         req = QP.Organize.Balance.DistrictHeat; %rows of Aeq associated with heat demand
-    elseif strcmp(Outs{s},'C')
-        req = QP.Organize.Balance.DistrictCool; %rows of Aeq associated with cool demand
-    end
-    limitU.(Outs{s}) = zeros(1,nG);
-    limitL.(Outs{s}) = zeros(1,nG);
-    for i = 1:1:nG
-        states = QP.Organize.States{i};
-        if~isempty(states)
-            if any(isinf(QP.ub(states)))
-                if any(QP.Aeq(req,states)~=0)
-                    limitU.(Outs{s})(i) = inf;
-                end
-            else
-                limitU.(Outs{s})(i) = limitU.(Outs{s})(i) + sum(QP.Aeq(req,states)*QP.ub(states));
-            end
-            if any(isinf(QP.lb(states)))
-                if any(QP.Aeq(req,states)~=0)
-                    limitL.(Outs{s})(i) = -inf;
-                end
-            else
-                if strcmp(Outs{s},'H') && isfield(QP.Organize,'HeatVented') && any(QP.Organize.HeatVented(1,:))
-                    lb = min(0,sum(QP.Aeq(req,states)*QP.lb(states)));
-                else lb = sum(QP.Aeq(req,states)*QP.lb(states));
-                end
-                limitL.(Outs{s})(i) = limitL.(Outs{s})(i) + lb;
-            end
+        limitL = zeros(1,nG);
+        if Plant.optimoptions.excessHeat
+            limitL = limitL - inf;
         end
+        K = UpperLowerLimit(K,lines,QP,req,netDemand.H,limitL);
     end
-    sumUB = sum((K(lines+1:end,inc)>0).*(ones(2^n,1)*limitU.(Outs{s})(inc)),2);
-    sumLB = sum((K(lines+1:end,inc)>0).*(ones(2^n,1)*limitL.(Outs{s})(inc)),2);
-    if ~isempty(ninc)
-        if isempty(sumUB)
-            sumUB = 0;
-        end
-        if isempty(sumLB)
-            sumLB = 0;
-        end
-        sumUB = sumUB + sum((K(lines+1:end,ninc)>0).*(ones(2^n,1)*limitU.(Outs{s})(ninc)),2);
-        sumLB = sumLB + sum((K(lines+1:end,ninc)>0).*(ones(2^n,1)*limitL.(Outs{s})(ninc)),2);
+    if isfield(Plant.Data,'Demand') && isfield(Plant.Data.Demand,'C') && Plant.optimoptions.sequential == 0 && strcmp(Outs{s},'E') && ~isempty(K)
+        req = QP.Organize.Balance.DistrictCool; %rows of Aeq associated with cooling demand
+        limitL = zeros(1,nG);
+        K = UpperLowerLimit(K,lines,QP,req,netDemand.C,limitL);
     end
-    keep = [true(lines,1); ((sumUB>=netDemand.(Outs{s})) & (sumLB<=netDemand.(Outs{s})))];%keep the rows where the ub is capable of meeting demand and the lower bound is low enough to meet demand
-    K = K(keep,:);
-    lines = nnz(keep);
+    lines = length(K(:,1));
 end
+end%Ends function createCombinations
+
+function K = UpperLowerLimit(K,lines,QP,req,netDemand,limitL)
+limitU = zeros(1,length(limitL));
+for i = 1:1:length(limitL)
+    states = QP.Organize.States{i};
+    if~isempty(states)
+        if any(isinf(QP.ub(states)))
+            if any(QP.Aeq(req,states)~=0)
+                limitU(i) = inf;
+            end
+        else
+            limitU(i) = limitU(i) + sum(max(0,QP.Aeq(req,states)).*QP.ub(states));
+            limitU(i) = limitU(i) - sum(min(0,QP.Aeq(req,states)).*QP.ub(states));%add anything thats an electric load (i.e. chiller))
+        end
+        if any(isinf(QP.lb(states)))
+            if any(QP.Aeq(req,states)~=0)
+                limitL(i) = -inf;
+            end
+        else
+            limitL(i) = limitL(i) + sum(max(0,QP.Aeq(req,states).*QP.lb(states)));
+            limitL(i) = limitL(i) - sum(min(0,QP.Aeq(req,states).*max(0,QP.lb(states))));
+        end
+    end
+end
+n = length(K(:,1))-lines;
+A = (ones(n,1)*limitU);
+A(K(lines+1:end,:)==0) = 0;
+sumUB = sum(A,2);
+B = (ones(n,1)*limitL);
+B(K(lines+1:end,:)==0) = 0;
+sumLB = sum(B,2);
+keep = [true(lines,1); ((sumUB>=netDemand) & (sumLB<=netDemand))];%keep the rows where the ub is capable of meeting demand and the lower bound is low enough to meet demand
+K = K(keep,:);
+end%ends function UpperLowerLimit

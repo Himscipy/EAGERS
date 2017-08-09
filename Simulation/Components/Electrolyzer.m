@@ -450,7 +450,7 @@ else%running the model
         dY(1:nodes)= QT(1:nodes)./block.tC(1:nodes);  %Cathode Plate
         for i=1:1:length(block.Flow1Dir(1,:)) %having the downstream nodes change temperature with the upstream nodes prevents propogation issues when taking larger time steps
             k = block.Flow1Dir(:,i);
-            dY(nodes+k)= (QT(nodes+k) + Hin2(k) - Hout2(k) - Qion(k))./block.tC(nodes+k); 
+            dY(nodes+k)= (QT(nodes+k) + Hin1(k) - Hout1(k) - Qion(k))./block.tC(nodes+k); 
             if i>1
                 dY(nodes+k) = dY(nodes+k)+dY(nodes+kprev);
             end
@@ -459,7 +459,7 @@ else%running the model
         dY(1+2*nodes:3*nodes)= (QT(1+2*nodes:3*nodes) + Qgen)./block.tC(2*nodes+1:3*nodes); %Electrolyte Plate
         for i=1:1:length(block.Flow2Dir(1,:))
             k = block.Flow2Dir(:,i);
-            dY(3*nodes+k)= (QT(3*nodes+k) + Hin1(k) - Hout1(k) + Qion(k) - nPower(k) - Qgen(k))./block.tC(3*nodes+k);
+            dY(3*nodes+k)= (QT(3*nodes+k) + Hin2(k) - Hout2(k) + Qion(k) - nPower(k) - Qgen(k))./block.tC(3*nodes+k);
             if i>1
                 dY(3*nodes+k) = dY(3*nodes+k)+dY(3*nodes+kprev);
             end
@@ -636,11 +636,11 @@ block.LowerBound = zeros(NumOfStates,1); %need to make this -inf for current sta
 block.tC = block.IC; % time constant for derivative dY
 block.Scale(1:5*block.nodes) = block.Tstates(1:5*block.nodes);%temperature (K)
 
-block.tC(1:block.nodes) = (block.Mass_plate2*block.C_plate2);
-block.tC(1+block.nodes:2*block.nodes) = (block.Vol_flow1*Cp_2*block.Flow1_Pinit./(block.Ru*block.T.Flow1));
+block.tC(1:block.nodes) = (block.Mass_plate1*block.C_plate1);
+block.tC(1+block.nodes:2*block.nodes) = (block.Vol_flow1*Cp_1*block.Flow1_Pinit./(block.Ru*block.T.Flow1));
 block.tC(2*block.nodes+1:3*block.nodes) = (block.Vol_Elec*block.Density_Elec*block.C_Elec);
-block.tC(3*block.nodes+1:4*block.nodes) = (block.Vol_flow2*Cp_1*block.Flow2_Pinit./(block.Ru*block.T.Flow2));
-block.tC(4*block.nodes+1:5*block.nodes) = (block.Mass_plate1*block.C_plate1);
+block.tC(3*block.nodes+1:4*block.nodes) = (block.Vol_flow2*Cp_2*block.Flow2_Pinit./(block.Ru*block.T.Flow2));
+block.tC(4*block.nodes+1:5*block.nodes) = (block.Mass_plate1*block.C_plate2);
 
 n = 5*block.nodes;
 for i = 1:1:length(block.F1Spec)
@@ -683,8 +683,8 @@ block.tC(n+1:n+block.nodes) = 1;  %current
 block.Scale(n+1:n+block.nodes) = abs(block.Current.H2+block.Current.CO); %current 
 block.LowerBound(n+1:n+block.nodes) = -inf; n = n+block.nodes; %current
 
-block.tC(n+1) = (block.Vol_flow2*block.nodes*block.Cells);  %pressure
-block.tC(n+2) = (block.Vol_flow1*block.nodes*block.Cells); %pressure
+block.tC(n+1) = (block.Vol_flow1*block.nodes*block.Cells);  %pressure
+block.tC(n+2) = (block.Vol_flow2*block.nodes*block.Cells); %pressure
 block.Scale(n+1) = block.Flow1_Pinit;%pressure
 block.Scale(n+2) = block.Flow2_Pinit;%pressure
 end%Ends function Set_IC

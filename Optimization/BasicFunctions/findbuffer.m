@@ -3,9 +3,7 @@ global Plant
 nG = length(Plant.Generator);
 BuffPerc = Plant.optimoptions.Buffer; % percentage for buffer on storage
 genNames = cell(nG,1);
-networkNames = fieldnames(Plant.Network);
-networkNames = networkNames(~strcmp('name',networkNames));
-networkNames = networkNames(~strcmp('Equipment',networkNames));
+networkNames = fieldnames(Plant.subNet);
 for i = 1:1:nG
     genNames(i,1) = {Plant.Generator(i).Name};
 end
@@ -24,8 +22,8 @@ for net = 1:1:length(networkNames)
         out = 'W';
         include = {}; % included this to get past line 31
     end
-    for m = 1:1:length(Plant.subNet.(networkNames{net}))
-        equip = Plant.subNet.(networkNames{net})(m).Equipment;
+    for m = 1:1:length(Plant.subNet.(networkNames{net}).nodes)
+        equip = Plant.subNet.(networkNames{net}).Equipment{m};
         chargeCapacity = 0; 
         for j = 1:1:length(equip)
             if ismember(Plant.Generator(equip(j)).Type,include)
@@ -48,8 +46,8 @@ for net = 1:1:length(networkNames)
                 end
                 Plant.Generator(equip(j)).QPform.link.bineq(end-1) = -Buffer; %lower buffer ineq :  -SOC - W <= -Buffer becomes W>= buffer -SOC
                 Plant.Generator(equip(j)).QPform.link.bineq(end) = Plant.Generator(equip(j)).QPform.Stor.UsableSize-Buffer; %upper buffer ineq :  SOC - Z <= (UB-Buffer)
-                Plant.Generator(equip(j)).QPform.Z.ub = Buffer;
-                Plant.Generator(equip(j)).QPform.W.ub = Buffer;
+                Plant.Generator(equip(j)).QPform.U.ub = Buffer;
+                Plant.Generator(equip(j)).QPform.L.ub = Buffer;
             end
         end
     end

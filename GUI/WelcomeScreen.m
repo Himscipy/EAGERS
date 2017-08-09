@@ -66,7 +66,7 @@ handles.output = hObject;
 guidata(hObject, handles);
 movegui(gcf,'center');
 
-files=dir(fullfile(Model_dir, 'Plant','*.mat'));
+files=dir(fullfile(Model_dir, 'Projects','*.mat'));
 list=strrep({files.name},'.mat','');
 set(handles.ProjectList,'string',list,'value',1)
 
@@ -97,8 +97,8 @@ global Model_dir Plant
 % Load file that was selected from the popupmenu
 projList = get(handles.ProjectList,'String');
 projName = projList{get(handles.ProjectList,'Value')};
-load(fullfile(Model_dir,'Plant',projName));
-allFieldNames = {'Name';'Data';'Generator';'optimoptions';'Network';'Costs';'subNet';'OpMatA';'OpMatB';'OneStep';'Online';'Design';'Dispatch';'Predicted';'RunData';'Baseline'};
+load(fullfile(Model_dir,'Projects',projName));
+allFieldNames = {'Name';'Data';'Generator';'Building';'Weather';'Network';'Costs';'optimoptions';'subNet';'OpMatA';'OpMatB';'OneStep';'Online';'Design';'Dispatch';'Predicted';'RunData';'Baseline'};
 fNames = fieldnames(Plant);
 for i = 1:1:length(allFieldNames)
     if ~any(strcmp(allFieldNames{i},fNames))
@@ -136,8 +136,8 @@ function Open_Callback(hObject, eventdata, handles)
 global Model_dir Plant 
 list=get(handles.ProjectList,'string');
 plantSel = list{get(handles.ProjectList,'value')};
-load(fullfile(Model_dir,'Plant',plantSel))
-allFieldNames = {'Name';'Data';'Generator';'optimoptions';'Network';'Costs';'subNet';'OpMatA';'OpMatB';'OneStep';'Online';'Design';'Dispatch';'Predicted';'RunData';'Baseline'};
+load(fullfile(Model_dir,'Projects',plantSel))
+allFieldNames = {'Name';'Data';'Generator';'Building';'Weather';'Network';'Costs';'optimoptions';'subNet';'OpMatA';'OpMatB';'OneStep';'Online';'Design';'Dispatch';'Predicted';'RunData';'Baseline'};
 fNames = fieldnames(Plant);
 for i = 1:1:length(allFieldNames)
     if ~any(strcmp(allFieldNames{i},fNames))

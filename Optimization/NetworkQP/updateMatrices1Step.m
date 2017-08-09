@@ -1,22 +1,23 @@
-function QP = updateMatrices1Step(QP,Forecast,Renewable,scaleCost,dt,EC,StorPower,MinPower,MaxPower)
+function QP = updateMatrices1Step(QP,Forecast,Renewable,scaleCost,dt,EC,StorPower,MinPower,MaxPower,T)
 % update the equalities with the correct demand, and scale fuel and electric costs
 % EC is the expected end condition at this time stamp (can be empty)
 % StorPower is the expected output/input of any energy storage at this timestep (can be empty)
 % MinPower and MaxPower define the range of this generator at this timestep
+%T is the building temperatures
 global Plant
 QP.solver = Plant.optimoptions.solver;
 nG = length(Plant.Generator);
+nB = length(Plant.Building);
+nL = length(QP.Organize.States)-nB-nG;
 marginal = instantMarginalCost(EC,scaleCost);%update marginal cost
-networkNames = fieldnames(Plant.Network);
-networkNames = networkNames(~strcmp('name',networkNames));
-networkNames = networkNames(~strcmp('Equipment',networkNames));
+networkNames = fieldnames(Plant.subNet);
 
 %% update demands and storage self-discharge
 for net = 1:1:length(networkNames)
     if strcmp(networkNames{net},'Hydro')
         %don't do a water balance, since it depends on multiple time steps.
-        %Any extra power at this time step is subtracted from the expected
-        %power at the next step (same SOC and flows up river).
+        %Any extra outflow at this time step is subtracted from the expected
+        %outflow at the next step (same SOC and flows up river).
     else
         if strcmp(networkNames{net},'Electrical')
             out = 'E';
@@ -28,24 +29,21 @@ for net = 1:1:length(networkNames)
         elseif strcmp(networkNames{net},'DistrictCool')
             out = 'C';
         end
-        for i = 1:1:length(Plant.subNet.(networkNames{net}))
-            equip = Plant.subNet.(networkNames{net})(i).Equipment;
-            eq = QP.Organize.Balance.(networkNames{net})(i);
-            loads = nonzeros(QP.Organize.Demand.(networkNames{net})(i));
-            QP.beq(eq) = sum(Forecast.(out)(:,loads),2); %multile demands can be at the same node
+        for n = 1:1:length(Plant.subNet.(networkNames{net}).nodes)
+            equip = Plant.subNet.(networkNames{net}).Equipment{n};
+            req = QP.Organize.Balance.(networkNames{net})(n);
+            loads = nonzeros(QP.Organize.Demand.(networkNames{net}){n});
+            if ~isempty(loads)%need this to avoid the next line when there is no load
+                QP.beq(req) = sum(Forecast.(out)(:,loads),2); %multiple demands can be at the same node
+            end
             for j = 1:1:length(equip)
-                k = equip(j);
-                if strcmp(networkNames{net},'Electrical') && strcmp(Plant.Generator(k).Source,'Renewable')% subtract renewable generation 
-                    QP.beq(eq) = QP.beq(eq) - Renewable(k); %put renewable generation into energy balance at correct node
+                i = equip(j);
+                if strcmp(networkNames{net},'Electrical') && strcmp(Plant.Generator(i).Source,'Renewable')% subtract renewable generation 
+                    QP.beq(req) = QP.beq(req) - Renewable(i); %put renewable generation into energy balance at correct node
                 end
-                if ~isempty(strfind(Plant.Generator(k).Type,'Storage'))
-                    if isfield(Plant.Generator(k).QPform.output,out)
-                        if length(StorPower(:,1))==1 ||isfield(Plant.Generator(k).QPform.output,'W')%hydro storage shows up in both electrical energy balance and water mass balance, but loss only in mass balance
-                            loss = 0;
-                        else
-                            loss = dt*(Plant.Generator(k).QPform.Stor.SelfDischarge*Plant.Generator(k).QPform.Stor.UsableSize);
-                        end
-                        QP.beq(eq) = QP.beq(eq) - StorPower(k) - loss; %%remove expected storage output from beq & account for self-discharge losses
+                if ~isempty(StorPower) && ismember(Plant.Generator(i).Type,{'Electric Storage';'Thermal Storage';'Hydro Storage';})
+                    if isfield(Plant.Generator(i).QPform.output,out)
+                        QP.beq(req) = QP.beq(req) - StorPower(i); %%remove expected storage output from beq
                     end
                 end
             end
@@ -53,11 +51,25 @@ for net = 1:1:length(networkNames)
     end
 end  
 
+for i = 1:1:nB%Building inequalities & equality
+    states = QP.Organize.States{nG+nL+i};
+    req = QP.Organize.Building.req(i);
+    QP.beq(req) = QP.beq(req) + Forecast.Building(i).E0 - Plant.Building(i).QPform.H2E*Forecast.Building(i).H0 - Plant.Building(i).QPform.C2E*Forecast.Building(i).C0;%electric equality
+    
+    QP.b(QP.Organize.Building.r(i)) = Plant.Building(i).QPform.UA*Forecast.Building(i).Tset_H - Forecast.Building(i).H0 + Plant.Building(i).QPform.Cap*T(i)/(3600*dt);%heating inequality
+    QP.A(QP.Organize.Building.r(i),states(1)) = (Plant.Building(i).QPform.UA+Plant.Building(i).QPform.Cap/(3600*dt));% Heating>= H0 + UA*(Ti-Tset) + Cap*(Ti - T(i-1))/dt where dt is in seconds
+    QP.b(QP.Organize.Building.r(i)+1) = -Plant.Building(i).QPform.UA*Forecast.Building(i).Tset_C - Forecast.Building(i).C0 - + Plant.Building(i).QPform.Cap*T(i)/(3600*dt);%cooling inequality
+    QP.A(QP.Organize.Building.r(i)+1,states(1)) = -(Plant.Building(i).QPform.UA+Plant.Building(i).QPform.Cap/(3600*dt));% Cooling>= C0 + UA*(Tset-Ti) + Cap*(T(i-1)-Ti)/dt where dt is in seconds
+    
+    QP.b(QP.Organize.Building.r(i)+2) = (Forecast.Building(i).Tset + Plant.Building(i).VariableStruct.Comfort/2);%upper buffer inequality, the longer the time step the larger the penaly cost on the state is.
+    QP.b(QP.Organize.Building.r(i)+3) = -(Forecast.Building(i).Tset - Plant.Building(i).VariableStruct.Comfort/2);%lower buffer inequality
+end
+
 %% Update upper and lower bounds based on ramping constraint (if applicable)
 if ~isempty(MinPower)
     for i = 1:1:nG
         states = QP.Organize.States{i};
-        if isempty(strfind(Plant.Generator(i).Type,'Storage'))%all generators and utilities
+        if ismember(Plant.Generator(i).Type,{'Utility';'Electric Generator';'CHP Generator';'Chiller';'Heater';})%all generators and utilities
             if MinPower(i)>sum(QP.lb(states))
                 QP.Organize.Dispatchable(i) = 0; %can't shut off
                 %raise the lower bounds
@@ -81,14 +93,19 @@ if ~isempty(MinPower)
                     end
                 end
             end
-        else
+        elseif ~isempty(StorPower) && ismember(Plant.Generator(i).Type,{'Electric Storage';'Thermal Storage';'Hydro Storage';})
             %update storage output range to account for what is already scheduled
             QP.lb(states) = QP.lb(states) - StorPower(i);
-            QP.ub(states) = QP.ub(states) - StorPower(i);
-            %update spinning reserve (max additional power from storage
-            if isfield(QP.Organize,'SpinRow') && QP.Organize.SpinRow{i}~=0
+            QP.ub(states) = QP.ub(states) - StorPower(i);            
+            if ismember(Plant.Generator(i).Type,{'Hydro Storage';})
+                %update the inequality with (Power change from nominal)*conversion -Outflow above nominal < nominal spill flow
+            end
+            if QP.Organize.SpinRow(i)~=0 %update spinning reserve (max additional power from storage
                 QP.beq(QP.Organize.SpinRow{i}) = sum(QP.ub(states(1:end-1))) - StorPower(i);
             end
+        elseif ismember(Plant.Generator(i).Type,{'Hydro Storage';})
+                %update the inequality with Power*conversion - Outflow above nominal < nominal OutFlow
+                %change lb to 0 and ub to max gen
         end
     end
 end
@@ -100,8 +117,8 @@ for i = 1:1:nG
         states = QP.Organize.States{i}; %states of this generator
         if strcmp(Plant.Generator(i).Type,'Utility') && strcmp(Plant.Generator(i).Source,'Electricity') && Plant.Generator(i).VariableStruct.SellBackRate>0
             QP.f(states(1)) = QP.f(states(1))*scaleCost(i)*dt;
-            QP.f(states(2)) = QP.f(states(2))*min(0.9999*scaleCost(i),Plant.Generator(i).VariableStruct.SellBackRate)*dt; %make sure sellback rate is less than purchase rate
-        elseif isempty(strfind(Plant.Generator(i).Type,'Storage'))%all generators and utilities
+            QP.f(states(2)) = min(0.9999*QP.f(states(1)),Plant.Generator(i).VariableStruct.SellBackRate*dt); %make sure sellback rate is less than purchase rate
+        elseif ismember(Plant.Generator(i).Type,{'Electric Generator';'CHP Generator';'Utility';'Chiller';'Heater';})%all generators and utilities
             H(states) = H(states)*scaleCost(i)*dt;
             QP.f(states) = QP.f(states)*scaleCost(i)*dt;
         else

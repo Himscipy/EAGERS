@@ -16,13 +16,11 @@ QP = removeRamping(QPmain,noRamp);
 
 function QP = removeRamping(QP,noRamp)
 nG = length(QP.Organize.Dispatchable);
-[r,~] = size(QP.A);
-ramplimit = zeros(r,1);
+nS = length(QP.organize(:,1))-1;
+ramplimit = [];
 for i = 1:1:nG
     if QP.Organize.Dispatchable(i) ==1 && noRamp(i) ==1 %remove ramping from this generator
-        rows = QP.Organize.Ramping{i};
-        ramplimit(rows(1):rows(end)) = rows(1):rows(end);
+        ramplimit(end+1:end+2*nS,1) = (QP.Organize.Ramping(i):QP.Organize.t1ineq:(nS-1)*QP.Organize.t1ineq+QP.Organize.Ramping(i))';
     end
 end
-ramplimit = nonzeros(ramplimit);
 QP.b(ramplimit) = inf;

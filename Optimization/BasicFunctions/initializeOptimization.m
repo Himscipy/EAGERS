@@ -3,13 +3,35 @@ global Plant
 %DateSim: Current time in the simulation.
 %GenAvailTime: The next time a generator is available to turn on
 %RestartTime: The amount of time necessary to wait for restarting after a generator has turned off.
-if strcmp(Plant.optimoptions.forecast,'Surface') && (~isfield(Plant.Data,'HistProf') || isempty(Plant.Data.HistProf))
-    calculateHistoricalFit %% calculate surface fits used in forecasting
+if ~isfield(Plant.Data,'HistProf') || isempty(Plant.Data.HistProf)
+    if isfield(Plant.Data,'Temperature')
+        Plant.Data.HistProf.Temperature = TypicalDay([],Plant.Data.Timestamp,Plant.Data.Temperature);
+    else
+        Date = linspace(datenum([2017,1,1,1,0,0]),datenum([2018,1,1]),8760)'; %hours of 2017
+        Plant.Data.HistProf.Temperature = TypicalDay([],Date,Plant.Weather.Tdb);
+    end
+    if strcmp(Plant.optimoptions.forecast,'Surface') && isfield(Plant.Data,'Demand') && ~isempty(Plant.Data.Demand)
+        F = fieldnames(Plant.Data.Demand);
+        for i = 1:1:length(F);
+            calculateHistoricalFit(F{i}); %% calculate surface fits used in forecasting
+        end
+    end
+end
+if isfield(Plant.Data,'Hydro')
+    %spill, outflow, inflow, and source/sink by node
+    nodes = length(Plant.Data.Hydro.SourceSink(1,:));
+    for n = 1:1:nodes
+%         Plant.Data.HistProf.Hydro.SpillFlow(n) = {TypicalDay([],Plant.Data.Hydro.Timestamp,Plant.Data.Hydro.SpillFlow)};
+%         Plant.Data.HistProf.Hydro.OutFlow(n) = {TypicalDay([],Plant.Data.Hydro.Timestamp,Plant.Data.Hydro.OutFlow)};
+%         Plant.Data.HistProf.Hydro.InFlow(n) = {TypicalDay([],Plant.Data.Hydro.Timestamp,Plant.Data.Hydro.InFlow)};
+        Plant.Data.HistProf.Hydro.SourceSink(n) = {TypicalDay([],Plant.Data.Hydro.Timestamp,Plant.Data.Hydro.SourceSink)};
+    end
 end
 if strcmp(Plant.optimoptions.solver,'NREL')
     %do nothing
 else
-    loadGenerator % Loads generators & build optimization matrices, stored in Plant.Generator
+    loadGenerator % Loads generators stored in Plant.Generator
+    loadBuilding %Loads any buildings into QPform
     build_subNet
     findbuffer %need to wait until everything else has been loaded to load the buffer, because it is reliant on how quickly everything else can charge the system
     Time = buildTimeVector(Plant.optimoptions);%% set up dt vector of time interval length

@@ -9,22 +9,23 @@ function [FeasibleDispatch,Cost,feasible,HeatVent,K] = eliminateCombinations(QPs
 %dispatch, and the on/off binary matrix that represents those combinations
 nG = length(QPsingle.constCost);
 [~,n] = size(QPsingle.organize);
-nL = n-nG;
-FeasibleDispatch = zeros(1,nG+nL);
+nB = length(QPsingle.Organize.Building.r);
+nL = n-nG-nB;
+FeasibleDispatch = zeros(1,nG+nL+nB);
 QP = disableGenerators(QPsingle,[],On);
 [dispatch,result, flag1] = callQPsolver(QP);
 if flag1==1
     for j = 1:1:nG
         FeasibleDispatch(j) = sum(dispatch(QP.organize{j})); %record this combination of outputs (SOC for storage)
     end
-    for j = nG+1:1:nG+nL
+    for j = nG+1:1:nG+nL+nB
         FeasibleDispatch(j) = dispatch(QP.organize{j}); %record lines
     end
-    if ~isempty(QP.Organize.HeatVented)
-        HeatVent = sum(dispatch(nonzeros(QP.Organize.HeatVented(1,:))));
+    if isfield(QP.Organize,'HeatVented')
+        HeatVent = sum(dispatch(nonzeros(QP.Organize.HeatVented)));
     else HeatVent = 0;
     end
-    
+    FeasibleDispatch(abs(FeasibleDispatch)<1e-3) = 0; %remove tiny outputs because they are most likely rounding errors
     feasible = true;
     Cost = result+sum(QPsingle.constCost(On>0));
 else
@@ -32,7 +33,6 @@ else
     Cost = inf;
     HeatVent = 0;
 end
-FeasibleDispatch(abs(FeasibleDispatch)<1e-3) = 0; %remove tiny outputs because they are most likely rounding errors
 
 %%reduce size of K if you don't have parallel computing toolbox
 if ~parallel

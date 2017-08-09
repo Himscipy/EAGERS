@@ -11,8 +11,8 @@ if Feasible ~=1
 %     disp('Infeasible in DispatchQP');
 else
     Feasible = true;
-    for i = 1:1:nG
-        if any(QP.Renewable(:,i)~=0)
+    for i = 1:1:n
+        if i<=nG && any(QP.Renewable(:,i)~=0)
             GenDisp(1,i) = RenewableOutput(i,[],'Actual');
             GenDisp(2:end,i) = QP.Renewable(:,i);
         else
@@ -21,14 +21,6 @@ else
                     GenDisp(t,i) = sum(GenSetting(QP.organize{t,i}));%%put solution back into recognizable format
                 end
             end
-        end
-    end
-    for i = nG+1:1:n %Transmission lines
-        if ~isempty(QP.organize{1,i})
-            GenDisp(1,i) = GenSetting(QP.organize{1,i});%%put solution back into recognizable format
-        end
-        for t = 2:1:nS+1
-            GenDisp(t,i) = GenSetting(QP.organize{t,i});%%put solution back into recognizable format
         end
     end
     GenDisp(abs(GenDisp)<1e-3) = 0;
