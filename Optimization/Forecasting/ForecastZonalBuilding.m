@@ -69,4 +69,4 @@ for i = 1:1:n
     Cooling(Ej<0,i) = Ej(Ej<0) + cool(Ej<0);
     Heating(Ej>0,i) = Ej(Ej>0) + Reheat(Ej<0);
 end
-    
+end%Ends function ForecastZonal Building   

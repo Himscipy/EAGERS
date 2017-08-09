@@ -8,20 +8,21 @@ elseif isfield(handles,'legend')%2015 matlab
     delete(handles.legend)
 end
 nG = length(Plant.Generator);
+nB = length(Plant.Building);
+nL = length(Plant.OpMatA.Organize.IC) - nG - nB;
 stor = [];
-Names = cell(nG,1);
+Names = cell(nG+nB,1);
 for i = 1:1:nG
     Names(i) = {Plant.Generator(i).Name};
-    if ~isempty(strfind(Plant.Generator(i).Type,'Storage')) && Plant.Generator(i).Enabled
+    if ismember(Plant.Generator(i).Type,{'Electric Storage';'Thermal Storage';'Hydro Storage';}) && Plant.Generator(i).Enabled
         stor(end+1) = i;
     end
 end
-networkNames = fieldnames(Plant.Network);
-networkNames = networkNames(~strcmp('name',networkNames));
-networkNames = networkNames(~strcmp('Equipment',networkNames));
-nPlot = length(networkNames);
+for i = 1:1:nB
+    Names(nG+i) = {Plant.Building(i).Name};
+end
 
-%% Collate history and future data  
+%% Collate history and future data
 if isempty(History)
     backSteps = 0;
     Data = Forecast;
@@ -71,12 +72,15 @@ end
 %% convert the saved SOC to power
 StoragePower = 0*Data;
 StorageState = 0*Data;
-for i = 1:1:length(stor)
-    StorageState(:,stor(i)) = Data(:,stor(i))+ ones(length(hours),1)*(Plant.Generator(stor(i)).QPform.Stor.Size - Plant.Generator(stor(i)).QPform.Stor.UsableSize); %add the unusable charge
-    if strcmp(Plant.Generator(stor(i)).Type,'Hydro Storage')%% Need the river segment and spill flow to calculate power
-        StoragePower(2:end,stor(i)) = (Data(2:end,Plant.Generator(stor(i)).QPform.DownRiverSegment) - Data(2:end,Plant.Generator(stor(i)).QPform.SpillFlow))*Plant.Generator(stor(i)).QPform.output.E;
-    else
-        StoragePower(2:end,stor(i)) = (StorageState(1:end-1,stor(i)) - StorageState(2:end,stor(i)))./dt;  
+if isfield(Plant.subNet,'Hydro')
+    StorageState = calculateHydroSOC(Data,i);
+end
+for i = 1:1:nG
+    if strcmp(Plant.Generator(i).Type,'Hydro Storage')%% Need the river segment and spill flow to calculate power
+        StoragePower(:,i) =  Data(:,i);
+    elseif ismember(Plant.Generator(i).Type,{'Electric Storage';'Thermal Storage';})
+        StorageState(:,i) = Data(:,i)+ ones(length(hours),1)*(Plant.Generator(i).QPform.Stor.Size - Plant.Generator(i).QPform.Stor.UsableSize); %add the unusable charge
+        StoragePower(2:end,i) = (StorageState(1:end-1,i) - StorageState(2:end,i))./dt;  
     end
 end
 Data(:,stor) = StoragePower(:,stor);
@@ -89,27 +93,33 @@ if get(handles.StackedGraph,'Value')==0 || strcmp(get(handles.uipanelMain3,'visi
 else
     LINE = false;
 end
-for q = 1:1:nPlot
-    if strcmp(get(handles.(strcat('ResultPlot',num2str(q))),'Visible'),'on')
-        h = handles.(strcat('ResultPlot',num2str(q)));
+nPlot = 0;
+while isfield(handles,strcat('ResultPlot',num2str(nPlot+1)))
+    nPlot = nPlot+1;
+    if strcmp(get(handles.(strcat('ResultPlot',num2str(nPlot))),'Visible'),'on')
+        h = handles.(strcat('ResultPlot',num2str(nPlot)));
         cla(h);
-        h2 = handles.(strcat('ResultPlot',num2str(q),'b'));
+        h2 = handles.(strcat('ResultPlot',num2str(nPlot),'b'));
         cla(h2);
         s1 = max(1,length(HistoryTime));
-        if q==1
+        if nPlot==1
             tSize = 12;
         else
             tSize = 9;
         end
-        S = get(handles.(strcat('ResultName',num2str(q))),'String');
+        S = get(handles.(strcat('ResultName',num2str(nPlot))),'String');
         if strcmp(S,'Electrical')
             S = 'E';
+            ylab = 'Electrical Demand (kW)';
         elseif strcmp(S,'DistrictHeat')
             S = 'H';
+            ylab = 'Heating Demand (kW)';
         elseif strcmp(S,'DistrictCool')
             S = 'C';
+            ylab = 'Cooling Deamnd (kW)';
         elseif strcmp(S,'Hydro')
             S = 'W';
+            ylab = 'Withdrawls (1000cfs)';
             for i = 1:1:length(Plant.Generator)
                 if strcmp(Plant.Generator(i).Type,'Hydro Storage')%% plot the downriver flow
                     Data(:,i) = Data(:,Plant.Generator(i).QPform.DownRiverSegment);
@@ -117,15 +127,28 @@ for q = 1:1:nPlot
             end
         elseif strcmp(S,'Steam')
             S = 'S';
+            ylab = 'Steam Demand (1000 lbs/hr)';
         end
 
-        [name,stor,Data2,storNames] = sortForPlot(S,Data);
+        if strcmp(S,'BuildingTemp')
+            S = 'T';
+            ylab = 'Building Temperature Setpoint (C)';
+            name = cell(nB,1);
+            storNames ={};
+            stor =[];
+            for i = 1:1:nB
+                name(i) = {Plant.Building(i).Name};
+            end
+            Data2 = Data(:,nG+nL+1:nG+nL+nB);
+        else
+            [name,stor,Data2,storNames] = sortForPlot(S,Data);
+        end
         %% Storage
         if length(stor)>2
-            if strcmp(get(handles.(strcat('ResultStorageSelect',num2str(q))),'Visible'),'off')
-                set(handles.(strcat('ResultStorageSelect',num2str(q))),'Visible','on','value',1,'string',storNames)
+            if strcmp(get(handles.(strcat('ResultStorageSelect',num2str(nPlot))),'Visible'),'off')
+                set(handles.(strcat('ResultStorageSelect',num2str(nPlot))),'Visible','on','value',1,'string',storNames)
             end
-            storNum = get(handles.(strcat('ResultStorageSelect',num2str(q))),'value');%select only 1 storage at a time
+            storNum = get(handles.(strcat('ResultStorageSelect',num2str(nPlot))),'value');%select only 1 storage at a time
             storRmv = storNames(storNum~=stor);
             stor = stor(storNum); 
             storNames = storNames(storNum);
@@ -139,25 +162,24 @@ for q = 1:1:nPlot
             name = name(I);
             Data2 = Data2(:,I);
         else
-            if strcmp(get(handles.(strcat('ResultStorageSelect',num2str(q))),'Visible'),'on')
-                set(handles.(strcat('ResultStorageSelect',num2str(q))),'Visible','off')
+            if strcmp(get(handles.(strcat('ResultStorageSelect',num2str(nPlot))),'Visible'),'on')
+                set(handles.(strcat('ResultStorageSelect',num2str(nPlot))),'Visible','off')
             end
         end
         %% Plot    
         if ~isempty(Data2)
             dataPlot(h,LINE,Data2,hours,dt,s1,name,Names,colorsPlot,tSize)
-            
             if ~isempty(stor) && ~LINE
-                addStorage2Plot(h,h2,StorageState(:,stor),hours,s1,colorsPlot,storNames,Names,tSize,handles.(strcat('ResultName',num2str(q))))
+                addStorage2Plot(h,h2,StorageState(:,stor),hours,s1,colorsPlot,storNames,Names,tSize,handles.(strcat('ResultName',num2str(nPlot))))
             else
                 set(h2,'xtick',[],'xticklabel',[],'YTick',[],'YTickLabel',[])
                 ylabel(h2,[]);
             end
-            if q==1
+            if nPlot==1
                 xlabel(h,dateText,'Color','k','FontSize',tSize)
             else xlabel(h,dateText2,'Color','k','FontSize',tSize)
             end
-            if strcmp(get(handles.(strcat('ResultName',num2str(q))),'String'),'Hydro')
+            if strcmp(get(handles.(strcat('ResultName',num2str(nPlot))),'String'),'Hydro')
                 ylabel(h,'Flow (1000cfs)','Color','k','FontSize',tSize)
             else
                 ylabel(h,'Generation (kW)','Color','k','FontSize',tSize)
@@ -176,23 +198,17 @@ stor =[];
 Data2 =[];
 for i = 1:1:length(Plant.Generator)
     include = false;
-    dataI = Data(:,i);
     if isfield(Plant.Generator(i).QPform,'Stor') && isfield(Plant.Generator(i).QPform.output,S) && Plant.Generator(i).Enabled % energy storage
         if strcmp(S,'E') && strcmp(Plant.Generator(i).Type,'Hydro Storage')
             %don't plot state-of charge on electric plot
         else
             stor(end+1) = i;
         end
+        dataI = Data(:,i);
         include = true;
-    elseif (strcmp(Plant.Generator(i).Type,'Utility')||~isempty(strfind(Plant.Generator(i).Type,'District'))) && isfield(Plant.Generator(i).QPform.output,S) %utilities
+    elseif isfield(Plant.Generator(i).QPform.output,S) %utilities
         include = true;
-    elseif isfield(Plant.Generator(i).QPform.output,S) && ~(strcmp(Plant.Generator(i).Type,'Chiller') && strcmp(S,'E')) %generators
-        include = true;
-        if strcmp(S,'H') && isfield(Plant.Generator(i).QPform.output,'E')
-            dataI = dataI*Plant.Generator(i).QPform.output.(S)(1); %Hratio for CHP generators
-        end
-    elseif strcmp(S,'E') && strcmp(Plant.Generator(i).Source,'Renewable')
-        include = true;
+        dataI = Data(:,i)*Plant.Generator(i).QPform.output.(S)(1); %Hratio for CHP generators      
     end
     if include
         name(end+1) = {Plant.Generator(i).Name};
@@ -242,8 +258,8 @@ for c = 1:1:length(h1)
 end
 
 if ~isempty(negBars)
-    OoM = log10(max(sum(posBars,2)-sum(negBars,2)));
-else OoM = log10(max(sum(Data3,2)));
+    OoM = log10(max(sum(Data2(s0:end-1,:),2)-sum(negBars(1:2:end,:),2)));
+else OoM = log10(max(sum(Data2(s0:end,:),2)));
 end
 if (OoM-floor(OoM))==0 %count in increments of 1, 10, 100 or 1000 etc
     Yspace = 10^(OoM-1);

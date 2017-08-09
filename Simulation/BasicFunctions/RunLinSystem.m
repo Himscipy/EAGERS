@@ -276,9 +276,6 @@ for i = 1:1:length(LinMod.Scope)
     else
         
         s = length(A);
-%         if s>1
-%             disp('WTF')
-%         end
         TagInf.(connectedBlock).(connectedTag)(IterCount,:) = Out(n+1:n+s,1)';
         n = n+s;
     end

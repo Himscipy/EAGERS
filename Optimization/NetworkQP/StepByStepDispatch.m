@@ -1,19 +1,42 @@
-function GenOutput = StepByStepDispatch(Forecast,scaleCost,dt,IC,limit,FirstProfile)
+function GenOutput = StepByStepDispatch(Forecast,scaleCost,dt,limit,FirstProfile)
 % Time is the time from the current simulation time (DateSim), positive numbers are forward looking
-global Plant
+global Plant CurrentState
 if license('test','Distrib_Computing_Toolbox') 
     parallel = true;
 else parallel = false;
 end
 nG = length(Plant.Generator);
+nB = length(Plant.Building);
+nL = length(Plant.OneStep.Organize.States)-nG-nB;
 dX_dt = zeros(1,nG);
-[~,n] = size(Plant.OneStep.organize);
-nL = n-nG;
-ic = (~isempty(IC));
+T = CurrentState.Buildings;
+if ~isempty(FirstProfile)
+    IC = [CurrentState.Generators, CurrentState.Lines,CurrentState.Buildings];
+    [nS,~] = size(scaleCost);
+    StorPower = zeros(nS,nG);
+    GenOutput = zeros(nS+1, nG+nL+nB);%nS should equal 1 in this case (finding IC)
+    GenOutput(1,:) = IC;
+    I = zeros(nS,1);
+    Alt.Disp = cell(nS,1);
+    Alt.Cost = cell(nS,1);
+    Alt.Binary = cell(nS,1);
+    VentedHeat = zeros(nS,1);
+
+    Binary = true(nS+1,nG);
+    Dispatchable = logical(Plant.OneStep.Organize.Dispatchable);
+    Binary(1,Dispatchable) = IC(Dispatchable)>0;
+    uniqueCombinations = zeros(nS,1); %how many QP optimizations needed to be run in eliminate combinations
+else
+    nS = 1;
+    StorPower = zeros(1,nG);
+end
 UB = zeros(1,nG);
 StartCost = zeros(1,nG);
-stor = [];
+QP.Organize.Enabled = zeros(1,nG);%message of which components are not enabled
 for i = 1:1:nG
+    if Plant.Generator(i).Enabled
+        QP.Organize.Enabled(i) = 1;
+    end
     if~isempty(Plant.Generator(i).QPform.states)
         states = Plant.Generator(i).QPform.states(:,end);
         for j = 1:1:length(states);
@@ -23,61 +46,32 @@ for i = 1:1:nG
     if isfield(Plant.Generator(i).VariableStruct, 'StartCost')
         StartCost(i) = Plant.Generator(i).VariableStruct.StartCost;
     end
-    if strfind(Plant.Generator(i).Type, 'Storage')
-        stor(end+1) = i;
-    end
     dX_dt(i) = Plant.Generator(i).VariableStruct.dX_dt;
 end
-if isempty(IC)
-    nS = 0;
-    StorPower = zeros(1,nG);
-else
-    [nS,~] = size(scaleCost);
-    StorPower = zeros(nS,nG);
+
+if isfield(Forecast,'Demand')
+    Outs = fieldnames(Forecast.Demand);
 end
-GenOutput = zeros(nS+1, nG+nL);%nS should equal 1 in this case (finding IC)
-if ~isempty(IC)
-    GenOutput(1,:) = IC;
-end
-TestCombos = zeros(nS,1); %how many QP optimizations needed to be run in eliminate combinations
-% timeQP = zeros(nS,1);
-%% note #2:  need to account for self discharging of storage
-Outs = fieldnames(Forecast.Demand);
-I = zeros(nS,1);
-Alt.Disp = cell(nS,1);
-Alt.Cost = cell(nS,1);
-Alt.Binary = cell(nS,1);
-VentedHeat = zeros(nS,1);
-Binary = true(nS+1,nG);
-Dispatchable = logical(Plant.OneStep.Organize.Dispatchable);
-if ic
-    Binary(1,Dispatchable) = IC(Dispatchable)>0;
-end
-for t = 1:1:max(1,nS) %for every timestep
-    for j = 1:1:length(Outs)
-        Loads.(Outs{j}) = Forecast.Demand.(Outs{j})(t,:); %update demand
-        netDemand.(Outs{j}) = sum(Loads.(Outs{j}));
-    end
-    if isfield(Plant.subNet,'Hydro')
-        for i = 1:1:length(Plant.subNet.Hydro) %run through all the nodes in this network
-            %% Node inflows (source/sink terms and upstream flow at time t-T ago if t<T)
-            %need to be able to forecast sink/source
-            I = find(strcmp(Plant.subNet.Hydro(i).nodes{1},Plant.Data.Hydro.Nodes));%column index of this node in the stored matrices of Forecast.Hydro.SourceSink, Forecast.Hydro.SpillFlow and Forecast.Hydro.Inflow
-            equip = Plant.subNet.Hydro(i).Equipment;
-            for k = 1:1:length(equip)
-                if strcmp(Plant.Generator(equip(k)).Type,'Hydro Storage')
-                    if isempty(FirstProfile) %finding initial conditions
-                        StorPower(t,equip(k)) = (Forecast.Hydro.OutFlow(I,1) - Forecast.Hydro.SpillFlow(I,1))*Plant.Generator(equip(k)).QPform.output.E;
-                    else
-                        FlowGen = (IC(equip(k)) - FirstProfile(t+1,equip(k)))*12.1/dt(t) + Forecast.Hydro.SourceSink(I,t) + Forecast.Hydro.InFlow(I,t) - Forecast.Hydro.SpillFlow(I,t); %flow through turbines in 100 cfs
-                        StorPower(t,equip(k)) = FlowGen*Plant.Generator(equip(k)).QPform.output.E;
-                    end
-                end
-            end
+for t = 1:1:nS %for every timestep
+    if isfield(Forecast,'Demand')
+        for j = 1:1:length(Outs)
+            Loads.(Outs{j}) = Forecast.Demand.(Outs{j})(t,:); %update demand
+            netDemand.(Outs{j}) = sum(Loads.(Outs{j}));
+        end
+    else 
+        netDemand.E = 0;
+        for i = 1:1:nB
+            netDemand.E = netDemand.E + Forecast.Building(i).E0(t);
+            Loads.Building(i).E0 = Forecast.Building(i).E0(t);
+            Loads.Building(i).H0 = Forecast.Building(i).H0(t);
+            Loads.Building(i).C0 = Forecast.Building(i).C0(t);
+            Loads.Building(i).Tset_H = Forecast.Building(i).Tset_H(t);
+            Loads.Building(i).Tset_C = Forecast.Building(i).Tset_C(t);
+            Loads.Building(i).Tset = Forecast.Building(i).Tset(t);
         end
     end
     if isempty(FirstProfile) %finding initial conditions
-        QP = updateMatrices1Step(Plant.OneStep,Loads,Forecast.Renewable,scaleCost(t,:),dt(t),[],StorPower,[],[]);
+        QP = updateMatrices1Step(Plant.OneStep,Loads,Forecast.Renewable,scaleCost,dt,[],[],[],[],T);
     else
         if strcmp(limit, 'constrained')
             MinPower = max(0,IC(1:nG)-dX_dt*dt(t));
@@ -86,33 +80,39 @@ for t = 1:1:max(1,nS) %for every timestep
             MinPower = max(0,IC(1:nG)-dX_dt*sum(dt(1:t)));
             MaxPower = min(UB,IC(1:nG)+dX_dt*sum(dt(1:t)));
         end
-        for i = 1:1:length(stor)
-            if ~strcmp(Plant.Generator(stor(i)).Type,'Hydro Storage') %hydro is organized by node, not generator
-                loss = dt(t)*(Plant.Generator(stor(i)).QPform.Stor.SelfDischarge*Plant.Generator(stor(i)).QPform.Stor.UsableSize);
-                Power = (IC(stor(i)) - FirstProfile(t+1,stor(i)) + loss)/dt(t);%expected output of storage in kW to reach the SOC from the 1st dispatch (penalties are always pushing it back on track if it needed more storage than expected somewhere)
+        for i = 1:1:nG
+            if ismember(Plant.Generator(i).Type,{'Electric Storage';'Thermal Storage';}) 
+                loss = dt(t)*(Plant.Generator(i).QPform.Stor.SelfDischarge*Plant.Generator(i).QPform.Stor.UsableSize);
+                Power = (IC(i) - FirstProfile(t+1,i) + loss)/dt(t);%expected output of storage in kW to reach the SOC from the 1st dispatch (penalties are always pushing it back on track if it needed more storage than expected somewhere)
                 if Power>0 %discharging
-                    StorPower(t,stor(i)) = Power*Plant.Generator(stor(i)).QPform.Stor.DischEff;
+                    StorPower(t,i) = Power*Plant.Generator(i).QPform.Stor.DischEff;
                 else %charging
-                    StorPower(t,stor(i)) = Power/Plant.Generator(stor(i)).QPform.Stor.ChargeEff; 
+                    StorPower(t,i) = Power/Plant.Generator(i).QPform.Stor.ChargeEff; 
+                end
+            elseif ismember(Plant.Generator(i).Type,{'Hydro Storage';}) 
+                %lineout is the downriver segment associated with this dam
+                StorPower(t,i) = FirstProfile(t+1,i);
+                n = Plant.Generator(i).QPform.subnetNode;
+                lineOut = Plant.subNet.Hydro.lineNumber(n);
+                if t>1
+                    FirstProfile(t+1,lineOut) = FirstProfile(t+1,lineOut) - BestDispatch(lineOut); %subtract excess flow from last timestep
                 end
             end
+            if ismember(Plant.Generator(i).Type,{'Electric Storage';'Thermal Storage';'Hydro Storage';})
+                out = fieldnames(Plant.Generator(i).QPform.output);
+                netDemand.(out{1}) = netDemand.(out{1}) - StorPower(t,i);
+            end
         end
-        QP = updateMatrices1Step(Plant.OneStep,Loads,Forecast.Renewable(t,:),scaleCost(t,:),dt(t),FirstProfile(t,:),StorPower(t,:),MinPower,MaxPower);
+        QP = updateMatrices1Step(Plant.OneStep,Loads,Forecast.Renewable(t,:),scaleCost(t,:),dt(t),FirstProfile(t+1,:),StorPower(t,:),MinPower,MaxPower,T);
     end
-    QP.Organize.Enabled = zeros(1,nG);%message of which components are not enabled
-    for i = 1:1:nG
-        if Plant.Generator(i).Enabled
-            QP.Organize.Enabled(i) = 1;
-        end
-    end
-%     timeQP(t) = toc;
+
     K = createCombinations(QP,netDemand);%% create a matrix of all possible combinations (keep electrical and heating together if there are CHP generators, otherwise seperate by product)
     [lines,~] = size(K);
     if lines == 0
         disp('Zero feasible combinations to test: ERROR')
     end
-    FeasibleDispatch = zeros(lines,nG+nL);
-    HeatVent = zeros(lines,1);
+    FeasibleDispatch = zeros(lines,nG+nL+nB);
+    HeatVent = zeros(lines,1);%net heat loss
     Cost = zeros(lines,1);
     feasible = false(lines,1);
     if parallel
@@ -130,61 +130,65 @@ for t = 1:1:max(1,nS) %for every timestep
             end
         end
     end
-%     timeQP(t) = toc - timeQP(t);
     Cost = Cost(feasible);
     if isempty(Cost)
         disp('Zero feasible outcomes in StepByStep: ERROR')
     end
     [~,I(t)] = min(Cost);
-    Alt.Binary{t} = K(feasible,:)>0;
-    Alt.Disp{t} = FeasibleDispatch(feasible,:);
-    TestCombos(t) = length(Cost);
-    VentedHeat(t) = HeatVent(I(t));
-    if isempty(Alt.Disp{t})
-        disp(['No feasible combination of generators at step' num2str(t)]);
-        BestDispatch = [IC,zeros(1,nL)];
-        BestDispatch(stor) = 0;
-        Binary(t+ic,Dispatchable) = IC(Dispatchable)>0;
-    else
-        BestDispatch = Alt.Disp{t}(I(t),:);
-        Alt.Cost{t} = Cost-Cost(I(t));
-        Binary(t+ic,:) = Alt.Binary{t}(I(t),:);
-    end
-    EC = BestDispatch(1:nG);
-    if ~isempty(IC)
-        for i = 1:1:length(stor)
-            loss = dt(t)*(Plant.Generator(stor(i)).QPform.Stor.SelfDischarge*Plant.Generator(stor(i)).QPform.Stor.UsableSize);
-            if strcmp(Plant.Generator(stor(i)).Type,'Hydro Storage')
-                FlowGen = (BestDispatch(stor(i))+StorPower(t,stor(i)))/Plant.Generator(stor(i)).QPform.output.E; %conversion from power (kw) to mass flow (1000 ft^3/s)
-                EC(stor(i)) = IC(stor(i)) + (Forecast.Hydro.InFlow(I,t) + Forecast.Hydro.SourceSink(I,t) - FlowGen - Forecast.Hydro.SpillFlow(I,t))*dt(t)/12.1;
-            else
-                Energy = (BestDispatch(stor(i))+StorPower(t,stor(i)))*dt(t);
+    if ~isempty(FirstProfile)
+        Alt.Binary{t} = K(feasible,:)>0;
+        Alt.Disp{t} = FeasibleDispatch(feasible,:);
+        uniqueCombinations(t) = length(Cost);
+        VentedHeat(t) = HeatVent(I(t));
+        if isempty(Alt.Disp{t})
+            disp(['No feasible combination of generators at step' num2str(t)]);
+            BestDispatch = IC;
+            Binary(t+1,Dispatchable) = IC(Dispatchable)>0;
+        else
+            BestDispatch = Alt.Disp{t}(I(t),:);
+            Alt.Cost{t} = Cost-Cost(I(t));
+            Binary(t+1,:) = Alt.Binary{t}(I(t),:);
+        end
+        EC = BestDispatch(1:nG);
+        for i = 1:1:nG
+            if ismember(Plant.Generator(i).Type,{'Electric Storage';'Thermal Storage'})
+                Energy = (BestDispatch(i)+StorPower(t,i))*dt(t);
+                loss = dt(t)*(Plant.Generator(i).QPform.Stor.SelfDischarge*Plant.Generator(i).QPform.Stor.UsableSize);
                 if Energy>0 %discharging
-                    EC(stor(i)) = IC(stor(i)) - Energy/Plant.Generator(stor(i)).QPform.Stor.DischEff - loss;%change in storage for this power output
+                    EC(i) = IC(i) - Energy/Plant.Generator(i).QPform.Stor.DischEff - loss;%change in storage for this power output
                 else %charging
-                    EC(stor(i)) = IC(stor(i)) - Energy*Plant.Generator(stor(i)).QPform.Stor.ChargeEff - loss;%change in storage for this power output
+                    EC(i) = IC(i) - Energy*Plant.Generator(i).QPform.Stor.ChargeEff - loss;%change in storage for this power output
                 end
             end
         end
         if strcmp(limit, 'constrained')%if its constrained but not initially constrained then make the last output the initial condition
             IC = EC;
         else
-            IC(stor) = EC(stor); %update the state of storage
+            for i = 1:1:nG
+                if ismember(Plant.Generator(i).Type,{'Electric Storage';'Thermal Storage'})
+                    IC(i) = EC(i); %update the state of storage
+                end
+            end
         end
-    end
-    GenOutput(t+(~isempty(IC)),1:nG) = EC;
-    if nL>0
-        GenOutput(t+(~isempty(IC)),nG+1:nG+nL) = BestDispatch(nG+1:nG+nL);
+        %update building temperatures
+        if ~isempty(T)
+            %% Do something here
+        end
+        GenOutput(t+1,1:nG) = EC;
+        if nL>0||nB>0
+            GenOutput(t+1,nG+1:nG+nL+nB) = BestDispatch(nG+1:nG+nL+nB);
+        end
+    else
+        feas = nonzeros(feasible.*(1:1:lines)');
+        GenOutput = FeasibleDispatch(feas(I),:);
+        GenOutput(:,1:nG) = GenOutput(:,1:nG) + Forecast.Renewable;
     end
 end
-if ic 
-    GenOutput(2:nS+1,:) = checkStartupCosts(Alt,Binary,StartCost,dt,I,nL);
-end
-for i = 1:1:nG
-    if any(Forecast.Renewable(:,i)>0)
-        GenOutput(1+ic:end,i) = Forecast.Renewable(:,i);
-    end
+if ~isempty(FirstProfile)
+    GenOutput(2:nS+1,:) = checkStartupCosts(Alt,Binary,StartCost,dt,I,nL+nB);
+    GenOutput(2:nS+1,:) = GenOutput(2:nS+1,:) + Forecast.Renewable;
 end
 % disp(['Time Spent in QP interations is ', num2str(sum(timeQP))]);
 % disp(['Time not spent in QP is ', num2str(toc-sum(timeQP))]);
 % disp(['Average # of combinations tested is ', num2str(mean(TestCombos))]);
+end% Ends function StepByStepDispatch

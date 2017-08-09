@@ -9,15 +9,15 @@ switch QP.solver
     case 'quadprog'
     %use matlabs linprog or quadprog
     if nnz(QP.H)==0
-        options = optimset('Algorithm','interior-point','MaxIter',100,'Display','none');
+        options = optimset('Algorithm','interior-point','MaxIter',100,'Display','none'); %,'Display','iter-detailed');% ,'TolFun',1e-10,'TolX',1e-10
         [x,~,Feasible] = linprog(QP.f,QP.A,QP.b,QP.Aeq,QP.beq,QP.lb,QP.ub,[],options); 
     else
-        options2 = optimset('Algorithm','interior-point-convex','MaxIter',100,'Display','none');
-        [x,~,Feasible] = quadprog(QP.H,QP.f,QP.A,QP.b,QP.Aeq,QP.beq,QP.lb,QP.ub,[],options2);
+        options = optimset('Algorithm','interior-point-convex','MaxIter',100,'Display','none');%,'TolFun',1e-10,'TolX',1e-10
+        [x,~,Feasible] = quadprog(QP.H,QP.f,QP.A,QP.b,QP.Aeq,QP.beq,QP.lb,QP.ub,[],options);
     end
     case 'CVX'
         n = length(QP.f);
-        if ~isfield(QP,'Organize') || n<24 %calculating generaor cost fits
+        if ~isfield(QP,'Organize') || n<24 %calculating generator cost fits
             if ~isempty (QP.lb)
                 QP.A = [QP.A;-eye(n);];
                 QP.b = [QP.b;QP.lb;];
@@ -36,7 +36,6 @@ switch QP.solver
             cvx_end
         else
             %% normalize states by ub
-            
             if ~isfield(QP.Organize,'IC')
                 ic = 0;
             else ic = max(QP.Organize.IC); %number of initial conditions. Don't need upper/lower bounds because there is an equality constraint
@@ -155,6 +154,50 @@ switch QP.solver
                 end
             end
         end
+    case 'PredictorCorrector'
+        n = length(QP.f);
+        %% normalize states by ub
+        if ~isfield(QP.Organize,'IC')
+            ic = 0;
+        else ic = max(QP.Organize.IC); %number of initial conditions. Don't need upper/lower bounds because there is an equality constraint
+        end
+%         scale = QP.ub;
+%         scale(isinf(scale)) = 1e3*max(scale(~isinf(scale)));
+%         for i=1:1:n
+%             if QP.ub(i)>0 %for ic = 0 do nothing
+%                 QP.H(:,i) = QP.H(:,i)*scale(i)^2;
+%                 QP.f(i) = QP.f(i)*scale(i);
+%                 if ~isempty(QP.Aeq)
+%                     QP.Aeq(:,i) = QP.Aeq(:,i)*scale(i);
+%                 end
+%                 if ~isempty(QP.A)
+%                     QP.A(:,i) = QP.A(:,i)*scale(i);
+%                 end
+%                 QP.ub(i) = 1;
+%             end
+%         end
+        %add bound constraints to inequality constraint
+        if ~isempty(QP.lb)
+            if isempty(QP.A)
+                QP.A = zeros(0,n);
+                QP.b = zeros(0,1);
+            end
+            QP.ub(isinf(QP.ub)) = 1e3*max(QP.ub(~isinf(QP.ub)));%% avoid inf bounds!!
+            I = [zeros(n-ic,ic),eye(n-ic)];
+            QP.A = [QP.A; I;-I];
+            QP.b = [QP.b;QP.ub(ic+1:end);-QP.lb(ic+1:end);];
+        end
+        [r,~] = size(QP.A);
+        [req,~] = size(QP.Aeq);
+        % initial values for states, langragian coef, and slack variables
+        x = zeros(n,1);
+        y = ones(req,1);
+        z = ones(r,1);
+        s = ones(r,1);
+        [x,iterations,Feasible] = pcQPgen(QP.H,QP.f,QP.A',QP.b,QP.Aeq',QP.beq,x,y,z,s);
+        %% convert back to non-normalized
+%         x = x.*scale;
+        Feasible =1;
 end
 if Feasible ==1
     Cost = 0.5*x'*QP.H*x + x'*QP.f;

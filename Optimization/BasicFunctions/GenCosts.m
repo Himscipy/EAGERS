@@ -60,7 +60,7 @@ end
 %find best fit
 [~,index] = min(fit);
 costTerms.Intercept = C(index,:);
-costTerms.I = x(1) + (index-1)*(x(end) - x(1))/10;
+costTerms.I = x(1) + (index-1)*(x(end) - x(1))/(n-1);
 %%Plot
 % for i = 1:1:n
 %     Y(1:i,i) = x(1:i)*C(i,1)+C(i,4);

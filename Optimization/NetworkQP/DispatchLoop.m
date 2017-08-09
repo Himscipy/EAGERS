@@ -5,25 +5,21 @@ dt = (Date(2:end) - Date(1:end-1))*24;
 nG = length(Plant.Generator);
 nS = length(Date)-1;
 
-IC = [CurrentState.Generators, CurrentState.Lines];
-for i = 1:1:nG
-    IC(i) = IC(i)*Plant.Generator(i).Enabled;%remove IC for disabled gens
-end
 %% Update IC & matrices (including Make forecast & predict renewables, to create forecasted demands)
 if isempty(LastDispatch)
-    PredictDispatch = ones(length(Date),1)*IC;
+    PredictDispatch = ones(length(Date),1)*[CurrentState.Generators, CurrentState.Lines, CurrentState.Buildings];
 else
-    PredictDispatch = [IC;LastDispatch(3:end,:);LastDispatch(end,:)];
+    PredictDispatch = [CurrentState.Generators, CurrentState.Lines, CurrentState.Buildings; LastDispatch(3:end,:);LastDispatch(end,:)];
 end
 scaleCost = updateGeneratorCost(Date(2:end)); %% All feedstock costs were assumed to be 1 when building matrices 
 if strcmp(Plant.optimoptions.solver,'NREL')
     tic
-    GenDisp = NRELoptimization(IC,Forecast,scaleCost);
+    GenDisp = NRELoptimization(Forecast,scaleCost);
     tsim(1,1) = toc;
 else
     marginCost = updateMarginalCost(PredictDispatch,scaleCost,dt);%the dispatch is whatever has been dispatched so far, except for the initial condition.
     Plant.OpMatA.Renewable = Forecast.Renewable;
-    QP = updateMatrices(Plant.OpMatA,IC,Date,scaleCost,marginCost,Forecast,[]);
+    QP = updateMatrices(Plant.OpMatA,Date,scaleCost,marginCost,Forecast,[]);
 
     %% Step 1 Determine initial dispatch
     Locked = true(nS+1,nG);
@@ -43,7 +39,7 @@ else
     %% Step 2:  dispatch step by step
     if Plant.optimoptions.MixedInteger
         tic
-        OptimalState = StepByStepDispatch(Forecast,scaleCost,dt,IC,'initially constrained',FirstDisp);
+        OptimalState = StepByStepDispatch(Forecast,scaleCost,dt,'initially constrained',FirstDisp);
         clear mex
         tsim(1,2) = toc;
     else
@@ -53,7 +49,7 @@ else
     tic
     marginCost = updateMarginalCost(OptimalState,scaleCost,dt);
     Plant.OpMatB.Renewable = Forecast.Renewable;
-    QP = updateMatrices(Plant.OpMatB,IC,Date,scaleCost,marginCost,Forecast,[]); %update fit B matrices
+    QP = updateMatrices(Plant.OpMatB,Date,scaleCost,marginCost,Forecast,[]); %update fit B matrices
     for i = 1:1:nG
         if QP.Organize.Dispatchable(i) ==1
             Locked(OptimalState(:,i)==0,i)=false;

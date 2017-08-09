@@ -25,7 +25,7 @@ Plant.Components.EC1.type = 'Electrolyzer';
 Plant.Components.EC1.name = 'EC1';
 Plant.Components.EC1.FCtype = 'SOEC'; %SOEC, or MCEC 
 Plant.Components.EC1.Reformer = 'none'; % options are 'none' or 'methanator' for a seperate set of plates wher CO2 is injected to cause methanation
-Plant.Components.EC1.direction = 'coflow'; % 'coflow', or 'counterflow' or 'crossflow'
+Plant.Components.EC1.direction = 'counterflow'; % 'coflow', or 'counterflow' or 'crossflow'
 Plant.Components.EC1.ClosedCathode = 0; %0 means air or some excess flow of O2 in the cathode used as primary means of temerature control (initializations hold to design fuel utilization), 1 means closed end cathode, or simply a fixed oxygen utilization, cooling is done with excess fuel, and the design voltage is met during initialization
 Plant.Components.EC1.CoolingStream = 'none'; % choices are 'none' or 'cathode'. Determines which flow is increased to reach desired temperature gradient.
 Plant.Components.EC1.PressureRatio = 1.2;
@@ -40,7 +40,7 @@ if ~Plant.Components.EC1.ClosedCathode
     Plant.Components.EC1.Specification = 'power density';%options are 'cells', 'power density', 'voltage', or 'current density'. Note: careful when specifying cells that it arrives at a feasible power density
     Plant.Components.EC1.SpecificationValue = 2000; % power density specified in mW/cm^2, voltage specified in V/cell, current density specified in A/cm^2
 end
-Plant.Components.EC1.deltaTStack = 50; %temperature difference from cathode inlet to cathode outlet
+Plant.Components.EC1.deltaTStack = 50; %temperature difference from anode inlet to anode outlet
 Plant.Components.EC1.TpenAvg = 1023;% 750 C, average electrolyte operating temperature
 Plant.Components.EC1.H2O_Utilization =.85; %H2O utilization (net steam consumed/ steam supply)
 Plant.Components.EC1.Flow1Pdrop = 2; %design anode pressure drop

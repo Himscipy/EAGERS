@@ -80,9 +80,9 @@ elseif length(varargin)==2 %% Have inlets connected, re-initialize
     block.Measured2.IC = block.Current.IC*Inlet.Voltage*block.Cells/1000; %Power in kW
     
     if block.HasFlow
-        Q_cathode = block.OxidantFlow.IC*40*block.deltaTStack;
+        Q_anode = block.OxidantFlow.IC*40*block.deltaTStack;
         
-        if ((block.Cells*(Inlet.Voltage - block.Vbalance)*abs(block.Current.IC)/1000) - Q_cathode)>0
+        if ((block.Cells*(Inlet.Voltage - block.Vbalance)*abs(block.Current.IC)/1000) - Q_anode)>0
             block.OxidantTemp.IC = Inlet.Target1-100; %cooling stack
             TavgError = (averageT -Inlet.Target1)/block.deltaTStack; % too hot = increase flow
         else
@@ -119,8 +119,8 @@ else %running the model
     SteamFlow = block.Cells*abs(Current)/(2*F*block.Utilization*block.Steam.H2O)/1000;
 
     if block.HasFlow
-        Q_cathode = Y(1)*40*block.deltaTStack;
-        if ((block.Cells*(Inlet.Voltage - block.Vbalance)*abs(Current)/1000) - Q_cathode)>0
+        Q_anode = Y(1)*40*block.deltaTStack;
+        if ((block.Cells*(Inlet.Voltage - block.Vbalance)*abs(Current)/1000) - Q_anode)>0
             Out.OxidantTemp = Inlet.Target1-100; %cooling stack
             TavgError = (averageT -Inlet.Target1)/block.deltaTStack; % too hot = increase flow
         else
@@ -151,7 +151,7 @@ else %running the model
                 dY(1) = block.Gain(1)*TavgError;
             end
         else
-            dY(1) = block.Gain(2)*VoltError;
+            dY(1) = block.Gain(1)*VoltError;
         end
         Out = dY;
     end

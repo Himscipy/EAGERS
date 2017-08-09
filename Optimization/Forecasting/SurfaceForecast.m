@@ -1,6 +1,5 @@
-function Forecast = SurfaceForecast(Date,RealData)
+function Forecast = SurfaceForecast(Date,RealData,Tforecast)
 global Plant Last24hour
-Forecast.Timestamp = Date;
 Days = ceil(Date(end)-floor(RealData.Timestamp)); %this says that you may need to use surface fits for multiple days.
 s12hour = nnz(Date<(RealData.Timestamp+.5)); %steps in next 12 hours
 A = datevec(RealData.Timestamp);
@@ -20,15 +19,7 @@ for i = 1:1:length(dateDays)
     end
 end
 monthName = {'Jan' 'Feb' 'Mar' 'Apr' 'May' 'Jun' 'Jul' 'Aug' 'Sep' 'Oct' 'Nov' 'Dec' 'Jan'};
-
-%create forward forecast of temperature
 hour = ([RealData.Timestamp; Date]-floor(RealData.Timestamp))*24;
-YestFit = interp1(linspace(0,24,length(Last24hour.Temperature)+1)',[Last24hour.Temperature;RealData.Temperature],mod([0;(Date-RealData.Timestamp)*24],24));
-HistFit = interp1(0:24,[Plant.Data.HistProf.Temperature(A(2),end),Plant.Data.HistProf.Temperature(A(2),:)],mod(hour,24));
-
-W = interp1([RealData.Timestamp,RealData.Timestamp+3,RealData.Timestamp+100],[0.9,0,0],[RealData.Timestamp;Date]);%weight between yesterday and historical average
-W(isnan(W)) = 0;
-Tforecast = (W.*YestFit + (1-W).*HistFit);% Balanced between yesterdays T and historical T (includes forecast for current time)
 S = fieldnames(Last24hour.Demand);
 for s = 1:1:length(S) %repeat for electric, cooling, heating, and steam as necessary
     [~,nD] = size(Last24hour.Demand.(S{s}));
@@ -68,15 +59,5 @@ for s = 1:1:length(S) %repeat for electric, cooling, heating, and steam as neces
         end
         Forecast.Demand.(S{s})(1:s12hour,k) =   HistFitDem(2:s12hour+1)*(1+0.7*BiasPerc/100) + linspace(1,0,s12hour)'.*interp1(Last24hour.Timestamp,HourlyError,Date(1:s12hour)-1);
         Forecast.Demand.(S{s})(s12hour+1:end,k) = HistFitDem(s12hour+2:end)*(1+0.7*BiasPerc/100);
-    end
-end
-Forecast.Temperature = Tforecast(2:end);%exclude forecast for current time
-
-if isfield(Plant.Data,'Hydro')
-    fields = {'SpillFlow','OutFlow','InFlow','SourceSink'};
-    for i = 1:1:length(fields)
-        YestFit = interp1(linspace(0,24,length(Last24hour.Hydro.(fields{i}))+1)',[Last24hour.Hydro.(fields{i});RealData.Hydro.(fields{i})],mod([0;(Date-RealData.Timestamp)*24],24));
-        HistFit = interp1(0:24,[Plant.Data.HistProf.Hydro.(fields{i})(A(2),end),Plant.Data.HistProf.Hydro.(fields{i})(A(2),:)],mod(hour,24));
-        Forecast.Hydro.(fields{i}) = (W.*YestFit + (1-W).*HistFit);% Balanced between yesterdays T and historical T (includes forecast for current time)
     end
 end

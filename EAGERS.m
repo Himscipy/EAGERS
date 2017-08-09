@@ -1,24 +1,19 @@
 global Model_dir
 Model_dir=strrep(which('EAGERS.m'),'EAGERS.m','');
 p = path;
-dir1 = fullfile(Model_dir,'Plant');
-if isempty(strfind(p,dir1))% && isempty(strfind(p,'Plant'))
+dir1 = fullfile(Model_dir,'Projects');
+if isempty(strfind(p,dir1))% && isempty(strfind(p,'Projects'))
     SubPaths2Add = {fullfile(Model_dir);
-                    fullfile(Model_dir,'data','solarData');
-                    fullfile(Model_dir,'data');
-                    fullfile(Model_dir,'Calibration_Testing');
+                    fullfile(Model_dir,'Data');
                     fullfile(Model_dir,'Design');
-                    fullfile(Model_dir,'Design','ClimateZonesByState');
-                    fullfile(Model_dir,'DesignProjects');
+                    fullfile(Model_dir,'Design','Compare2Eplus');
                     fullfile(Model_dir,'Emissions');
                     fullfile(Model_dir,'GUI');
                     fullfile(Model_dir,'GUI','Design');
                     fullfile(Model_dir,'GUI','Graphics');
-                    fullfile(Model_dir,'GUI','HelpTool');
                     fullfile(Model_dir,'GUI','Mapping');
                     fullfile(Model_dir,'GUI','Optimization');
                     fullfile(Model_dir,'GUI','Simulation');
-                    fullfile(Model_dir,'help');
                     fullfile(Model_dir,'Model Library');
                     fullfile(Model_dir,'Model Library','Saved Models');
                     fullfile(Model_dir,'Model Library','Saved Linearizations');
@@ -29,11 +24,7 @@ if isempty(strfind(p,dir1))% && isempty(strfind(p,'Plant'))
                     fullfile(Model_dir,'Optimization','NetworkQP');
                     fullfile(Model_dir,'Optimization','Threshold');
                     fullfile(Model_dir,'Optimization','NRELmethod');
-                    fullfile(Model_dir,'results');
-                    fullfile(Model_dir,'results','LoggedData');
-                    fullfile(Model_dir,'results','OptimalMap');
-                    fullfile(Model_dir,'results','RealTime');
-                    fullfile(Model_dir,'results','Virtualization');
+                    fullfile(Model_dir,'Projects');
                     fullfile(Model_dir,'Simulation');
                     fullfile(Model_dir,'Simulation','BasicFunctions');
                     fullfile(Model_dir,'Simulation','Components');
@@ -66,10 +57,7 @@ if isempty(strfind(p,dir1))% && isempty(strfind(p,'Plant'))
                     fullfile(Model_dir,'System Library','Utility');
                     fullfile(Model_dir,'System Library','WaterHeater');
                     fullfile(Model_dir,'System Library','Weather'); 
-                    fullfile(Model_dir,'System Library','Wind');
-                    fullfile(Model_dir,'Plant','GenSets');
-                    fullfile(Model_dir,'Plant','LoadProfiles');
-                    fullfile(Model_dir,'Plant');};
+                    fullfile(Model_dir,'System Library','Wind');};
 
     for i=1:length(SubPaths2Add)
         addpath(SubPaths2Add{i});

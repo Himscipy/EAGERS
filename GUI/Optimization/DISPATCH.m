@@ -59,8 +59,15 @@ movegui(gcf,'center');
 if strcmp(Plant.optimoptions.method,'Planning')
     Plant.optimoptions.method = 'Dispatch';
 end
-TestData = Plant.Data;%% Revise this so you can pull from more than what is loaded in Plant
-RealTimeData = Plant.Data; %this will get replaced later, but needed for forecasting initially
+if ~isempty(Plant.Data)
+    TestData = Plant.Data;%% Revise this so you can pull from more than what is loaded in Plant
+    if isfield(TestData,'HistProf')
+        TestData = rmfield(TestData,'HistProf');
+    end
+    RealTimeData = TestData; %this will get replaced later, but needed for forecasting initially
+end
+
+
 %% Set up Main Tabs
 % Assumptions:
 % 1. Tags of main tab static text boxes are of form, 'MainTab1',
@@ -86,17 +93,24 @@ for i = 1:length(TabText)
 end
 
 %make gen list for tabs 1 and 5
-list={};
-for i=1:length(Plant.Generator)
-    if Plant.Generator(i).Enabled ==1
-        list(end+1) = {Plant.Generator(i).Name};
-    elseif Plant.Generator(i).Enabled ==0
-        list(end+1) = {Plant.Generator(i).Name};
-    end 
+nG = length(Plant.Generator);
+nB = length(Plant.Building);
+list=cell(nG+nB,1);
+for i=1:1:nG
+    list(i) = {Plant.Generator(i).Name};
+end
+for i=1:1:nB
+    list(nG+i) = {Plant.Building(i).Name};
 end
 set(handles.uipanelMain1,'UserData',list)
 
 networkNames = fieldnames(Plant.Network);
+networkNames = networkNames(~strcmp('name',networkNames));
+networkNames = networkNames(~strcmp('Equipment',networkNames));
+networkNames = networkNames(~strcmp('Location',networkNames));
+if ~isempty(Plant.Building)
+    networkNames(end+1) = {'BuildingTemp'};
+end
 handles = PlotAxes_Setup(hObject, eventdata, handles,networkNames,1);
 handles = PlotAxes_Setup(hObject, eventdata, handles,networkNames,3);
 
@@ -151,18 +165,45 @@ set(handles.Dispatch, 'value', strcmp(Plant.optimoptions.method,'Dispatch'));
 set(handles.Topt, 'string', Plant.optimoptions.Topt);
 set(handles.Tmpc, 'string', Plant.optimoptions.Tmpc);
 
-set(handles.SES, 'value', false);
-set(handles.ARIMA, 'value', false);
-set(handles.NeuralNet, 'value', false);
-set(handles.Surface, 'value', false);
-set(handles.Perfect, 'value', false);
-set(handles.(Plant.optimoptions.forecast), 'value', true);
+if strcmp(Plant.optimoptions.forecast,'Building')
+    set(handles.SES, 'visible', 'off');
+    set(handles.ARIMA, 'visible', 'off');
+    set(handles.NeuralNet, 'visible', 'off');
+    set(handles.Surface, 'visible', 'off');
+    set(handles.Perfect, 'visible', 'off');
+    set(handles.Building, 'visible', 'on','value',true);
+else
+    set(handles.SES, 'value', false);
+    set(handles.ARIMA, 'value', false);
+    set(handles.NeuralNet, 'value', false);
+    set(handles.Surface, 'value', false);
+    set(handles.Perfect, 'value', false);
+    set(handles.(Plant.optimoptions.forecast), 'value', true);
+    set(handles.Building, 'visible', 'off','value',false);
+end
 
 %Update forecastmethod handles
-days = ceil(Plant.Data.Timestamp(end) - Plant.Data.Timestamp(1));
-set(handles.sliderZoom,'Min',0,'Max',1,'Value',1/7)
-set(handles.sliderDate,'Min',0,'Max',days,'Value',0,'SliderStep',[1/(days-1),10/(days-1)])
-set(handles.sliderStartDate,'Min',0,'Max',days,'Value',0,'SliderStep',[1/(days-1),10/(days-1)])
+if ~isempty(Plant.Building)
+    days = 365;
+else
+    days = ceil(Plant.Data.Timestamp(end) - Plant.Data.Timestamp(1));
+end
+if days<7
+    set(handles.sliderZoom,'Min',0,'Max',1,'Value',0,'SliderStep',[1,1]) %either single day or all data   
+elseif days<31
+    set(handles.sliderZoom,'Min',0,'Max',2,'Value',0,'SliderStep',[1/2,1/2]) %either single day, week or all data
+elseif days<367
+    set(handles.sliderZoom,'Min',0,'Max',3,'Value',0,'SliderStep',[1/3,1/3]) %either single day, week, month, or all data
+else
+    set(handles.sliderZoom,'Min',0,'Max',4,'Value',0,'SliderStep',[1/4,1/4]) %either single day, week, month, year, or all data
+end
+if days>20
+    set(handles.sliderDate,'Min',0,'Max',days,'Value',0,'SliderStep',[1/days,10/days])
+    set(handles.sliderStartDate,'Min',0,'Max',days,'Value',0,'SliderStep',[1/days,10/days])
+else
+    set(handles.sliderDate,'Min',0,'Max',days,'Value',0,'SliderStep',[1/days,1/days])
+    set(handles.sliderStartDate,'Min',0,'Max',days,'Value',0,'SliderStep',[1/days,1/days])
+end
 %%put something into axes
 sliderStartDate_Callback(hObject, eventdata, handles)
 LineGraph_Callback(hObject, eventdata, handles)
@@ -224,8 +265,6 @@ MainScreen1
 
 % --- Creates plots on the Main Window and Forecasting Tabs
 function handles = PlotAxes_Setup(hObject, eventdata, handles,networkNames,tab)
-networkNames = networkNames(~strcmp('name',networkNames));
-networkNames = networkNames(~strcmp('Equipment',networkNames));
 nPlot = length(networkNames);
 if nPlot ==1 %1 very large plot
     Pos = [52 6 150 30];
@@ -338,11 +377,11 @@ if length(list)>12
     set(handles.(strcat('PrevGen',num2str(tab))),'UserData',1)
 end
 %Makes buttons for GUI && status buttons next to corresponding generator
-nG = length(list);
+nG = length(Plant.Generator);
+nB = length(Plant.Building);
 colorVec = get(gcf,'UserData');
-colorsPlot = interp1(linspace(0,1,length(colorVec)),colorVec,linspace(0,1,nG));
-for i=1:1:nG 
-    num = num2str(i);
+colorsPlot = interp1(linspace(0,1,length(colorVec)),colorVec,linspace(0,1,nG+nB));
+for i=1:1:nG+nB
     curtab = floor((i-1)/12)+1;
     prev = 12*(curtab-1);
     if curtab==1
@@ -350,18 +389,24 @@ for i=1:1:nG
     else vis = 'off';
     end
     pos = 45 - 2*(i-prev);
-    callback = strcat('@(hObject,eventdata)DISPATCH(',quote,'Gen',r,'_Callback',quote,',hObject,eventdata,guidata(hObject))');
-    handles.(strcat('Generator',num2str(tab),'_',num)) = uicontrol('Style', 'pushbutton', 'String', list{i},...
-    'Units','characters',...
-    'Position', [1 pos 25 1.8],...
-    'Tag', strcat('Generator',num2str(tab),'_',num),...
-    'FontSize', 10,...
-    'Parent', handles.(strcat('uipanelMain',num2str(tab))),...
-    'Callback',eval(callback),...
-    'Visible',vis,...
-    'UserData',i,...
-    'BackgroundColor',colorsPlot(i,:));
-    if tab ==1 %Only make Status buttons on Main Window
+    if i<=nG
+        num = num2str(i);
+        callback = strcat('@(hObject,eventdata)DISPATCH(',quote,'Gen',r,'_Callback',quote,',hObject,eventdata,guidata(hObject))');
+        handles.(strcat('Generator',num2str(tab),'_',num)) = uicontrol('Style', 'pushbutton', 'String', list{i},...
+        'Units','characters','Position', [1 pos 25 1.8],...
+        'Tag', strcat('Generator',num2str(tab),'_',num),'FontSize', 10,...
+        'Parent', handles.(strcat('uipanelMain',num2str(tab))),...
+        'Callback',eval(callback),'Visible',vis,'UserData',i,'BackgroundColor',colorsPlot(i,:));
+    else
+        num = num2str(i-nG);
+        callback = strcat('@(hObject,eventdata)DISPATCH(',quote,'Build',r,'_Callback',quote,',hObject,eventdata,guidata(hObject))');
+        handles.(strcat('Building',num2str(tab),'_',num)) = uicontrol('Style', 'pushbutton', 'String', list{i},...
+        'Units','characters','Position', [1 pos 25 1.8],...
+        'Tag', strcat('Building',num2str(tab),'_',num),'FontSize', 10,...
+        'Parent', handles.(strcat('uipanelMain',num2str(tab))),...
+        'Callback',eval(callback),'Visible',vis,'UserData',i-nG,'BackgroundColor',colorsPlot(i,:));
+    end
+    if tab ==1 && i<=nG %Only make Status buttons on Main Window
         pos = 45.5 - 2*(i-prev);
         callback = strcat('@(hObject,eventdata)DISPATCH(',quote,'Status_Callback',quote,',hObject,eventdata,guidata(hObject))');
         if Plant.Generator(i).Enabled
@@ -485,7 +530,12 @@ elseif Plant.Generator(GENINDEX).Enabled == 0
     set(handles.GenEnable,'Value',0)
     set(handles.GenDisable,'Value',1)
 end
- 
+
+%When Building Buttons on the main tab are clicked
+function BuildMain_Callback(hObject, eventdata, handles)
+global Plant
+b = get(hObject,'UserData');
+build = Plant.Building(b);
 
 %When Status colors are clicked
 function Status_Callback(hObject, eventdata,handles)
@@ -522,25 +572,37 @@ set(hObject,'cdata',x)
 function sliderStartDate_Callback(hObject, eventdata, handles)
 global Plant Last24hour DateSim 
 handles = guihandles;
-%find the current date
-DateSim = Plant.Data.Timestamp(1) + get(handles.sliderStartDate,'Value');
-Last24hour = [];
-TimeYesterday = DateSim-1+((0:round(24/Plant.optimoptions.Resolution)-1)'.*(Plant.optimoptions.Resolution/24));
-if Plant.Data.Timestamp(1)<(DateSim-1) && Plant.Data.Timestamp(end)>DateSim
-    Last24hour = GetHistoricalData(TimeYesterday);
-else %need to have this in terms of the first timestep
-    Last24hour = GetHistoricalData(TimeYesterday+1);
-    Last24hour.Timestamp = TimeYesterday;
+if isempty(Plant.subNet)
+    initializeOptimization
 end
-Data = GetHistoricalData(DateSim); 
+Last24hour = [];
+%find the current date & load last24hour
+if isempty(Plant.Building)
+    DateSim = Plant.Data.Timestamp(1) + get(handles.sliderStartDate,'Value');
+    TimeYesterday = DateSim-1+((0:round(24/Plant.optimoptions.Resolution)-1)'.*(Plant.optimoptions.Resolution/24));
+    if Plant.Data.Timestamp(1)<(DateSim-1) && Plant.Data.Timestamp(end)>DateSim
+        Last24hour = GetHistoricalData(TimeYesterday);
+    else %need to have this in terms of the first timestep
+        Last24hour = GetHistoricalData(TimeYesterday+1);
+        Last24hour.Timestamp = TimeYesterday;
+    end
+    Data = GetHistoricalData(DateSim); 
+else
+    DateSim = datenum([2017,1,1]) + get(handles.sliderStartDate,'Value');
+    Data = updateForecast(DateSim,[]);
+    Date= linspace(DateSim-1,DateSim-Plant.optimoptions.Resolution/24,24/Plant.optimoptions.Resolution+1)';
+    Last24hour = updateForecast(Date,Data);
+    %%only doing electric part of building right now. Need to add Cooling
+    %%and Heating if Plant has Chillers/Heaters
+end
+
+
 if isfield(Plant,'Dispatch') && ~isempty(Plant.Dispatch) && isfield(Plant.Dispatch,'Timestamp') && ~isempty(Plant.Dispatch.Timestamp)
     I = nnz(Plant.Dispatch.Timestamp<=DateSim & Plant.Dispatch.Timestamp>0);
 else I = 0;
 end
 if I == 0 || Plant.Dispatch.Timestamp(I)<(DateSim - Plant.optimoptions.Resolution/24)%if it has not been run at this timestep
-    if isempty(Plant.subNet)
-        initializeOptimization
-    end
+    
     automaticInitialCondition(Data);
     ForecastTime = DateSim+[0;buildTimeVector(Plant.optimoptions)/24];%linspace(DateSim,DateEnd)';would need to re-do optimization matrices for this time vector
     Forecast = updateForecast(ForecastTime(2:end),Data);
@@ -571,10 +633,8 @@ global Plant Virtual RealTime DispatchWaitbar DateSim Last24hour GenAvailTime Re
 %Virtual: Running a simulation only, set to zero when the end of the test data set is reached
 %DateSim: Current time in the simulation.
 %NumSteps: the number of dispatch optimiztions that will occur during the entire simulation
-%CurrentState: Current state of all generators (kW) & storage (kWh) 
 %Si: Counter for dispatch loop
 %Last24hour: recorded data for the last 24 hours
-%CurrentState: Current state of all generators (kW) & storage (kWh) 
 %OnOff: the desired generator state from the controller (may differ from actual on/off because it leaves generators on as they ramp down to min power, then shuts them off)
 if get(handles.VirtualMode,'Value') ==1 
     Virtual = 1;
@@ -592,18 +652,28 @@ end
 set(handles.Start,'Value',1);%reset start button
 set(handles.Stop,'Value',0);%reset stop button
 
-%%Need to select a starting Date
-DateSim = Plant.Data.Timestamp(1) + get(handles.sliderStartDate,'Value');
 if isempty(Plant.subNet)
     initializeOptimization%Load generators, build QP matrices
 end
-% clear & initialize variables
-Xi = nnz(Plant.Data.Timestamp<=DateSim);
-Xf = nnz(Plant.Data.Timestamp<=DateSim+Plant.optimoptions.Interval+Plant.optimoptions.Horizon/24);
-if any(strcmp(Plant.optimoptions.method,{'Dispatch';'Planning'}))
-    RealTimeData = interpolateData(Plant.optimoptions.Resolution*3600,Xi,Xf,0.00);%create test data at correct frequency
-else %actual control
-    nG = length(Plant.Generator);
+nG = length(Plant.Generator);
+nB = length(Plant.Building);
+%%Need to select a starting Date
+if isempty(Plant.Building)
+    DateSim = Plant.Data.Timestamp(1) + get(handles.sliderStartDate,'Value');
+    Xi = nnz(Plant.Data.Timestamp<=DateSim);
+    Xf = nnz(Plant.Data.Timestamp<=DateSim+Plant.optimoptions.Interval+Plant.optimoptions.Horizon/24);
+    if any(strcmp(Plant.optimoptions.method,{'Dispatch';'Planning'}))
+        RealTimeData = interpolateData(Plant.optimoptions.Resolution*3600,Xi,Xf,0.00);%create test data at correct frequency
+    else %actual control
+        RealTimeData = interpolateData(Plant.optimoptions.Tmpc,Xi,Xf,0.00);%create test data at correct frequency
+    end
+else
+    DateSim = datenum([2017,1,1]) + get(handles.sliderStartDate,'Value');
+    nS = 365*24/Plant.optimoptions.Resolution+1;
+    RealTimeData.Timestamp = linspace(datenum([2017,1,1]),datenum([2018,1,1]),nS)';
+end
+
+if any(strcmp(Plant.optimoptions.method,{'Control'}))
     for i = 1:1:nG
         if isfield(Plant.Generator(i).VariableStruct,'RestartTime')
             RestartTime(i) = Plant.Generator(i).VariableStruct.RestartTime/60;%restart time in hours
@@ -611,33 +681,43 @@ else %actual control
             RestartTime(i) = 0;
         end
     end
-    GenAvailTime = ones(1,nG).*DateSim; %  Global vairables needed in controller mode
-    RealTimeData = interpolateData(Plant.optimoptions.Tmpc,Xi,Xf,0.00);%create test data at correct frequency
+    GenAvailTime = ones(1,nG).*DateSim; %  Global variable needed in controller mode
 end
-
-nG = length(Plant.Generator);
 [~,n] = size(Plant.OneStep.organize);
-nL = n-nG;
+nL = n-nG-nB;
 NumSteps = Plant.optimoptions.Interval*24/Plant.optimoptions.Resolution;
 Plant.Dispatch.Temperature = zeros(NumSteps,1);
 Plant.Dispatch.Timestamp = zeros(NumSteps,1);
-Plant.Dispatch.GeneratorState = zeros(NumSteps,nG+nL);
-Plant.Predicted.GenDisp = zeros(round(Plant.optimoptions.Horizon/Plant.optimoptions.Resolution)+1,nG+nL,NumSteps);
+Plant.Dispatch.GeneratorState = zeros(NumSteps,nG+nL+nB);
+Plant.Predicted.GenDisp = zeros(round(Plant.optimoptions.Horizon/Plant.optimoptions.Resolution)+1,nG+nL+nB,NumSteps);
 Plant.Predicted.Timestamp = zeros(round(Plant.optimoptions.Horizon/Plant.optimoptions.Resolution)+1,NumSteps);
-Outs =  fieldnames(Plant.Data.Demand);
-for i = 1:1:length(Outs)
-    loads = length(Plant.Data.Demand.(Outs{i})(1,:));
-    Plant.Dispatch.Demand.(Outs{i}) = zeros(NumSteps,loads);
-    Plant.RunData.Demand.(Outs{i}) = zeros(NumSteps,loads);
+if isfield(RealTimeData,'Demand')
+    Outs =  fieldnames(RealTimeData.Demand);
+    for i = 1:1:length(Outs)
+        loads = length(RealTimeData.Demand.(Outs{i})(1,:));
+        Plant.Dispatch.Demand.(Outs{i}) = zeros(NumSteps,loads);
+        Plant.RunData.Demand.(Outs{i}) = zeros(NumSteps,loads);
+    end
+end
+for i = 1:1:nB
+    Plant.Dispatch.Building(i).Temperature = zeros(NumSteps,1);
+    Plant.RunData.Building(i).Temperature = zeros(NumSteps,1);
 end
 
 Last24hour = [];
-TimeYesterday = DateSim-1+((0:round(24/Plant.optimoptions.Resolution)-1)'.*(Plant.optimoptions.Resolution/24));
-if RealTimeData.Timestamp(1)<(DateSim-1) && RealTimeData.Timestamp(end)>=DateSim
-    Last24hour = GetCurrentData(TimeYesterday);
-else %need to have this in terms of the first timestep
-    Last24hour = GetCurrentData(TimeYesterday+1);
-    Last24hour.Timestamp = TimeYesterday;
+if isempty(Plant.Building)
+    TimeYesterday = DateSim-1+((0:round(24/Plant.optimoptions.Resolution)-1)'.*(Plant.optimoptions.Resolution/24));
+    if RealTimeData.Timestamp(1)<(DateSim-1) && RealTimeData.Timestamp(end)>=DateSim
+        Last24hour = GetCurrentData(TimeYesterday);
+    else %need to have this in terms of the first timestep
+        Last24hour = GetCurrentData(TimeYesterday+1);
+        Last24hour.Timestamp = TimeYesterday;
+    end
+    Data = GetCurrentData(DateSim);
+else
+    Data = updateForecast(DateSim,[]);
+    Date= linspace(DateSim-1,DateSim-Plant.optimoptions.Resolution/24,24/Plant.optimoptions.Resolution+1)';
+    Last24hour = updateForecast(Date,Data);
 end
 
 % K = center_menu('Select Option','Manually specify initial conditions','Automatically determine initial conditions');
@@ -645,7 +725,7 @@ K = 2;
 if K ==1
     Plant.Dispatch.GeneratorState(1,:) = manualInitialCondition;
 else
-    Plant.Dispatch.GeneratorState(1,:) = automaticInitialCondition(GetCurrentData(DateSim));
+    Plant.Dispatch.GeneratorState(1,:) = automaticInitialCondition(Data);
 end
 Plant.Dispatch.Timestamp(1) = DateSim;
 Si=1; %counter for # of times dispatch loop has run
@@ -656,7 +736,11 @@ Time = buildTimeVector(Plant.optimoptions);%% set up vector of time interval
 timers = zeros(NumSteps,3); % To record times set to zeros(1,3), to not record set to [];
 while Si<NumSteps
     Date = DateSim+[0;Time/24];
-    Data = GetCurrentData(DateSim);
+    if isempty(Plant.Building)
+        Data = GetCurrentData(DateSim);
+    else
+        Data = updateForecast(DateSim,[]);
+    end
     Forecast = updateForecast(Date(2:end),Data);%% function that creates demand vector with time intervals coresponding to those selected
     [LastDispatch,timers(Si,:)] = DispatchLoop(Date,Forecast,LastDispatch);
 %     disp(strcat('FistDisp:',num2str(timers(Si,1))));
@@ -871,51 +955,113 @@ end
 %% Historian/ForecastMethod Tab
 function GenPlot_Callback(hObject, eventdata, handles)
 %plot the forecastmethod and actual dispatch of a single generator
-global GENINDEX
+global GENINDEX BUILDINDEX
+BUILDINDEX = [];
 GENINDEX = get(hObject,'UserData');
+set(handles.Demands,'Visible','on')
+ForecastPlot
+
+%When Building Buttons on the Historian tab are clicked
+function BuildPlot_Callback(hObject, eventdata, handles)
+global GENINDEX BUILDINDEX
+GENINDEX = [];
+BUILDINDEX = get(hObject,'UserData');
 set(handles.Demands,'Visible','on')
 ForecastPlot
 
 function Demands_Callback(hObject, eventdata, handles)
 %plot the forecastmethod and actual demands
-global GENINDEX
+global GENINDEX BUILDINDEX
 GENINDEX = [];
+BUILDINDEX = [];
 set(handles.Demands,'Visible','off')
 ForecastPlot
 
 function ForecastPlot
 global Plant Last24hour DateSim GENINDEX
 handles = guihandles;
-%find the current date
-DateSim = Plant.Data.Timestamp(1) + get(handles.sliderDate,'Value');
 Last24hour = [];
-TimeYesterday = DateSim-1+((0:round(24/Plant.optimoptions.Resolution)-1)'.*(Plant.optimoptions.Resolution/24));
-if Plant.Data.Timestamp(1)<(DateSim-1) && Plant.Data.Timestamp(end)>DateSim
-    Last24hour = GetHistoricalData(TimeYesterday);
-else %need to have this in terms of the first timestep
-    Last24hour = GetHistoricalData(TimeYesterday+1);
-    Last24hour.Timstamp = TimeYesterday;
+%find the current date
+if isempty(Plant.Building)
+    DateSim = Plant.Data.Timestamp(1) + get(handles.sliderDate,'Value');
+    TimeYesterday = DateSim-1+((0:round(24/Plant.optimoptions.Resolution)-1)'.*(Plant.optimoptions.Resolution/24));
+    if Plant.Data.Timestamp(1)<(DateSim-1) && Plant.Data.Timestamp(end)>DateSim
+        Last24hour = GetHistoricalData(TimeYesterday);
+    else %need to have this in terms of the first timestep
+        Last24hour = GetHistoricalData(TimeYesterday+1);
+        Last24hour.Timstamp = TimeYesterday;
+    end
+    Data = GetHistoricalData(DateSim);  
+else
+    DateSim = datenum([2017,1,1]) + get(handles.sliderDate,'Value');
+    D = datevec(DateSim);
+    h_of_y = 24*(DateSim - datenum([D(1),1,1])); %hour since start of year
+    Tdb = interp1((0:1:8760)',[Plant.Weather.Tdb(1);Plant.Weather.Tdb],h_of_y);
+    Data = updateForecast(DateSim,[]);
+    Data.Timestamp = DateSim;
+    Data.Temperature = Tdb;
+    
+    Date= linspace(DateSim-1,DateSim-Plant.optimoptions.Resolution/24,24/Plant.optimoptions.Resolution+1)';
+    h_of_y = 24*(Date - datenum([D(1),1,1])); %hour since start of year
+    Tdb = interp1((0:1:8760)',[Plant.Weather.Tdb(1);Plant.Weather.Tdb],h_of_y);
+    Last24hour = updateForecast(Date,Data);
+    Last24hour.Timestamp = Date;
+    Last24hour.Temperature = Tdb;
 end
 
-Data = GetHistoricalData(DateSim);        
+      
 if isempty(GENINDEX)%plot demands
     set(handles.sliderZoom,'Visible','on')
     set(handles.textHour,'Visible','on'); set(handles.textWeek,'Visible','on'); set(handles.textHorizon,'Visible','on');
-    nPlot = length(fieldnames(Last24hour.Demand));
-    for q = 1:1:nPlot
-        set(handles.(strcat('ForecastPlot',num2str(q))),'Visible','on');
-        set(handles.(strcat('ForecastPlot',num2str(q),'b')),'Visible','on');
-        set(handles.(strcat('ForecastName',num2str(q))),'Visible','on');
+    nPlot = 0;
+    while isfield(handles,strcat('ForecastPlot',num2str(nPlot+1)))
+        nPlot = nPlot+1;
+        set(handles.(strcat('ForecastPlot',num2str(nPlot))),'Visible','on');%plotting axes (y-axis on left)
+        set(handles.(strcat('ForecastPlot',num2str(nPlot),'b')),'Visible','on');%y-axis on the right
+        set(handles.(strcat('ForecastName',num2str(nPlot))),'Visible','on');%button with name
     end
-    DateEnd = DateSim + get(handles.sliderZoom,'Value')*7;
+    Z = get(handles.sliderZoom,'Value');
+    Z_max = get(handles.sliderZoom,'Max');
+    if isfield(Plant.Data,'Timestamp')
+        lastDate = Plant.Data.Timestamp(end);
+    else
+        lastDate = datenum([2018,1,1]);
+    end
+    if Z == Z_max %show all data
+        DateEnd = lastDate;
+    elseif Z<1
+        DateEnd = min(lastDate,DateSim + 1);
+    elseif Z<2
+        DateEnd = min(lastDate,DateSim + 7);
+    elseif Z<3
+        DateEnd = min(lastDate,DateSim + 31);
+    elseif Z<4
+        DateEnd = min(lastDate,DateSim + 365);
+    end
+        
     Forecast = updateForecast(linspace(DateSim,DateEnd)',Data);%% function that creates demand vector with time intervals coresponding to those selected
-    Outs =  fieldnames(Forecast.Demand);
-    Xi = nnz(Plant.Data.Timestamp<(DateSim-1))+1;
-    Xf = nnz(Plant.Data.Timestamp<(DateEnd) & Plant.Data.Timestamp>0);
-    for i = 1:1:length(Outs)
-        Actual.(Outs{i}) = Plant.Data.Demand.(Outs{i})(Xi:Xf);
+    if isempty(Plant.Building)
+        Outs =  fieldnames(Forecast.Demand);
+        Xi = nnz(Plant.Data.Timestamp<(DateSim-1))+1;
+        Xf = nnz(Plant.Data.Timestamp<(DateEnd) & Plant.Data.Timestamp>0);
+        for i = 1:1:length(Outs)
+            Actual.(Outs{i}) = Plant.Data.Demand.(Outs{i})(Xi:Xf);
+        end
+        ActualTime = Plant.Data.Timestamp(Xi:Xf);
+    else
+        %% need to add heating and cooling
+        nB = length(Plant.Building);
+        if ~isfield(Forecast,'Demand') || ~isfield(Forecast.Demand,'E')
+            Forecast.Demand.E = 0;
+        end
+        Forecast.Demand.T = zeros(length(Forecast.Building(1).E0),nB);
+        for i = 1:1:nB
+            Forecast.Demand.E = Forecast.Demand.E + Forecast.Building(i).E0;
+            Forecast.Demand.T(:,i) = Forecast.Building(i).Tset;
+        end
+        Actual = [];
+        ActualTime = [];
     end
-    ActualTime = Plant.Data.Timestamp(Xi:Xf);
     plotDemand(Forecast.Timestamp,Forecast.Demand,ActualTime,Actual)
 else
     set(handles.sliderZoom,'Value',Plant.optimoptions.Horizon/24/7,'Visible','off')%hide slider
@@ -1172,17 +1318,18 @@ end
 
 function GenComm_Callback(hObject, eventdata, handles)
 global Plant
-genHandles = get(handles.uipanelMain5,'Children');
-j = 1;
-while ~get(genHandles(j),'Value')
-    j = j+1;
-end
-name = get(genHandles(j),'String');
-i = 1;
-while ~strcmp(name,Plant.Generator(i).Name)
-    i = i+1;
-end
-set(handles.CurrentComm,'String',['Ports for: ',name])
+% genHandles = get(handles.uipanelMain5,'Children');
+% j = 1;
+% while ~get(genHandles(j),'Value')
+%     j = j+1;
+% end
+% name = get(genHandles(j),'String');
+% i = 1;
+% while ~strcmp(name,Plant.Generator(i).Name)
+%     i = i+1;
+% end
+i = get(hObject,'UserData');
+set(handles.CurrentComm,'String',['Ports for: ',Plant.Generator(i).Name])
 if isfield(Plant.Generator(i).VariableStruct,'Comm')
     Comm = Plant.Generator(i).VariableStruct.Comm;
 else
@@ -1204,6 +1351,23 @@ set(handles.editMeasureInput,'string',num2str(Measure.Input))
 set(handles.editMeasurePrimary,'string',num2str(Measure.Electric))
 set(handles.editMeasureSecondary,'string',num2str(Measure.Thermal))
 
+%When Building Buttons on the main tab are clicked
+function BuildComm_Callback(hObject, eventdata, handles)
+global Plant
+i = get(hObject,'UserData');
+set(handles.CurrentComm,'String',['Ports for: ',Plant.Building(i).Name])
+if isfield(Plant.Building(i).VariableStruct,'Measure')
+    Measure = Plant.Building(i).VariableStruct.Measure;
+else
+    Measure.Temperature = 0;
+    Measure.Humidity = 0;
+end
+set(handles.editCommandOnOff,'visible','off')
+set(handles.editCommandSet,'visible','off')
+set(handles.editMeasureOnOff,'visible','off')
+set(handles.editMeasureInput,'visible','off')
+set(handles.editMeasurePrimary,'string',num2str(Measure.Temperature))
+set(handles.editMeasureSecondary,'string',num2str(Measure.Humidity))
 
 function editCommandOnOff_Callback(hObject, eventdata, handles)
 recordComm(handles)
@@ -1251,20 +1415,25 @@ end
 function recordComm(handles)
 global Plant
 nG = length(Plant.Generator);
+nB = length(Plant.Building);
 click = get(handles.CurrentComm,'String');
+list = get(handles.uipanelMain1,'UserData');
+i = nonzeros((1:(nG+nB))'*strcmp(click,list));
+if i<=nG
+    Comm.OnOff = str2double(get(handles.editCommandOnOff,'String'));
+    Com.Set = str2double(get(handles.editCommandSet,'String'));
 
-Comm.OnOff = str2double(get(handles.editCommandOnOff,'String'));
-Com.Set = str2double(get(handles.editCommandSet,'String'));
-
-Measure.OnOff = str2double(get(handles.editMeasureOnOff,'String'));
-Measure.Input = str2double(get(handles.editMeasureInput,'String'));
-Measure.Primary = str2double(get(handles.editMeasurePrimary,'String'));
-Measure.Secondary = str2double(get(handles.editMeasureSecondary,'String'));
-for j = 1:nG
-    if strcmp(click, Plant.Generator(j).Name)%May need to change if multiple generators have the same name
-        Plant.Generator(j).VariableStruct.Comm = Comm;
-        Plant.Generator(j).VariableStruct.Measure = Measure;
-    end
+    Measure.OnOff = str2double(get(handles.editMeasureOnOff,'String'));
+    Measure.Input = str2double(get(handles.editMeasureInput,'String'));
+    Measure.Primary = str2double(get(handles.editMeasurePrimary,'String'));
+    Measure.Secondary = str2double(get(handles.editMeasureSecondary,'String'));
+    
+    Plant.Generator(i).VariableStruct.Comm = Comm;
+    Plant.Generator(i).VariableStruct.Measure = Measure;
+else
+    Measure.Temperature = str2double(get(handles.editMeasurePrimary,'String'));
+    Measure.Humidity = str2double(get(handles.editMeasureSecondary,'String'));
+    Plant.Building(i).VariableStruct.Measure = Measure;
 end
 
 function popupmenuColor_Callback(hObject, eventdata, handles)
@@ -1276,12 +1445,20 @@ colorVec = colormap(handles.ResultPlot1);
 set(handles.figure1,'UserData',colorVec);
 
 list = get(handles.uipanelMain1,'UserData');
-nG = length(list);
-colorsPlot = interp1(linspace(0,1,length(colorVec)),colorVec,linspace(0,1,nG));
-for i=1:1:nG 
+colorsPlot = interp1(linspace(0,1,length(colorVec)),colorVec,linspace(0,1,length(list)));
+i = 0;
+while isfield(handles,strcat('Generator1_',num2str(i+1)))
+    i = i+1;
     set(handles.(strcat('Generator1_',num2str(i))),'BackgroundColor',colorsPlot(i,:))
     set(handles.(strcat('Generator3_',num2str(i))),'BackgroundColor',colorsPlot(i,:))
     set(handles.(strcat('Generator5_',num2str(i))),'BackgroundColor',colorsPlot(i,:))
+end
+nG = i;
+while isfield(handles,strcat('Building1_',num2str(i+1-nG)))
+    i = i+1;
+    set(handles.(strcat('Building1_',num2str(i-nG))),'BackgroundColor',colorsPlot(i,:))
+    set(handles.(strcat('Building3_',num2str(i-nG))),'BackgroundColor',colorsPlot(i,:))
+    set(handles.(strcat('Building5_',num2str(i-nG))),'BackgroundColor',colorsPlot(i,:))
 end
 
 function popupmenuColor_CreateFcn(hObject, eventdata, handles)

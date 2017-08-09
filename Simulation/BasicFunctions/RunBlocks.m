@@ -102,8 +102,6 @@ for k = 1:1:length(list) %run components with states %% record All tags
                 for j = 1:1:length(f)
                     TagInf.(block).(tagNames{i}).(f{j})(IterCount,:)=Tags.(block).(tagNames{i}).(f{j}); 
                 end
-            else
-                disp('WTF')
             end
         end
     end
