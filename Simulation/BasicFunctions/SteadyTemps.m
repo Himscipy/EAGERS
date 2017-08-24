@@ -53,7 +53,7 @@ if isfield(block,'FCtype') %fuel cell or electrolyzer
             Q.ion = (block.Current.H2 + block.Current.CO)/(4*F*1000).*h_s.O2; %O2 ion crossing over (kW)
         case {'MCFC';'MCEC';'rMCFC'}
             Q.ion = (block.Current.H2 + block.Current.CO)/(4*F*1000).*h_s.O2 + (block.Current.H2 + block.Current.CO)/(2*F*1000).*h_s.CO2;% O2 & CO2 ion crossing over
-    end
+    end%%
     c = length(block.Flow2Dir(1,:)); %extra constraint for average electrolyte temperature and column inlet to outlet
 else
     Q = [];
@@ -65,9 +65,9 @@ states = 2*s*nodes+inT;
 b = zeros(states+c,1);
 if ~isempty(Q)
     for k = 1:1:nodes
-        b(k+(s+1)*nodes) = Q.ion(k);
+        b(k+(s+1)*nodes) = -Q.ion(k);
         b(k+(s+2)*nodes) = (-Q.gen(k)+ Q.direct(k));
-        b(k+(s+3)*nodes) = -Q.ion(k);
+        b(k+(s+3)*nodes) = Q.ion(k);
         if s ==6
             b(k+(s+5)*nodes) = Q.indirect(k);
         end
@@ -183,16 +183,16 @@ if s <=3
     end
 else
     %all heat transfer coefficients converted to kW/K: thus Q = C*(T1-T2) is in kW
-    C1 = (block.k_plate2*block.L_node*block.W_node/block.t_plate2)/1000;
-    C2 = (block.h_flow2*block.A_flow2_plate2)/1000;
-    C3 = (block.h_flow2*block.A_flow2_elec)/1000;
-    C4 = (block.k_plate2*block.A_plate2_elecCond/block.L_plate2_heatCond)/1000;
-    C5 = (block.k_plate1*block.A_plate1_elecCond/block.L_plate1_heatCond)/1000;
-    C6 = (block.h_flow1*block.A_flow1_elec)/1000;
-    C7 = (block.h_flow1*block.A_flow1_plate1)/1000;
+    C1 = (block.k_plate1*block.L_node*block.W_node/block.t_plate1)/1000;
+    C2 = (block.h_flow1*block.A_flow1_plate1)/1000;
+    C3 = (block.h_flow1*block.A_flow1_elec)/1000;
+    C4 = (block.k_plate1*block.A_plate1_elecCond/block.L_plate1_heatCond)/1000;
+    C5 = (block.k_plate2*block.A_plate2_elecCond/block.L_plate2_heatCond)/1000;
+    C6 = (block.h_flow2*block.A_flow2_elec)/1000;
+    C7 = (block.h_flow2*block.A_flow2_plate2)/1000;
 
     for k = 1:1:nodes
-        %QT1 : heat transfer into oxidizer plate
+        %QT1 : heat transfer into Plate 1
         A(k,k) = -1;
         if s==5
             A(k,k+s*nodes) = -(C1+C2+C4);
@@ -204,19 +204,19 @@ else
         A(k,k+(s+1)*nodes) = (1-a)*C2; %averaged with inlet temp or previous node temp
         A(k,k+(s+2)*nodes) = C4;
 
-        %QT2 : heat transfer into Flow2
+        %QT2 : heat transfer into Flow1
         A(k+nodes,k+nodes) = -1;
         A(k+nodes,k+(s+1)*nodes) = -(1-a)*(C2+C3);
         A(k+nodes,k+s*nodes) = C2;
         A(k+nodes,k+(s+2)*nodes) = C3;
 
-        [i,j] = find(block.Flow2Dir==k);
+        [i,j] = find(block.Flow1Dir==k);
         if j==1 %first column averaged with inlet temperature
             A(k,2*s*nodes+2) = a*C2;
             A(k+nodes,2*s*nodes+2) = -a*(C2+C3);
             A(k+2*nodes,2*s*nodes+2) = a*C3;
         else % other columns averaged with previous one
-            k2 = block.Flow2Dir(i,j-1);
+            k2 = block.Flow1Dir(i,j-1);
             A(k,k2+(s+1)*nodes) = a*C2;
             A(k+nodes,k2+(s+1)*nodes) = -a*(C2+C3);
             A(k+2*nodes,k2+(s+1)*nodes) = a*C3;
@@ -230,13 +230,13 @@ else
         A(k+2*nodes,k+(s+4)*nodes) = C5;
         A(k+2*nodes,k+(s+3)*nodes) = (1-a)*C6;
 
-        %QT4 : heat transfer into Flow1
+        %QT4 : heat transfer into Flow2
         A(k+3*nodes,k+3*nodes) = -1;
         A(k+3*nodes,k+(s+3)*nodes) = -(1-a)*(C6+C7);
         A(k+3*nodes,k+(s+2)*nodes) = C6;
         A(k+3*nodes,k+(s+4)*nodes) = C7;
 
-        [i,j] = find(block.Flow1Dir==k);
+        [i,j] = find(block.Flow2Dir==k);
         if j==1 %first column averaged with inlet temperature
             if s==6 %pull last temperature from Flow3
                 k2 = block.Flow3Dir(i,end);
@@ -249,13 +249,13 @@ else
                 A(k+4*nodes,2*s*nodes+1) = a*C7;
             end
         else % other columns averaged with previous one
-            k2 = block.Flow1Dir(i,j-1);
+            k2 = block.Flow2Dir(i,j-1);
             A(k+2*nodes,k2+(s+3)*nodes) = a*C6;
             A(k+3*nodes,k2+(s+3)*nodes) = -a*(C6+C7);
             A(k+4*nodes,k2+(s+3)*nodes) = a*C7;
         end
 
-        %QT5 : heat transfer into fuel plate
+        %QT5 : heat transfer into Plate 2
         A(k+4*nodes,k+4*nodes) = -1;
         if s==5
             A(k+4*nodes,k+(s+4)*nodes) = -(C1+C5+C7);
@@ -286,37 +286,37 @@ else
             end
         end
 
-        %Tox : Temeraure of oxidizer plate (net heat transfer into plate = 0)
+        %Tox : Temeraure of Plate 1 (net heat transfer into plate = 0)
         A(k+s*nodes,k) = 1;
 
-        %Tcath: Temperature of Flow2
+        %Tcath: Temperature of Flow1
         A(k+(s+1)*nodes,k+nodes) = 1;
-        A(k+(s+1)*nodes,k+(s+1)*nodes) = -q2;
-        [i,j] = find(block.Flow2Dir==k);
+        A(k+(s+1)*nodes,k+(s+1)*nodes) = -q1;
+        [i,j] = find(block.Flow1Dir==k);
         if j==1 %first column receives fresh air
-            A(k+(s+1)*nodes,2*s*nodes+2) = q2;
+            A(k+(s+1)*nodes,2*s*nodes+2) = q1;
         else
-            index = block.Flow2Dir(i,j-1);
-            A(k+(s+1)*nodes,index +(s+1)*nodes) = q2;
+            index = block.Flow1Dir(i,j-1);
+            A(k+(s+1)*nodes,index +(s+1)*nodes) = q1;
         end
 
         %Telec: Temperature of electrolyte
         A(k+(s+2)*nodes,k+2*nodes) = 1;
 
-        %Tan: Temperature of Flow1
+        %Tan: Temperature of Flow2
         A(k+(s+3)*nodes,k+3*nodes) = 1;
-        A(k+(s+3)*nodes,k+(s+3)*nodes) = -q1; 
-        [i,j] = find(block.Flow1Dir==k);
+        A(k+(s+3)*nodes,k+(s+3)*nodes) = -q2; 
+        [i,j] = find(block.Flow2Dir==k);
         if j==1 %first column receives fresh fuel
             if s==5
-                A(k+(s+3)*nodes,2*s*nodes+1) = q1; %fresh inlet
+                A(k+(s+3)*nodes,2*s*nodes+1) = q2; %fresh inlet
             elseif s==6
                 index = block.Flow3Dir(i,end);
-                A(k+(s+3)*nodes,index+(s+5)*nodes) = q1; %Flow3 out
+                A(k+(s+3)*nodes,index+(s+5)*nodes) = q2; %Flow3 out
             end
         else
-            index = block.Flow1Dir(i,j-1);
-            A(k+(s+3)*nodes,index+(s+3)*nodes) = q1;
+            index = block.Flow2Dir(i,j-1);
+            A(k+(s+3)*nodes,index+(s+3)*nodes) = q2;
         end
 
         %Tfuel: Temperature of fuel plate (net heat transfer into plate = 0)
@@ -335,18 +335,18 @@ else
         end
     end
 
-    %remove temperature averaging at Flow2 inlet node
-    k1 = block.Flow2Dir(:,1); %first column
+    %remove temperature averaging at Flow1 inlet node
+    k1 = block.Flow1Dir(:,1); %first column
     for n =1:1:length(k1)
         k = k1(n);
-        A(k,k+(s+1)*nodes) = A(k,k+(s+1)*nodes) + a*C2; %HT to ox plate from Flow2
-        A(k,2*s*nodes+2) = A(k,2*s*nodes+2) - a*C2; %HT to ox plate from Flow2
+        A(k,k+(s+1)*nodes) = A(k,k+(s+1)*nodes) + a*C2; %HT to ox plate from Flow1
+        A(k,2*s*nodes+2) = A(k,2*s*nodes+2) - a*C2; %HT to ox plate from Flow1
 
-        A(k+nodes,k+(s+1)*nodes) = A(k+nodes,k+(s+1)*nodes) - a*(C2+C3); %HT from ox plate and electrolyte to Flow2
-        A(k+nodes,2*s*nodes+2) = A(k+nodes,2*s*nodes+2) + a*(C2+C3);   %HT from ox plate and electrolyte to Flow2
+        A(k+nodes,k+(s+1)*nodes) = A(k+nodes,k+(s+1)*nodes) - a*(C2+C3); %HT from ox plate and electrolyte to Flow1
+        A(k+nodes,2*s*nodes+2) = A(k+nodes,2*s*nodes+2) + a*(C2+C3);   %HT from ox plate and electrolyte to Flow1
 
-        A(k+2*nodes,k+(s+1)*nodes) = A(k+2*nodes,k+(s+1)*nodes) + a*C3;%HT from the Flow2 to electrolyte
-        A(k+2*nodes,2*s*nodes+2) = A(k+2*nodes,2*s*nodes+2) - a*C3; %HT from the Flow2 to electrolyte
+        A(k+2*nodes,k+(s+1)*nodes) = A(k+2*nodes,k+(s+1)*nodes) + a*C3;%HT from the Flow1 to electrolyte
+        A(k+2*nodes,2*s*nodes+2) = A(k+2*nodes,2*s*nodes+2) - a*C3; %HT from the Flow1 to electrolyte
     end
 
     if s==6 %remove temperature averaging at Flow1 inlet node
@@ -364,17 +364,17 @@ else
         end
 
     else
-        k1 = block.Flow1Dir(:,1); %first column
+        k1 = block.Flow2Dir(:,1); %first column
         for n =1:1:length(k1)
             k = k1(n);
-            A(k+3*nodes,k+(s+3)*nodes) = A(k+3*nodes,k+(s+3)*nodes) -a*(C6+C7); %HT to Flow1 from fuel plate & electrolyte
-            A(k+3*nodes,2*s*nodes+1) = A(k+3*nodes,2*s*nodes+1) + a*(C6+C7);   %HT to Flow1 from fuel plate & electrolyte
+            A(k+3*nodes,k+(s+3)*nodes) = A(k+3*nodes,k+(s+3)*nodes) -a*(C6+C7); %HT to Flow2 from fuel plate & electrolyte
+            A(k+3*nodes,2*s*nodes+1) = A(k+3*nodes,2*s*nodes+1) + a*(C6+C7);   %HT to Flow2 from fuel plate & electrolyte
 
-            A(k+4*nodes,k+(s+3)*nodes) = A(k+4*nodes,k+(s+3)*nodes) + a*C7; %HT from Flow1 to fuel plate
-            A(k+4*nodes,2*s*nodes+1) = A(k+4*nodes,2*s*nodes+1) - a*C7;   %HT from Flow1 to fuel plate
+            A(k+4*nodes,k+(s+3)*nodes) = A(k+4*nodes,k+(s+3)*nodes) + a*C7; %HT from Flow2 to fuel plate
+            A(k+4*nodes,2*s*nodes+1) = A(k+4*nodes,2*s*nodes+1) - a*C7;   %HT from Flow2 to fuel plate
 
-            A(k+2*nodes,k+(s+3)*nodes) = A(k+2*nodes,k+(s+3)*nodes) + a*C6; %HT into the electrolyte from Flow1
-            A(k+2*nodes,2*s*nodes+1) = A(k+2*nodes,2*s*nodes+1) - a*C6;%HT into the electrolyte from Flow1
+            A(k+2*nodes,k+(s+3)*nodes) = A(k+2*nodes,k+(s+3)*nodes) + a*C6; %HT into the electrolyte from Flow2
+            A(k+2*nodes,2*s*nodes+1) = A(k+2*nodes,2*s*nodes+1) - a*C6;%HT into the electrolyte from Flow2
         end
     end
 end
@@ -398,12 +398,12 @@ if s<=3
     end
 else
 
-    H1_pn = (block.k_plate2*block.A_plate2_heatCond/(block.L_node/2))/1000; %heat transfer coefficient between previous and next node of oxidant plate
-    H1_lr  = (block.k_plate2*block.A_plate2_heatCond/(block.W_node/2))/1000; %heat transfer coefficient between left and right adjacent nodes of oxidant plate
+    H1_pn = (block.k_plate1*block.A_plate1_heatCond/(block.L_node/2))/1000; %heat transfer coefficient between previous and next node of oxidant plate
+    H1_lr  = (block.k_plate1*block.A_plate1_heatCond/(block.W_node/2))/1000; %heat transfer coefficient between left and right adjacent nodes of oxidant plate
     H2_pn  = (block.k_Elec*block.A_Elec_Heat_Cond/(block.L_node/2))/1000; %heat transfer coefficient between previous and next node of fuel cell electrolyte assembly
     H2_lr  = (block.k_Elec*block.A_Elec_Heat_Cond/(block.W_node/2))/1000; %heat transfer coefficient between left and right adjacent nodes  of fuel cell electrolyte assembly
-    H3_pn  = (block.k_plate1*block.A_plate1_heatCond/(block.L_node/2))/1000; %heat transfer coefficient between previous and next node of fuel plate
-    H3_lr  = (block.k_plate1*block.A_plate1_heatCond/(block.W_node/2))/1000; %heat transfer coefficient between left and right adjacent nodes of fuel plate
+    H3_pn  = (block.k_plate2*block.A_plate2_heatCond/(block.L_node/2))/1000; %heat transfer coefficient between previous and next node of fuel plate
+    H3_lr  = (block.k_plate2*block.A_plate2_heatCond/(block.W_node/2))/1000; %heat transfer coefficient between left and right adjacent nodes of fuel plate
 
     for k = 1:1:nodes
         if prev(k) ~=k
