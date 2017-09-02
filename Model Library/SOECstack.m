@@ -8,8 +8,10 @@ SimSettings.NominalPower= 300;
 Air.N2 = .79;
 Air.O2 = .21;
 
-Steam.H2O = 1;
-
+Steam.H2O = 0.9;
+Steam.H2 = 0.1;
+Fuel.H2O = 0.1;
+Fuel.H2 = 0.9;
 %% Components
 Plant.Components.AirSource.type = 'Source'; %fresh air 
 Plant.Components.AirSource.name = 'AirSource';
@@ -19,18 +21,18 @@ Plant.Components.AirSource.connections = {'Controller.OxidantTemp';'';'Controlle
 Plant.Components.SteamSource.type = 'Source';
 Plant.Components.SteamSource.name = 'SteamSource';
 Plant.Components.SteamSource.InitialComposition = Steam;
-Plant.Components.SteamSource.connections = {'Controller.SteamTemp';'';'Controller.SteamFlow';};
+Plant.Components.SteamSource.connections = {'Controller.SteamTemp';'Controller.SteamSpec';'Controller.SteamFlow';};
 
 Plant.Components.EC1.type = 'Electrolyzer';
 Plant.Components.EC1.name = 'EC1';
 Plant.Components.EC1.FCtype = 'SOEC'; %SOEC, or MCEC 
 Plant.Components.EC1.Reformer = 'none'; % options are 'none' or 'methanator' for a seperate set of plates wher CO2 is injected to cause methanation
-Plant.Components.EC1.direction = 'counterflow'; % 'coflow', or 'counterflow' or 'crossflow'
+Plant.Components.EC1.direction = 'coflow'; % 'coflow', or 'counterflow' or 'crossflow'
 Plant.Components.EC1.ClosedCathode = 0; %0 means air or some excess flow of O2 in the cathode used as primary means of temerature control (initializations hold to design fuel utilization), 1 means closed end cathode, or simply a fixed oxygen utilization, cooling is done with excess fuel, and the design voltage is met during initialization
 Plant.Components.EC1.CoolingStream = 'none'; % choices are 'none' or 'cathode'. Determines which flow is increased to reach desired temperature gradient.
 Plant.Components.EC1.PressureRatio = 1.2;
-Plant.Components.EC1.columns = 5;
-Plant.Components.EC1.rows = 5;
+Plant.Components.EC1.columns = 8;
+Plant.Components.EC1.rows = 8;
 Plant.Components.EC1.RatedStack_kW = 300; %Nominal Stack Power in kW
 Plant.Components.EC1.Flow1Spec = Steam; %initial fuel composition at inlet
 Plant.Components.EC1.Flow2Spec = Air; %initial oxidant composition if there is a dilution on the anode side added to the O2 production (temperature regualtion)
@@ -38,11 +40,11 @@ Plant.Components.EC1.L_Cell= .1;  %Cell length in meters
 Plant.Components.EC1.W_Cell = .1;  %Cell Width in meters  
 if ~Plant.Components.EC1.ClosedCathode
     Plant.Components.EC1.Specification = 'power density';%options are 'cells', 'power density', 'voltage', or 'current density'. Note: careful when specifying cells that it arrives at a feasible power density
-    Plant.Components.EC1.SpecificationValue = 2000; % power density specified in mW/cm^2, voltage specified in V/cell, current density specified in A/cm^2
+    Plant.Components.EC1.SpecificationValue = 2000;%1663; % power density specified in mW/cm^2, voltage specified in V/cell, current density specified in A/cm^2
 end
-Plant.Components.EC1.deltaTStack = 50; %temperature difference from anode inlet to anode outlet
+Plant.Components.EC1.deltaTStack = 50; %temperature difference from cathode inlet to cathode outlet
 Plant.Components.EC1.TpenAvg = 1023;% 750 C, average electrolyte operating temperature
-Plant.Components.EC1.H2O_Utilization =.85; %H2O utilization (net steam consumed/ steam supply)
+Plant.Components.EC1.H2O_Utilization =.8; %H2O utilization (net steam consumed/ steam supply)
 Plant.Components.EC1.Flow1Pdrop = 2; %design anode pressure drop
 Plant.Components.EC1.Flow2Pdrop = 10; %Design cathode pressure drop
 Plant.Components.EC1.connections = {'Controller.Current';'SteamSource.Outlet';'AirSource.Outlet';'';'';};
@@ -56,10 +58,10 @@ Plant.Controls.Controller.deltaTStack = 'EC1.deltaTStack';
 Plant.Controls.Controller.Steam = 'EC1.Flow1Spec';
 Plant.Controls.Controller.Cells = 'EC1.Cells';
 Plant.Controls.Controller.Utilization = 'EC1.H2O_Utilization';
-Plant.Controls.Controller.SteamTemperature = 973;
+Plant.Controls.Controller.SteamTemperature = 1023;
 Plant.Controls.Controller.OxidantFlow = 'EC1.Flow2.IC';
-Plant.Controls.Controller.Gain = [2e-4;];
-Plant.Controls.Controller.PropGain = [3];
+Plant.Controls.Controller.Gain = [2e-4;15;];  % THIS IS MY CHANGE
+Plant.Controls.Controller.PropGain = [3;3;];  % THIS IS MY CHANGE
 Plant.Controls.Controller.TagInf = {'OxidantFlow';'OxidantTemp';'Tsteam';'SteamFlow';'Current';};
 Plant.Controls.Controller.connections = {'';'PowerDemandLookup';'EC1.MeasureTpen';'EC1.MeasureVoltage';};
 
