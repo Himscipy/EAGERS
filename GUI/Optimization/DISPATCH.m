@@ -681,8 +681,12 @@ if any(strcmp(Plant.optimoptions.method,{'Control'}))
     end
     GenAvailTime = ones(1,nG).*DateSim; %  Global variable needed in controller mode
 end
-[~,n] = size(Plant.OneStep.organize);
-nL = n-nG-nB;
+if isempty(Plant.OneStep)
+    nL = 0;
+else
+    [~,n] = size(Plant.OneStep.organize);
+    nL = n-nG-nB;
+end
 NumSteps = Plant.optimoptions.Interval*24/Plant.optimoptions.Resolution+1;
 Plant.Dispatch.Temperature = zeros(NumSteps,1);
 Plant.Dispatch.Timestamp = zeros(NumSteps,1);

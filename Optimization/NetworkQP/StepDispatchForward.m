@@ -3,7 +3,11 @@ function Si = StepDispatchForward(Si,Date,Data,Forecast,GenDisp)
 global Plant CurrentState Last24hour DateSim
 nG = length(Plant.Generator);
 nB = length(Plant.Building);
-nL = length(Plant.OpMatA.Organize.IC) - nG - nB;
+if isempty(Plant.OpMatA)
+    nL = 0;
+else
+    nL = length(Plant.OpMatA.Organize.IC) - nG - nB;
+end
 nS = length(Date)-1;
 if isfield(Data,'Demand')
     Outs =  fieldnames(Data.Demand);
