@@ -87,7 +87,10 @@ for i = 1:1:nG
     if strcmp(Plant.Generator(i).Type,'Hydro Storage')
         StoragePower(:,i) =  Data(:,i);
     elseif ismember(Plant.Generator(i).Type,{'Electric Storage';'Thermal Storage';})
-        StorageState(:,i) = Data(:,i)+ Plant.Generator(i).Size*(1-Plant.Generator(i).VariableStruct.MaxDOD/100); %add the unusable charge
+        StorageState(:,i) = Data(:,i);
+        if isfield(Plant.Generator(i).VariableStruct,'MaxDOD')
+            StorageState(:,i) = Data(:,i)+ Plant.Generator(i).Size*(1-Plant.Generator(i).VariableStruct.MaxDOD/100); %add the unusable charge
+        end
         StoragePower(2:end,i) = (StorageState(1:end-1,i) - StorageState(2:end,i))./dt;  
     end
 end
