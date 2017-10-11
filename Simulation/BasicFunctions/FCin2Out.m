@@ -1,4 +1,4 @@
-function Flow = FCin2Out(T,Inlet,Dir, Type,Cells,Current,R,c_or_a) 
+function Flow = FCin2Out(T,Inlet,Dir, Type,Cells,Current,R,flow) 
 %flow of species out after steam reformation & water gas shift
 %(does not normalize back to 1) this is important for finding G correctly)
 F=96485.339; % %Faraday's constant in Coulomb/mole
@@ -29,20 +29,26 @@ for j= 1:1:length(Dir(1,:))
         end
         k = k2;
     end
-    
-    switch Type
-        case {'SOFC';'MCFC'} %current is positive
-            if strcmp(c_or_a,'anode') % H2 <-->H2O side (H2 consumption)
-                side = 'H2';
-            else side = 'O2';
+    if strcmp(flow,'Flow1') 
+        for i = 1:1:length(spec)
+            if strcmp(spec{i},'CO2')
+                switch Type
+                    case 'SOFC'
+                        Flow.Outlet.CO2(k,1) = Flow.Inlet.CO2(k); %CO2 flow
+                    case 'MCFC'
+                        Flow.Outlet.CO2(k,1) = Flow.Inlet.CO2(k) - (Current.H2(k)+Current.CO(k))/(2*F*1000); %CO2 flow
+                end
+            elseif strcmp(spec{i},'O2')
+                Flow.Outlet.O2(k,1) = Flow.Inlet.O2(k) - (Current.H2(k)+Current.CO(k))/(4*F*1000); %O2 flow
+            elseif ~strcmp(spec{i},'T')
+                Flow.Outlet.(spec{i})(k,1) = Flow.Inlet.(spec{i})(k);
             end
-        case {'SOEC';'MCEC'} %current is negative
-            if strcmp(c_or_a,'cathode') % H2 <-->H2O side (H2 production)
-                side = 'H2';
-            else side = 'O2';
+            if abs(Flow.Outlet.(spec{i})(k,1))<1e-18 %zero
+                Flow.Outlet.(spec{i})(k,1) = 0;
             end
+        end
     end
-    if strcmp(side,'H2')
+    if strcmp(flow,'Flow2')
         for i = 1:1:length(spec)
             if strcmp(spec{i},'CO2')
                 switch Type
@@ -59,24 +65,6 @@ for j= 1:1:length(Dir(1,:))
                 Flow.Outlet.H2(k,1) = Flow.Inlet.H2(k)+3*R.CH4(k)+R.WGS(k) - Current.H2(k)/(2*F*1000); %H2 flow
             elseif strcmp(spec{i},'H2O')
                 Flow.Outlet.H2O(k,1) = Flow.Inlet.H2O(k)-R.CH4(k)-R.WGS(k) + Current.H2(k)/(2*F*1000); %H2O flow
-            elseif ~strcmp(spec{i},'T')
-                Flow.Outlet.(spec{i})(k,1) = Flow.Inlet.(spec{i})(k);
-            end
-            if abs(Flow.Outlet.(spec{i})(k,1))<1e-18 %zero
-                Flow.Outlet.(spec{i})(k,1) = 0;
-            end
-        end
-    elseif strcmp(side,'O2') 
-        for i = 1:1:length(spec)
-            if strcmp(spec{i},'CO2')
-                switch Type
-                    case 'SOFC'
-                        Flow.Outlet.CO2(k,1) = Flow.Inlet.CO2(k); %CO2 flow
-                    case 'MCFC'
-                        Flow.Outlet.CO2(k,1) = Flow.Inlet.CO2(k) - (Current.H2(k)+Current.CO(k))/(2*F*1000); %CO2 flow
-                end
-            elseif strcmp(spec{i},'O2')
-                Flow.Outlet.O2(k,1) = Flow.Inlet.O2(k) - (Current.H2(k)+Current.CO(k))/(4*F*1000); %O2 flow
             elseif ~strcmp(spec{i},'T')
                 Flow.Outlet.(spec{i})(k,1) = Flow.Inlet.(spec{i})(k);
             end

@@ -9,7 +9,9 @@ elseif isfield(handles,'legend')%2015 matlab
 end
 nG = length(Plant.Generator);
 nB = length(Plant.Building);
-nL = length(Plant.OpMatA.Organize.IC) - nG - nB;
+if ~isempty(Plant.OpMatA)
+    nL = length(Plant.OpMatA.Organize.IC) - nG - nB;
+end
 stor = [];
 Names = cell(nG+nB,1);
 for i = 1:1:nG
@@ -40,7 +42,7 @@ dt = Time(2:end) - Time(1:end-1);
 Dprev = datevec(ForecastTime(1)-1);
 Dnext = datevec(ForecastTime(1)+1);
 Dtimestamp = ForecastTime(1)+hours/24;
-months = {'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Aug','Nov','Dec'};
+months = {'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'};
 dateText = ' ';
 if backSteps<24/Plant.optimoptions.Resolution
     b = ceil(30*(24/Plant.optimoptions.Resolution-backSteps)/(24/Plant.optimoptions.Resolution));
@@ -73,13 +75,19 @@ end
 StoragePower = 0*Data;
 StorageState = 0*Data;
 if isfield(Plant.subNet,'Hydro')
-    StorageState = calculateHydroSOC(Data,i);
+    if isempty(History)
+        StorageState = calculateHydroSOC(Forecast,ForecastTime);
+    else
+        currentTime = [HistoryTime(end,1);ForecastTime];
+        currentData = [Data(length(History(:,1)):end,:)];
+        StorageState = calculateHydroSOC(currentData,currentTime);
+    end
 end
 for i = 1:1:nG
-    if strcmp(Plant.Generator(i).Type,'Hydro Storage')%% Need the river segment and spill flow to calculate power
+    if strcmp(Plant.Generator(i).Type,'Hydro Storage')
         StoragePower(:,i) =  Data(:,i);
     elseif ismember(Plant.Generator(i).Type,{'Electric Storage';'Thermal Storage';})
-        StorageState(:,i) = Data(:,i)+ ones(length(hours),1)*(Plant.Generator(i).QPform.Stor.Size - Plant.Generator(i).QPform.Stor.UsableSize); %add the unusable charge
+        StorageState(:,i) = Data(:,i)+ Plant.Generator(i).Size*(1-Plant.Generator(i).VariableStruct.MaxDOD/100); %add the unusable charge
         StoragePower(2:end,i) = (StorageState(1:end-1,i) - StorageState(2:end,i))./dt;  
     end
 end
@@ -122,7 +130,7 @@ while isfield(handles,strcat('ResultPlot',num2str(nPlot+1)))
             ylab = 'Withdrawls (1000cfs)';
             for i = 1:1:length(Plant.Generator)
                 if strcmp(Plant.Generator(i).Type,'Hydro Storage')%% plot the downriver flow
-                    Data(:,i) = Data(:,Plant.Generator(i).QPform.DownRiverSegment);
+                    Data(:,i) = Data(:,Plant.Generator(i).QPform.DownRiverSegment+nG); %Outflow is after Power Produced
                 end
             end
         elseif strcmp(S,'Steam')
@@ -140,6 +148,11 @@ while isfield(handles,strcat('ResultPlot',num2str(nPlot+1)))
                 name(i) = {Plant.Building(i).Name};
             end
             Data2 = Data(:,nG+nL+1:nG+nL+nB);
+        elseif ~isfield(Plant.Generator(i),'QPform')%NREL case
+            name = {'Elec Utility1';'fuel cell';'Battery';};
+            stor = 5;
+            Data2 = [Data(:,1),Data(:,3),Data(:,5)];
+            storNames = {'Battery'};
         else
             [name,stor,Data2,storNames] = sortForPlot(S,Data);
         end

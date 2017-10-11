@@ -77,7 +77,7 @@ for i = 1:1:r
 end
 lA = find(stateP==0,1)-1;
 if ~isempty(lA)
-    A = A(:,1:lA); %remove columns from a becasue some pressure states are constant
+    A = A(:,1:lA); %remove columns from a because some pressure states are constant
 else lA = length(stateP);
 end
 Pguess = lsqnonneg(A,b); %solve nonnegative least squares to guess initial pressures.

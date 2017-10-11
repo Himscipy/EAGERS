@@ -6,12 +6,12 @@ function [GenDisp, Feasible] = FindFeasible(QPmain,Locked)
 noRamp = QPmain.Organize.Dispatchable;
 %first check it is feasible without ramping
 QP = removeRamping(QPmain,noRamp);
-[GenDisp, Feasible] = DispatchQP(QP,Locked);%this is the dispatch with fit B
+[GenDisp, ~,Feasible] = callQPsolver(QP,Locked,[]);%this is the dispatch with fit B
 
 % %now try fixing problem
 % for i = 1:1:nnz(noRamp)
 %     QP = removeRamping(QPmain,noRamp);
-%     [GenDisp, Cost, Feasible] = DispatchQP(QP,Locked);%this is the dispatch with fit B
+%     [GenDisp, Cost, Feasible] = callQPsolver(QP,Locked[]);%this is the dispatch with fit B
 % end
 
 function QP = removeRamping(QP,noRamp)

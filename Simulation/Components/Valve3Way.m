@@ -22,7 +22,9 @@ if length(varargin)==1 %first initialization
     
     block.InletPorts = {'Inlet','ValvePos'};
     block.Inlet.IC = FlowIn;
+    block.Inlet.Saturation = [0,inf];
     block.ValvePos.IC = block.PercOpen;
+    block.ValvePos.Saturation = [0,1];
     
     block.OutletPorts = {'Out1','Out2'};
     block.Out1.IC = Out1;
@@ -33,6 +35,7 @@ if length(varargin)==1 %first initialization
 elseif length(varargin)==2 %% Have inlets connected, re-initialize
     block = varargin{1};
     Inlet = varargin{2};
+    Inlet = checkSaturation(Inlet,block);
     spec = fieldnames(Inlet.Inlet);
     for i = 1:1:length(spec)
         if ~strcmp(spec{i},'T')
@@ -51,6 +54,7 @@ else%running the model
     Inlet = varargin{3};
     block = varargin{4};
     string1 = varargin{5};
+    Inlet = checkSaturation(Inlet,block);
     if strcmp(string1,'Outlet')
         spec = fieldnames(Inlet.Inlet);
         for i = 1:length(spec)

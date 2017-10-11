@@ -15,7 +15,7 @@ if strcmp(Plant.optimoptions.method,'Planning')
     CurrentState.Lines = GenDisp(end,nG+1:nG+nL);
     CurrentState.Buildings = GenDisp(end,nG+nL+1:nG+nL+nB);
     if isfield(CurrentState,'Hydro')
-        SOC = calculateHydroSOC(GenDisp);
+        SOC = calculateHydroSOC(GenDisp,Date);
         CurrentState.Hydro = SOC(end,:);
     end
     Last24hour = GetCurrentData(Last24hour.Timestamp + Plant.optimoptions.Horizon/24);
@@ -40,18 +40,20 @@ elseif strcmp(Plant.optimoptions.method,'Dispatch') || strcmp(Plant.optimoptions
     CurrentState.Lines = GenDisp(2,nG+1:nG+nL);
     CurrentState.Buildings = GenDisp(2,nG+nL+1:nG+nL+nB);
     if isfield(CurrentState,'Hydro')
-        SOC = calculateHydroSOC(GenDisp);
+        global InOut
+        SOC = calculateHydroSOC(GenDisp,Date);
         CurrentState.Hydro = SOC(2,:);
+        Plant.Dispatch.TransLoss(Si,:) = Plant.Trans(2,:); %%%%
+        Plant.Dispatch.InFlow(Si,:) = InOut.InFlow(1,:);
+        Plant.Dispatch.OutFlow(Si,:) = InOut.OutFlow(1,:);
+        Plant.Dispatch.SS(Si,:) = InOut.SS(1,:);
     end
     Plant.Predicted.GenDisp(:,:,Si) = GenDisp;
     Plant.Predicted.Timestamp(:,Si) = Date;
-%     Plant.Dispatch.GeneratorState(Si,:) = GenDisp(2,:);
-%     Plant.Dispatch.Timestamp(Si) = DateSim;
     Si = Si+1;
     DateSim = round(1e5*(DateSim+Plant.optimoptions.Resolution/24))/1e5;%% count forward 1 step, rounded to nearest second
     Plant.Dispatch.Timestamp(Si) = DateSim;
     Plant.Dispatch.GeneratorState(Si,:) = GenDisp(2,:);
-    
     Plant.Dispatch.Temperature(Si) = Forecast.Temperature(1);
     Last24hour.Timestamp = [Last24hour.Timestamp(2:end);Data.Timestamp;];
     Last24hour.Temperature = [Last24hour.Temperature(2:end,:);Data.Temperature;];
@@ -62,14 +64,17 @@ elseif strcmp(Plant.optimoptions.method,'Dispatch') || strcmp(Plant.optimoptions
     for i = 1:1:nB
         Plant.Dispatch.Building(i).Temperature(Si) = GenDisp(2,nG+nL+i);
     end
-    
-    
     if isfield(CurrentState,'Hydro')
         Plant.Data.HydroHistory.Timestamp(end+1) = DateSim;
+        nd = length(Plant.Data.HydroHistory.OutFlow);
         for n = 1:1:length(Plant.subNet.Hydro.nodes)
-            Plant.Data.HydroHistory.OutFlow(end+1,n) = GenDisp(2,nG+Plant.subNet.Hydro.lineNumber(n));
-            Plant.Data.HydroHistory.SourceSink(end+1,n) = getHydroFlows(DateSim,n,'SourceSink');%actual SourceSink according to historical records
+            Plant.Data.HydroHistory.OutFlow(nd+1,n) = GenDisp(2,nG+Plant.subNet.Hydro.lineNumber(n));
+            Plant.Data.HydroHistory.SourceSink(nd+1,n) = getHydroFlows(DateSim,n,'SourceSink');%actual SourceSink according to historical records
         end
+        for i = 1:1:nG
+            Plant.Dispatch.PowerFlow(Si,i) = GenDisp(2,i)*Plant.Generator(i).QPform.Stor.Power2Flow;
+        end
+        Plant.Dispatch.SpillFlow(Si,:) = Plant.Dispatch.OutFlow(Si,:) - Plant.Dispatch.PowerFlow(Si,:);
     end
 end
 if strcmp(Plant.optimoptions.method,'Control')

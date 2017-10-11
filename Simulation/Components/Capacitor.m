@@ -32,6 +32,7 @@ if length(varargin) ==1 %first initialization
     
     block.InletPorts = {'V'};
     block.V.IC = block.Scale(2)*block.IC(2);
+    block.V.Saturation = [-inf,inf];
     
     block.OutletPorts = {'IcapMax','IcapMin','VcapMax','VcapMin','E','EMax'};
     block.IcapMax.IC = -block.IMax;%current at max applied voltage
@@ -45,6 +46,7 @@ elseif length(varargin) ==2 %have inlets
     block = varargin{1};
     Inlet = varargin{2};
     
+    Inlet = checkSaturation(Inlet,block);
     Y = block.IC.* block.Scale;
     %V = Y(2) - Inlet.V;%negative value means charging
     %I = V/block.Resistance;%negative value means charging
@@ -80,6 +82,8 @@ else%running the model
     Inlet = varargin{3};
     block = varargin{4};
     string1 = varargin{5};
+    
+    Inlet = checkSaturation(Inlet,block);
     V = Y(2) - Inlet.V;%negative value means charging
     I = V/block.Resistance;%negative value means charging
 

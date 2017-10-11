@@ -10,7 +10,9 @@ if length(varargin)==1 % first initialization
     %%
     block.InletPorts = {'Power','Temperature'};
     block.Power.IC = 1;
+    block.Power.Saturation = [0,inf];
     block.Temperature.IC = 12+273.15;
+    block.Temperature.Saturation = [0,inf];
     
     block.OutletPorts = {'Flow';};
     block.Flow.IC.T = block.Temperature.IC ;
@@ -22,6 +24,7 @@ if length(varargin)==1 % first initialization
 elseif length(varargin)==2 %% Have inlets connected, re-initialize    
     block = varargin{1};
     Inlet = varargin{2};
+    Inlet = checkSaturation(Inlet,block);
     Flow = Inlet.Power*block.Efficiency*1e3/(9.81*block.HeadLoss); % flow rate in kg/s
     block.Flow.IC.T = Inlet.Temperature+273.15;
     block.Flow.IC.H2O = Flow/18;%flow in kmol/s
@@ -32,6 +35,7 @@ else%running the model
     Inlet = varargin{3};
     block = varargin{4};
     string1 = varargin{5};
+    Inlet = checkSaturation(Inlet,block);
     if strcmp(string1,'Outlet')
         Flow = Inlet.Power*block.Efficiency*1e3/(9.81*block.HeadLoss); % flow rate in kg/s
         Out.Flow.T = Inlet.Temperature+273.15;

@@ -19,13 +19,16 @@ if length(varargin)==1 % first initialization
         end
     end
     block.IC = (block.RPMinit/60*(2*pi))/block.Scale; %shaft speed in Rad/s
-    block.UpperBound = 2;
-    block.LowerBound = 0;
+    block.UpperBound = 2*block.Scale;
+    block.LowerBound = .3*block.Scale;
     
     block.InletPorts = {'WTurbine','WCompressor','Gen_Power'};
     block.WTurbine.IC = 200;%in KW
+    block.WTurbine.Saturation = [0,inf];
     block.WCompressor.IC = 100;%in KW
+    block.WCompressor.Saturation = [0,inf];
     block.Gen_Power.IC = 100;%in KW
+    block.Gen_Power.Saturation = [0,inf];
 
     block.OutletPorts = {'RPM','Steady_Power'};
     block.RPM.IC = block.RPMinit; %shaft speed in RPM
@@ -37,6 +40,7 @@ if length(varargin)==1 % first initialization
 elseif length(varargin)==2 %% Have inlets connected, re-initialize
     block = varargin{1};
     Inlet = varargin{2};
+    Inlet = checkSaturation(Inlet,block);
     block.Steady_Power.IC = Inlet.WTurbine - Inlet.WCompressor;%in KW
     Out = block;
 else%running the model
@@ -45,6 +49,7 @@ else%running the model
     Inlet = varargin{3};
     block = varargin{4};
     string1 = varargin{5};
+    Inlet = checkSaturation(Inlet,block);
     if strcmp(string1,'Outlet')
         Out.Steady_Power = Inlet.WTurbine - Inlet.WCompressor;
         Out.RPM = Y(1)*60/(2*pi);%Converts from Radians per Second to RPM

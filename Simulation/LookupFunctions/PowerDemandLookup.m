@@ -11,6 +11,6 @@ if length(varargin)==2
     %output what the schedule variables are
     varargout{1} = {'PowerTime';'PowerDemand'};
     varargout{2} = {'Time (in hours)','Demand (% of Nominal)'};
-    varargout{3} = {'[0 4 8 24]','[100 100 50 50]/100*SimSettings.NominalPower'};
+    varargout{3} = {'[0 2 4 18 20 24]','[100 100 50 50 100 100]/100*SimSettings.NominalPower'};
 end
 end%Ends function PowerDemandLookup

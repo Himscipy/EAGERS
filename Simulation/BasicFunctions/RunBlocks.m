@@ -1,5 +1,5 @@
 function dY = RunBlocks(t,Y)
-global modelParam LinMod IterCount Inlet Outlet TagInf TagFinal Tags SimSettings WaitBar Jcount
+global modelParam IterCount Inlet Outlet TagInf TagFinal Tags SimSettings WaitBar Jcount
 Y = Y.*modelParam.Scale;
 CompNames = fieldnames(modelParam.Components);
 controls = fieldnames(modelParam.Controls);
@@ -7,6 +7,7 @@ list = [CompNames;controls;];
 
 if isempty(TagInf) %create TagInf Fields
     TagInf.Time(1) =0;
+    TagInf.Pstates = Y(modelParam.Pstates)';
     Jcount = 0;
     for k = 1:1:length(list)
         block = list{k};
@@ -46,10 +47,17 @@ for i = 1:1:length(modelParam.Pstates)
         Outlet.(block).(port) = Pnew; %update outlets based on calculated pressure
     end
 end
+
+%%avoid exceeding saturation
+Yoriginal = Y;
+satLow = Y< modelParam.LowerBound;
+Y(satLow) = modelParam.LowerBound(satLow);
+satHigh = Y>modelParam.UpperBound;
+Y(satHigh) = modelParam.UpperBound(satHigh);
 %% run blocks to find outlet conditions & connect inlets
 nComp = length(list);
-blockSteady = true(nComp,1);
-while any(blockSteady)
+blockSteady = false(nComp,1);
+while any(~blockSteady)
     for blockCount = 1:1:nComp 
         block = list{blockCount};
         Inlet.(block) = RefreshInlet(block,t);
@@ -63,17 +71,9 @@ while any(blockSteady)
             else Co = 'Components';
             end
             Outlet.(block) = feval(modelParam.(Co).(block).type,t,Y(modelParam.(Co).(block).States),Inlet.(block),modelParam.(Co).(block),'Outlet');
-            blockSteady(blockCount) = true;
-        else
             blockSteady(blockCount) = false;
-        end
-    end
-    %if linearizing the model, reset the perturbed outlet or tag or lookup function 
-    if ~isempty(LinMod) && ~isempty(LinMod.Interupt)
-        if ~isempty(LinMod.Interupt.struct)
-            Inlet.(LinMod.Interupt.block).(LinMod.Interupt.port).(LinMod.Interupt.struct)(LinMod.Interupt.index) = LinMod.Interupt.value;
         else
-            Inlet.(LinMod.Interupt.block).(LinMod.Interupt.port)(LinMod.Interupt.index) = LinMod.Interupt.value;
+            blockSteady(blockCount) = true;
         end
     end
 end
@@ -121,19 +121,27 @@ for k = 1:1:length(list) %run components with states %% record All tags
         end
     end
 end
+TagInf.Pstates(IterCount,:) = Y(modelParam.Pstates)';
 dY = dY./modelParam.Scale;
-
+dY = dY+(Y-Yoriginal)./modelParam.Scale; %anti-windup for saturated states
+if IterCount==29
+    disp('WTF')
+end
 if t>0 && WaitBar.Show == 1 && Jcount==length(Y) && isfield(modelParam,'Scope')
     n = length(modelParam.Scope);
     dt = TagInf.Time(IterCount,1) - TagInf.Time(IterCount-1,1);
     points = nnz(TagInf.Time>(TagInf.Time(IterCount,1)-100*dt));
     for i = 1:1:n
+        figure(i)
         tagName = modelParam.Scope{i};
         r = strfind(tagName,'.');
-        block = tagName(1:r-1);
-        tag = tagName(r+1:end);
-        figure(i)
-        plot(TagInf.Time(IterCount-points+1:IterCount,1),TagInf.(block).(tag)(IterCount-points+1:IterCount,:))
+        if isempty(r)
+            plot(TagInf.Time(IterCount-points+1:IterCount,1),TagInf.(tagName)(IterCount-points+1:IterCount,:))
+        else
+            block = tagName(1:r-1);
+            tag = tagName(r+1:end);
+            plot(TagInf.Time(IterCount-points+1:IterCount,1),TagInf.(block).(tag)(IterCount-points+1:IterCount,:))
+        end
         ylabel(tagName);
         xlabel('Time in seconds');
     end
@@ -214,7 +222,7 @@ end
 end %ends function comparePort
 
 function InletBlock = RefreshInlet(block,t)
-global modelParam Outlet Tags
+global modelParam Outlet Tags LinMod
 controls = fieldnames(modelParam.Controls);
 if any(strcmp(controls,block))
     Co = 'Controls';
@@ -223,6 +231,7 @@ end
 list = modelParam.(Co).(block).InletPorts;
 for i = 1:1:length(list)
     port = list{i};
+    
     if ~isempty(modelParam.(Co).(block).(port).connected)%inlet connected to another outlet
         BlockPort = char(modelParam.(Co).(block).(port).connected);
         if isnumeric(BlockPort);
@@ -245,6 +254,14 @@ for i = 1:1:length(list)
         end
     else
         InletBlock.(port) = modelParam.(Co).(block).(port).IC;
+    end
+end
+%if linearizing the model, reset the perturbed outlet or tag or lookup function 
+if ~isempty(LinMod) && ~isempty(LinMod.Interupt) && strcmp(block,LinMod.Interupt.block)
+    if ~isempty(LinMod.Interupt.struct)
+        InletBlock.(LinMod.Interupt.port).(LinMod.Interupt.struct)(LinMod.Interupt.index) = LinMod.Interupt.value;
+    else
+        InletBlock.(LinMod.Interupt.port)(LinMod.Interupt.index) = LinMod.Interupt.value;
     end
 end
 end %ends function RefreshInlet

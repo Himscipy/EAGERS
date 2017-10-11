@@ -35,11 +35,13 @@ if length(varargin)==1 % first initialization
         name = strcat('Inlet',num2str(j));
         block.InletPorts(end+1) = cellstr(name);
         block.(name).IC.T = 800;
+        block.(name).Saturation = [0,inf];
     end
     block.InletPorts(end+1) = {'Pout'};
     
     block.Pout.type = 'in';
     block.Pout.IC = 101;
+    block.Pout.Saturation = [0,inf];
     block.Pout.Pstate = []; %identifies the state # of the pressure state if this block has one
     
     block.OutletPorts = {'Flow';'Pin';'MeasureT'};
@@ -54,6 +56,7 @@ if length(varargin)==1 % first initialization
 elseif length(varargin)==2 %% Have inlets connected, re-initialize
     block = varargin{1};
     Inlet = varargin{2};
+    Inlet = checkSaturation(Inlet,block);
     n = block.inlets;
     inlets = fieldnames(Inlet);
     Pin = Inlet.Pout+block.Pdrop;
@@ -146,6 +149,7 @@ else%running the model
     Inlet = varargin{3};
     block = varargin{4};
     string1 = varargin{5};
+    Inlet = checkSaturation(Inlet,block);
     Pin = Y(end);
     %merge flows
     Hin = 0;
@@ -163,6 +167,9 @@ else%running the model
                 NetIn.(block.spec{i}) = NetIn.(block.spec{i}) + Inlet.(inlets{j}).(block.spec{i});
             end
         end
+    end
+    if NetIn.O2==0
+        disp('WTF')
     end
     ReactMix.T = Y(1);
     %% 3 reaction:
@@ -183,6 +190,9 @@ else%running the model
     phi = sumR/NetIn.O2;
 
     scaleFlow = (block.Pfactor*(Pin-Inlet.Pout))/sum(max(0,Y(2:1+length(block.spec))));%total flow out
+    if scaleFlow<=0
+        scaleFlow=1;
+    end
     ActualOut.T = Y(1);
     for i = 1:length(block.spec)
         ActualOut.(block.spec{i}) = max(0,Y(1+i))*scaleFlow;
@@ -222,10 +232,14 @@ else%running the model
             end
         end
         ReactFlow = NetFlow(ReactMix);
-        FlowOut = sum(Y(2:1+length(block.spec)));
+        FlowOut = sum(max(0,Y(2:1+length(block.spec))));
         FlowError = NetFlow(ActualOut) - FlowOut;
         %temperature
-        scaleFlow2 = NetFlow(ReactMix)/FlowOut;
+        if FlowOut<=0
+            scaleFlow2 = 1;
+        else
+            scaleFlow2 = NetFlow(ReactMix)/FlowOut;
+        end
         Hout = enthalpy(ActualOut)*scaleFlow2/scaleFlow; %scale Hin and Hout to the same flow rate (no reactions so easy)
         Cp = SpecHeat(ActualOut);
         dY(1) = (Hin-Hout)/(block.Vol*Cp*Pin).*Y(1)*block.Ru;
@@ -235,6 +249,9 @@ else%running the model
         end
         dY(2+i) = (ReactFlow - NetFlow(ActualOut))*block.Ru*Y(1)/(block.Vol); %change in Pressure
         Out = dY;
+        if any(isnan(dY))
+            disp('WTF')
+        end
     end
 end
 end%Ends function Oxidizer

@@ -10,11 +10,17 @@ if length(varargin) ==1
     
     block.InletPorts = {'Ivmax','VMax','Ivmin','VMin','ILoad','VLoad'};
     block.Ivmax.IC = -1;
+    block.Ivmax.Saturation = [-inf,inf];
     block.VMax.IC = 50;
+    block.Vmax.Saturation = [0,inf];
     block.Ivmin.IC = 1;
+    block.Ivmin.Saturation = [0,inf];
     block.VMin.IC = 30;
+    block.Vmin.Saturation = [0,inf];
     block.ILoad.IC = 0;
+    block.ILoad.Saturation = [0,inf];
     block.VLoad.IC = 80;
+    block.Vload.Saturation = [0,inf];
     
     block.OutletPorts = {'Imin','Imax','VSource'};
     block.Imin.IC = -1;
@@ -24,6 +30,7 @@ if length(varargin) ==1
 elseif length(varargin) ==2
     block = varargin{1};
     Inlet = varargin{2};
+    Inlet = checkSaturation(Inlet,block);
     Ivmax = block.Effic*Inlet.Ivmax*Inlet.VMax/Inlet.VLoad;%DC bus current when v = vmax
     Ivmin = block.Effic*Inlet.Ivmin*Inlet.VMin/Inlet.VLoad;%DC bus current when v = vmin
     
@@ -52,6 +59,7 @@ else%running the model
     Inlet = varargin{3};
     block = varargin{4};
     string1 = varargin{5};
+    Inlet = checkSaturation(Inlet,block);
     if strcmp(string1,'Outlet')
         Ivmax = block.Effic*Inlet.Ivmax*Inlet.VMax/Inlet.VLoad;%DC bus current when v = vmax
         Ivmin = block.Effic*Inlet.Ivmin*Inlet.VMin/Inlet.VLoad;%DC bus current when v = vmin

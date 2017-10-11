@@ -10,8 +10,11 @@ if length(varargin)==1 %first initialization
     %% set up ports : Inlets need to either connected or have initial condition, outlets need an initial condition, and it doesn't matter if they have a connection 
     block.InletPorts = {'Temperature','Species','Flow'};
     block.Temperature.IC = 298; 
+    block.Temperature.Saturation = [0,inf];
     block.Species.IC = block.InitialComposition; 
+    block.Species.Saturation = [0,inf];
     block.Flow.IC = 1;  
+    block.Flow.Saturation = [0,inf];
     
     block.OutletPorts = {'Outlet'};
     block.Outlet.IC.T = block.Temperature.IC;
@@ -25,6 +28,7 @@ if length(varargin)==1 %first initialization
 elseif length(varargin)==2 %% Have inlets connected, re-initialize
     block = varargin{1};
     Inlet = varargin{2};
+    Inlet = checkSaturation(Inlet,block);
     block.Temperature.IC = Inlet.Temperature;
     block.Species.IC = Inlet.Species;  
     block.Flow.IC = Inlet.Flow;
@@ -40,6 +44,7 @@ else%running the model
     Inlet = varargin{3};
     block = varargin{4};
     string1 = varargin{5};
+    Inlet = checkSaturation(Inlet,block);
     if strcmp(string1,'Outlet')
         Out.Outlet.T = Inlet.Temperature;
         speciesNames = fieldnames(Inlet.Species);

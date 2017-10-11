@@ -1,8 +1,6 @@
 function marginal = instantMarginalCost(Dispatch,scaleCost)
 global Plant
-networkNames = fieldnames(Plant.Network);
-networkNames = networkNames(~strcmp('name',networkNames));
-networkNames = networkNames(~strcmp('Equipment',networkNames));
+networkNames = fieldnames(Plant.subNet);
 for i = 1:1:length(networkNames)
     storType.(networkNames{i}) = [];
     if strcmp(networkNames{i},'Electrical')
@@ -41,9 +39,9 @@ for i = 1:1:nG
             elseif strcmp(Plant.Generator(i).Source,'Water')
                 storType.Hydro(end+1) = i;
             end
-        elseif~isempty(states) %utilities and single state generators (linear cost term)
+        elseif ~isempty(states) %utilities and single state generators (linear cost term)
             marginCost(i) = Plant.Generator(i).QPform.(states{1}).f(end);
-            for j = 1:1:length(states);
+            for j = 1:1:length(states)
                 I(i) = I(i) + Plant.Generator(i).QPform.(states{j}).ub(end);
             end
         end

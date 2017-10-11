@@ -34,7 +34,7 @@ if J ==1
         J2 = center_menu('Save Model?','Yes','No');
         if J2 ==1
             [f,p]=uiputfile(fullfile(Model_dir,'Model Library','Saved Models',strcat(modelName,'.mat')),'Save Model As...');
-            save([p f],'modelParam','SimSettings','Outlet','Tags')
+            save([p f],'modelParam')
         end
     end
 elseif J ==2
@@ -50,6 +50,7 @@ elseif J ==2
         modelName = list{s};
         modelName = strrep(modelName,'.mat','');
         load(fullfile(Model_dir,'Model Library','Saved Models',modelName));
+        Outlet = modelParam.NominalOutlet; SimSettings = modelParam.NominalSettings; Tags = modelParam.NominalTags;
     end
 end
 %% Create or load a set of linear models
@@ -62,7 +63,7 @@ if J2 ==1
     J3 = center_menu('Save Linearized Model?','Yes','No');
     if J3 ==1
         [f,p]=uiputfile(fullfile(Model_dir,'Model Library','Saved Linearizations',strcat(modelName,'.mat')),'Save Linearized Model As...');
-        save([p f],'LinMod','SimSettings','Outlet','Tags')
+        save([p f],'LinMod')
     end
 elseif J2 ==2
     ModelFiles=dir(fullfile(Model_dir,'Model Library','Saved Linearizations','*.mat'));
@@ -95,13 +96,16 @@ if J3 ~=4
     %set up the transient
     %first identify any controller input (lookup functions), let user pick ones with a schedule
     %then get the variables from that function and allow the user to edit them
-    A = (inputdlg('Test Duration (s)','Specify length of the transient simulation',1,{num2str(24*3600)}));
-    SimSettings.RunTime = eval(A{1});
     if ~isempty(modelParam)
         controls = fieldnames(modelParam.Controls);
+        Outlet = modelParam.NominalOutlet; SimSettings = modelParam.NominalSettings; Tags = modelParam.NominalTags;
     elseif ~isempty(LinMod)
         controls = fieldnames(LinMod.Controls);
+        Outlet = LinMod.NominalOutlet; SimSettings = LinMod.NominalSettings; Tags = LinMod.NominalTags;
     end
+    A = (inputdlg('Test Duration (s)','Specify length of the transient simulation',1,{num2str(24*3600)}));
+    SimSettings.RunTime = eval(A{1});
+    
     for i = 1:1:length(controls)
         if ~isempty(modelParam)
             Cont = modelParam.Controls.(controls{i});
@@ -144,7 +148,7 @@ end
 
 %% Run a transient on non-linear model
 if J3 ==1 || J3 == 3
-    WaitBar.Show = 1;
+    WaitBar.Show = 1; 
     IterCount = 1; TagInf =[]; TagFinal =[];  WaitBar.Text = 'Running non-linear model with transient';WaitBar.Handle =waitbar(0,WaitBar.Text);
     tic; [T, Y] = ode15s(@RunBlocks, [0, SimSettings.RunTime], modelParam.IC); disp(strcat('Time to run model:',num2str(toc),' seconds'));close(WaitBar.Handle);
     PlotSimulation(T,Y,1,0,1)% Plot the tags and scopes in Plant.Plot. The first option (after Y) is to plot any fuel cell or electrolyzer temperature profiles, the second option is to mave a video of the transient, the third is to plot compressor turbine and blower maps
@@ -154,12 +158,11 @@ end
 if J3 ==2 || J3 ==3
     % need to find better initial condition (won't always start at nominal power)
     IC =  [LinMod.Model{1}.X0;LinMod.Model{1}.UX0];
-    Tags.U = LinMod.Model{1}.U0;
     IterCount = 1; TagInf =[]; TagFinal =[]; WaitBar.Show = 1; WaitBar.Text = 'Running linear model with transient';WaitBar.Handle =waitbar(0,WaitBar.Text);
     tic; [T, Y] = ode15s(@RunLinSystem, [0, SimSettings.RunTime], IC); disp(strcat('Time to run model:',num2str(toc),' seconds'));close(WaitBar.Handle);
-%     if J3 == 3
+    if J3 == 2
+        PlotSimulation(T,Y,1,0,1)
+    else
 %         PlotSimulation(T,Y,0,0,0) % have already plotted the maps, just adding linear response to non-linear response
-%     else
-%         PlotSimulation(T,Y,1,0,1)
-%     end
+    end
 end

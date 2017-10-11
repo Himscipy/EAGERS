@@ -32,6 +32,8 @@ for net = 1:1:length(networkNames)
     elseif strcmp(networkNames{net},'Hydro')
         out = 'W';
     end
+    QP.constDemand.(out).req = zeros(length(Plant.subNet.(networkNames{net}).nodes)*nS,1);
+    QP.constDemand.(out).load = zeros(length(Plant.subNet.(networkNames{net}).nodes)*nS,nG);
     for n = 1:1:length(Plant.subNet.(networkNames{net}).nodes) %run through all the nodes in this network
         equip = Plant.subNet.(networkNames{net}).Equipment{n}; %equipment at this node
         req = QP.Organize.Balance.(networkNames{net})(n);%balance at this node (t = 1)
@@ -42,14 +44,20 @@ for net = 1:1:length(networkNames)
         end
         for j = 1:1:length(equip)
             k = equip(j);
-            if strcmp(networkNames{net},'Electrical') && any(QP.Renewable(:,k))% subtract renewable generation 
-                QP.beq(req) = QP.beq(req) - QP.Renewable(:,k); %put renewable generation into energy balance at correct node
+            if strcmp(networkNames{net},'Electrical')
+                if any(QP.Renewable(:,k))% subtract renewable generation 
+                    QP.beq(req) = QP.beq(req) - QP.Renewable(:,k); %put renewable generation into energy balance at correct node
+                end
             end
             if ~isempty(strfind(Plant.Generator(k).Type,'Storage'))
                 if isfield(Plant.Generator(k).QPform.output,out)
                     loss = dt*(Plant.Generator(k).QPform.Stor.SelfDischarge*Plant.Generator(k).QPform.Stor.UsableSize);
                     QP.beq(req) = QP.beq(req) - loss; %account for self-discharge losses
                 end
+            end 
+            if isfield(Plant.Generator(k).QPform,'constDemand')  && isfield(Plant.Generator(k).QPform.constDemand,out) && strcmp(QP.Organize.Fit,'B') %when using fit B record the constant electrical demands of the chillers
+                QP.constDemand.(out).req((n-1)*nS+1:n*nS,1) = req;
+                QP.constDemand.(out).load((n-1)*nS+1:n*nS,k) = Plant.Generator(k).QPform.constDemand.(out);
             end
         end
     end
@@ -84,8 +92,8 @@ if ismember('Hydro',networkNames) && ~isempty(Plant.subNet.Electrical.lineNames)
         if length(states)>1 %bi-directional transfer with penalty states
             s2 = states(2):QP.Organize.t1States:((nS-1)*QP.Organize.t1States+states(2));%penalty from a to b
             s3 = states(3):QP.Organize.t1States:((nS-1)*QP.Organize.t1States+states(3));% penalty from b to a
-            QP.f(s2) = 0.01; %Adding 1 cent/kWhr cost to every Electric line penalty to differentiate from spill flow
-            QP.f(s3) = 0.01; %Adding 1 cent/kWhr cost to every Electric line penalty to differentiate from spill flow
+            QP.f(s2) = 0.001; %Adding 1 cent/kWhr cost to every Electric line penalty to differentiate from spill flow
+            QP.f(s3) = 0.001; %Adding 1 cent/kWhr cost to every Electric line penalty to differentiate from spill flow
         end
     end 
 end 
@@ -95,17 +103,17 @@ for i = 1:1:nG+nL+nB
     if QP.Organize.IC(i)>0 
         if i<=nG %generators and storage devices
             QP.beq(QP.Organize.IC(i)) = CurrentState.Generators(i);
-            QP.ub(QP.Organize.IC(i)) = CurrentState.Generators(i);
+            QP.ub(QP.Organize.IC(i)) = CurrentState.Generators(i)+1;%+1 just to help solver find feasible
             if ismember(Plant.Generator(i).Type,{'Hydro Storage'})
                 QP.beq(QP.Organize.IC(i)+1) = CurrentState.Hydro(i);%SOC in reservior (2nd ic for dam)
-                QP.ub(QP.Organize.IC(i)+1) = CurrentState.Hydro(i);
+                QP.ub(QP.Organize.IC(i)+1) = CurrentState.Hydro(i)+1;%+1 just to help solver find feasible
             end
         elseif i<=nG+nL %transmission lines and river segments (no longer necessary for hydro)
             QP.beq(QP.Organize.IC(i)) = CurrentState.Lines(i-nG);
-            QP.ub(QP.Organize.IC(i)) = CurrentState.Lines(i-nG);
+            QP.ub(QP.Organize.IC(i)) = CurrentState.Lines(i-nG)+1;%+1 just to help solver find feasible
         else %all buildings have an initial temperature state
             QP.beq(QP.Organize.IC(i)) = CurrentState.Buildings(i-nG-nL);
-            QP.ub(QP.Organize.IC(i)) = CurrentState.Buildings(i-nG-nL);
+            QP.ub(QP.Organize.IC(i)) = CurrentState.Buildings(i-nG-nL)+1;%+1 just to help solver find feasible
         end
     end
 end

@@ -27,11 +27,14 @@ if length(varargin)==1 % first initialization
     block.LowerBound = [0,0,-inf,-inf,-inf,0,0];%because temperatures are in C in this block, the refrigerant temperature can go negative
     %%
     block.InletPorts = {'Power','CWflow','CTflow'};
+    block.Power.IC = block.Refrig_Tons/block.EstimatedCOP;
+    block.Power.Saturation = [0,inf];
     block.CWflow.IC.T = 11+273.15;
     block.CWflow.IC.H2O = block.Refrig_Tons*3.517/(Cp_H2O*7)/18;
+    block.CWflow.Saturation = [0,inf];
     block.CTflow.IC.T = 22+273.15;
     block.CTflow.IC.H2O = block.Refrig_Tons*(1+1/block.EstimatedCOP)*3.517/(Cp_H2O*5)/18;
-    block.Power.IC = block.Refrig_Tons/block.EstimatedCOP;
+    block.CTflow.Saturation = [0,inf];
     
     block.OutletPorts = {'ChilledWater';'CoolingTowerReturn';'ColdWaterTemp';'CTreturnTemp';};
     block.ChilledWater.IC.T = block.Scale(2)+273.15;
@@ -46,6 +49,8 @@ if length(varargin)==1 % first initialization
 elseif length(varargin)==2 %% Have inlets connected, re-initialize   
     block = varargin{1};
     Inlet = varargin{2};
+    
+    Inlet = checkSaturation(Inlet,block);
     %need to solve problem, given power find temperature/pressure/speed states
     error = 1;
     Y = block.Scale;
@@ -122,6 +127,7 @@ else%running the model
     Inlet = varargin{3};
     block = varargin{4};
     string1 = varargin{5};
+    Inlet = checkSaturation(Inlet,block);
     %%Evaporator   
     Qhot_ev = block.hconv_ev*block.Area_ev*(Y(2)-Y(3)); %heat transfer from water being cooled to evaporator solid
     Qcold_ev = block.hconv_ev*block.Area_ev*(Y(3)-Y(4)); %heat transfer from evaporator solid to refrigerant

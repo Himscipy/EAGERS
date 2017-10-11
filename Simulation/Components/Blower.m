@@ -14,8 +14,8 @@ if length(varargin)==1 % first initialization
     
     block.Scale = block.RPMdesign*2*pi/60; %speed in RPM converted to rad/s
     block.IC = ones(length(block.Scale),1);
-    block.UpperBound = 2;
-    block.LowerBound = 0;
+    block.UpperBound = 1.5*block.Scale;
+    block.LowerBound = .33*block.Scale;
     
     Dir=strrep(which('InitializeBlower.m'),fullfile('Components','Initialization','InitializeBlower.m'),'CompressorMaps');
     load(fullfile(Dir,block.Map));
@@ -79,12 +79,17 @@ if length(varargin)==1 % first initialization
     %%
     block.InletPorts = {'Temperature','Species','Pin','Pout','Power'};
     block.Temperature.IC = block.Tdesign; 
+    block.Temperature.Saturation = [0,inf];
     block.Species.IC = block.InitialComposition; 
+    block.Species.Saturation = [0,1];
     block.Pin.IC = 101;%in kPa
+    block.Pin.Saturation = [0,inf];
     block.Pin.Pstate = []; %identifies the state # of the pressure state if this block has one
     block.Pout.IC = block.Pin.IC*block.Pdesign;%in kPa
+    block.Pout.Saturation = [0,inf];
     block.Pout.Pstate = []; %identifies the state # of the pressure state if this block has one
     block.Power.IC = block.NominalPower;
+    block.Power.Saturation = [0,inf];
     
     block.OutletPorts = {'Outlet','Speed'};
     block.Outlet.IC = Flow;
@@ -97,10 +102,10 @@ elseif length(varargin)==2 %% Have inlets connected, re-initialize
     block = varargin{1};
     Inlet = varargin{2};
     block.spec = fieldnames(Inlet.Species);
-    
+    Inlet = checkSaturation(Inlet,block);
     %problem is to find speed and flow that matches the PR and power specified by input
     RPM = block.Scale(1)*60/(2*pi); %convert rad/s back to RPM
-    [Power,Flow,block] = OpPoint(RPM,Inlet,block);
+    [Power,Flow] = OpPoint(RPM,Inlet,block);
     block.NominalPower = Power;
 
     FlowIn = Flow;
@@ -175,9 +180,17 @@ else%running the model
     Inlet = varargin{3};
     block = varargin{4};
     string1 = varargin{5};
+    
+    Inlet = checkSaturation(Inlet,block);
     RPM = Y(1)*60/(2*pi); %convert rad/s back to RPM
-    [Power,Flow,block] = OpPoint(RPM,Inlet,block);
+    if any(isinf(RPM)) || any(isnan(RPM)) 
+        disp('WTF')
+    end
+    [Power,Flow] = OpPoint(RPM,Inlet,block);
     NetPower = Inlet.Power - Power;
+    if Flow.O2<=0 
+        disp('WTF')
+    end
     if strcmp(string1,'Outlet')
         Out.Outlet = Flow;
         Out.Speed = RPM;
@@ -198,10 +211,10 @@ end
 end %Ends function Blower
 
 
-function [Power,Flow,block] = OpPoint(RPM,Inlet,block)
+function [Power,Flow] = OpPoint(RPM,Inlet,block)
 global Tags
 nT = Inlet.Temperature/block.Tdesign;%square root of the normalized T
-nRPM = RPM/(block.RPMdesign*nT^.5);%normalized RPM
+nRPM = min(block.RPM(end),max(block.RPM(1),RPM/(block.RPMdesign*nT^.5)));%normalized RPM
 CompPR = (Inlet.Pout/Inlet.Pin -1)/(block.Pdesign - 1) + 1;%normalized compressor pressure ratio
 Mmass = MassFlow(Inlet.Species);%kg/kmol
 Mscale = block.FlowDesign*(Inlet.Pin/block.P0map)/(Mmass*(Inlet.Temperature/block.Tdesign)^.5);%scalar maping for mass flow

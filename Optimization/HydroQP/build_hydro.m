@@ -1,4 +1,4 @@
-global Plant
+global Plant Model_dir
 Plant.Name = 'ColumbiaRiverDams';
 %%Columbia river: 'GC';'CJ';'W';'RR';'RI';'WNPM';'PR';'MN';'JD';'TD';'BNVL';
 %%Snake River: 'BRWNL';'OX';'HC';'LWRGRNT';'LTLGSE';'LWRMONUM';'ICEHRBR';
@@ -11,7 +11,7 @@ Plant.Data.HistProf = [];
 %% Columns of SourceSink, SpillFlow, InFlow and Outflow must correspond to the node in the order of NodeNames
 %%columns 1->18 (kcfs or KW): Grand Coulee, Chief Joseph, Wells, Rocky Ridge, Rock Island, Wanapum, PriestRiver, McNary, John Day, The Dalles, Bonneville, Brownlee, Oxbow, Hells Canyon, Lower Granite, Little Goose, Lower Monumental, Ice Harbor;
 %SourceSink = Mass balance; Sinks and Sources in river segments; Negative values = sinks; Positive values = sources;
-load('SourcesandSinks'); load('Powerflow');load('Spillflow');load('Outflow');load('Inflow');load('PowerGen');
+load(fullfile(Model_dir,'Data','Hydro','SourcesandSinks')); load(fullfile(Model_dir,'Data','Hydro','Powerflow'));load(fullfile(Model_dir,'Data','Hydro','Spillflow'));load(fullfile(Model_dir,'Data','Hydro','Outflow'));load(fullfile(Model_dir,'Data','Hydro','Inflow'));load(fullfile(Model_dir,'Data','Hydro','PowerGen'));
 Plant.Data.Hydro.SourceSink = SourcesandSinks; 
 %Powerflow = Flow used to produce power
 Plant.Data.Hydro.PowerFlow = Powerflow;

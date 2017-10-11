@@ -9,18 +9,36 @@ nG = length(QP.Organize.Dispatchable);
 nB = length(QP.Organize.Building.r);
 nL = n - nG - nB;
 if ~isempty(Locked)
-    Enabled = ones(nG,1);
+    Enabled = true(nG,1);
     for j = 1:1:nG
         if all(Locked(:,j)==0)
-            Enabled(j) = 0;
+            Enabled(j) = false;
         end
     end
 end
 
+%add in constant electric loads from chillers/pumps in FitB
+if isfield(QP,'constDemand') 
+    Outs = fieldnames(QP.constDemand);
+    for s = 1:1:length(Outs)
+        if any(QP.constDemand.(Outs{s}).req>0)
+            if ~isempty(Locked)
+                for j = 1:1:nG
+                    QP.constDemand.(Outs{s}).load(:,j) = QP.constDemand.(Outs{s}).load(:,j).*Locked(2:end,j);
+                end
+                QP.constDemand.(Outs{s}).load = sum(QP.constDemand.(Outs{s}).load,2);
+            elseif ~isempty(Enabled)
+                QP.constDemand.(Outs{s}).load(:,~Enabled) = 0;
+            end
+            QP.beq(QP.constDemand.(Outs{s}).req) = QP.beq(QP.constDemand.(Outs{s}).req) + sum(QP.constDemand.(Outs{s}).load,2);
+        end
+    end
+end
+    
 %remove disabled generators from optimization matrices
 rmv = false;
 for i = 1:1:nG
-    if Enabled(i) ==0  && ~isempty(QP.Organize.States{i})
+    if ~Enabled(i)  && ~isempty(QP.Organize.States{i})
         rmv = true;  %there is a disabled generator with states to remove
         break
     end
@@ -39,15 +57,15 @@ if rmv
         req_rm = 0;
         for i = 1:1:n
             if ~isempty(QP.Organize.States{i})
-                if i<=nG && Enabled(i) ==0%remove disabled generator
+                if i<=nG && ~Enabled(i)%remove disabled generator
                     QP.organize{1,i} = [];
                     states = QP.Organize.States{i};
                     xkeep(states) = 0; %removes states associated with this generator.
                     QP.Organize.States(i) = {[]}; %empty
                     s_rm = s_rm+length(states);
                     if QP.Organize.SpinReserveStates(i)>0
-                        xkeep(Organize.SpinReserveStates(i)) = 0; %removes state associated with this spinning reserve for this generator.
-                        Organize.SpinReserveStates(i) = 0;
+                        xkeep(QP.Organize.SpinReserveStates(i)) = 0; %removes state associated with this spinning reserve for this generator.
+                        QP.Organize.SpinReserveStates(i) = 0;
                         s_rm = s_rm+1;
                     end
                     
@@ -65,8 +83,10 @@ if rmv
                 else
                     %don't remove, but change state #'s
                     QP.Organize.States(i) = {QP.Organize.States{i}-s_rm}; %empty
-                    if QP.Organize.SpinReserveStates(i)>0
-                        Organize.SpinReserveStates(i) = Organize.SpinReserveStates(i) - s_rm;
+                    if i<=length(QP.Organize.SpinReserveStates)
+                        if QP.Organize.SpinReserveStates(i)>0
+                            QP.Organize.SpinReserveStates(i) = QP.Organize.SpinReserveStates(i) - s_rm;
+                        end
                     end
                     if ~isempty(QP.organize{1,i})
                         QP.organize{1,i} = QP.organize{1,i} -s_rm; %
@@ -90,7 +110,7 @@ if rmv
         if isfield(QP.Organize,'IC')
             for i = 1:1:n
                 if QP.Organize.IC(i)>0
-                    if i<=nG && Enabled(i) ==0 || Locked(2,i)==0
+                    if i<=nG && (~Enabled(i) || (~isempty(Locked) && Locked(2,i)==0))
                         xkeep(QP.Organize.IC(i)) = 0;
                         reqkeep(QP.Organize.IC(i)) = 0; %initial condition constraints
                         QP.Organize.IC(i) = 0;
@@ -106,7 +126,7 @@ if rmv
         req_rm = ic_rm;
         for i = 1:1:n
             if ~isempty(QP.Organize.States{i})
-                if i<=nG && Enabled(i) ==0%remove disabled generator
+                if i<=nG && ~Enabled(i)%remove disabled generator
                     QP.organize{2,i} = [];
 
                     states = QP.Organize.States{i};
@@ -117,8 +137,8 @@ if rmv
                     s_rm = s_rm+length(states);
 
                     if QP.Organize.SpinReserveStates(i)>0
-                        xkeep(Organize.SpinReserveStates(i):QP.Organize.t1States:(nS-1)*QP.Organize.t1States+Organize.SpinReserveStates(i)) = 0; %removes state associated with this spinning reserve for this generator.
-                        Organize.SpinReserveStates(i) = 0;
+                        xkeep(QP.Organize.SpinReserveStates(i):QP.Organize.t1States:(nS-1)*QP.Organize.t1States+QP.Organize.SpinReserveStates(i)) = 0; %removes state associated with this spinning reserve for this generator.
+                        QP.Organize.SpinReserveStates(i) = 0;
                         s_rm = s_rm+1;
                     end
 
@@ -154,7 +174,7 @@ if rmv
                     %don't remove, but change state #'s
                     QP.Organize.States(i) = {QP.Organize.States{i}-s_rm}; %empty
                     if QP.Organize.SpinReserveStates(i)>0
-                        Organize.SpinReserveStates(i) = Organize.SpinReserveStates(i) - s_rm;
+                        QP.Organize.SpinReserveStates(i) = QP.Organize.SpinReserveStates(i) - s_rm;
                     end
                     if ~isempty(QP.organize{2,i})
                         QP.organize{2,i} = QP.organize{2,i} -s_rm; %
@@ -181,7 +201,7 @@ if rmv
         QP.Organize.t1States = QP.Organize.t1States - (s_rm - ic_rm);
         QP.Organize.t1ineq = QP.Organize.t1ineq - r_rm;
         QP.Organize.t1Balances = QP.Organize.t1Balances - (req_rm - ic_rm);
-        for i = 1:1:nG
+        for i = 1:1:n
             if QP.Organize.IC(i)>0
                 QP.organize(1,i) = {QP.Organize.IC(i)};
             else 

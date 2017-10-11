@@ -30,7 +30,7 @@ while Date<Plant.Data.Timestamp(1)+Plant.optimoptions.Interval
     QP = updateMatrices(Plant.OpMatB.QP,IC,Baseline.Timestamp,scaleCost,margincost,Demand,[]); 
     
     Locked = ones(length(Time),nG); % will keep all generators on at all times. May not be feasible
-    [GenDisp,~,Feasible] = DispatchQP(QP,Locked);%this is the dispatch with fit B, and all generators on
+    [GenDisp,~,Feasible] = callQPsolver(QP,Locked,[]);%this is the dispatch with fit B, and all generators on
     
     if Feasible ==1
         Baseline.GeneratorState(t:t+nS,:) = GenDisp;

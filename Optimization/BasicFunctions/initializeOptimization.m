@@ -12,7 +12,7 @@ if ~isfield(Plant.Data,'HistProf') || isempty(Plant.Data.HistProf)
     end
     if strcmp(Plant.optimoptions.forecast,'Surface') && isfield(Plant.Data,'Demand') && ~isempty(Plant.Data.Demand)
         F = fieldnames(Plant.Data.Demand);
-        for i = 1:1:length(F);
+        for i = 1:1:length(F)
             calculateHistoricalFit(F{i}); %% calculate surface fits used in forecasting
         end
     end
@@ -24,7 +24,7 @@ if isfield(Plant.Data,'Hydro')
 %         Plant.Data.HistProf.Hydro.SpillFlow(n) = {TypicalDay([],Plant.Data.Hydro.Timestamp,Plant.Data.Hydro.SpillFlow)};
 %         Plant.Data.HistProf.Hydro.OutFlow(n) = {TypicalDay([],Plant.Data.Hydro.Timestamp,Plant.Data.Hydro.OutFlow)};
 %         Plant.Data.HistProf.Hydro.InFlow(n) = {TypicalDay([],Plant.Data.Hydro.Timestamp,Plant.Data.Hydro.InFlow)};
-        Plant.Data.HistProf.Hydro.SourceSink(n) = {TypicalDay([],Plant.Data.Hydro.Timestamp,Plant.Data.Hydro.SourceSink)};
+        Plant.Data.HistProf.Hydro.SourceSink(n) = {TypicalDay([],Plant.Data.Hydro.Timestamp,Plant.Data.Hydro.SourceSink(:,n))};
     end
 end
 if strcmp(Plant.optimoptions.solver,'NREL')

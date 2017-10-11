@@ -7,11 +7,13 @@ if length(varargin) == 1%first initialization
     
     block.InletPorts = {'ValvePos','Intake'};
     block.ValvePos.IC = 0;
-    Inlet.ValvePos = block.ValvePos.IC;
+    block.ValvePos.Saturation = [0,1];
     block.Intake.IC.T = 500;
     block.Intake.IC.N2 = 0.0131;
     block.Intake.IC.O2 = 0.0035;
+    block.Intake.Saturation = [0,inf];
     
+    Inlet.ValvePos = block.ValvePos.IC;
     Inlet.Intake = block.Intake.IC;
     spec = fieldnames(Inlet.Intake);
         for i = 1:length(spec)
@@ -33,6 +35,7 @@ if length(varargin) == 1%first initialization
 elseif length(varargin) == 2
     block = varargin{1};
     Inlet = varargin{2};
+    Inlet = checkSaturation(Inlet,block);
     block.ValvePos.IC = Inlet.ValvePos;
     block.Intake.IC = Inlet.Intake;
     spec = fieldnames(Inlet.Intake);
@@ -51,6 +54,7 @@ else%running the model
     Inlet = varargin{3};
     block = varargin{4};
     string1 = varargin{5};
+    Inlet = checkSaturation(Inlet,block);
     if strcmp(string1,'Outlet')
         specName = fieldnames(Inlet.Intake);
         for i = 1:length(specName)

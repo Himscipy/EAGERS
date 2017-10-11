@@ -25,11 +25,14 @@ if length(varargin)==1 %first initialization
         block.InletPorts(end+1) = {strcat('Target',num2str(i))};
         block.OutletPorts(end+1) = {strcat('Measured',num2str(i))};
         block.(strcat('Target',num2str(i))).IC = block.Target(i);
+        block.(strcat('Target',num2str(i))).Saturation =  [0,inf];
         block.(strcat('Measured',num2str(i))).IC = block.Target(i);
     end
     block.InletPorts(end+1:end+2) = {'TET','RPM'};
     block.TET.IC = ComponentProperty(strcat(block.connections{3},'.IC'));
+    block.TET.Saturation =  [0,inf];
     block.RPM.IC = ComponentProperty(strcat(block.connections{4},'.IC'));
+    block.RPM.Saturation =  [0,inf];
     
     block.OutletPorts(end+1:end+2) = {'GenPower','FuelFlow'};
     block.GenPower.IC = block.Target1.IC/block.GenEfficiency; 
@@ -39,13 +42,14 @@ if length(varargin)==1 %first initialization
     
     block.Scale = [block.RPMdesign; block.Target1.IC/block.GenEfficiency; block.FuelFlow.IC;];
     block.IC = [1; 1; 1;]; % inital condition 
-    block.UpperBound = [2,inf,inf];
-    block.LowerBound = [0,0,0];
+    block.UpperBound = [2*block.RPMdesign,inf,inf];
+    block.LowerBound = [.3*block.RPMdesign,0,0];
     block.P_Difference = {};
     Out = block;
 elseif length(varargin)==2 %% Have inlets connected, re-initialize
     block = varargin{1};
     Inlet = varargin{2};
+    Inlet = checkSaturation(Inlet,block);
     block.RPM.IC = Inlet.RPM;
     block.TET.IC = Inlet.TET;
     
@@ -73,6 +77,7 @@ else
     Inlet = varargin{3};
     block = varargin{4};
     string1 = varargin{5};
+    Inlet = checkSaturation(Inlet,block);
     P_Gain = block.PropGain.*block.Scale;
     I_Gain = block.Gain.*block.Scale;
 

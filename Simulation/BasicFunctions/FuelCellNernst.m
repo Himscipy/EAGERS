@@ -6,51 +6,55 @@ if isstruct(Current)
     netCurrent = (Current.H2+Current.CO);
 else netCurrent = Current;
 end
-%calclae local concentrations
-n_flow1_in = NetFlow(Flow1.Inlet);
-n_flow1_out = NetFlow(Flow1.Outlet);
-n_flow2_in = NetFlow(Flow2.Inlet);
-n_flow2_out = NetFlow(Flow2.Outlet);
+%calculate local concentrations
+n_flow1_in = NetFlow(Flow2.Inlet);
+n_flow1_out = NetFlow(Flow2.Outlet);
+n_flow2_in = NetFlow(Flow1.Inlet);
+n_flow2_out = NetFlow(Flow1.Outlet);
 switch block.FCtype
     case {'SOFC';'SOEC';'oxySOFC';}
         if isfield(block,'ClosedCathode') && block.ClosedCathode
             X.O2 = ones(block.nodes,1);
         else
-            X.O2 = (Flow2.Outlet.O2+Flow2.Inlet.O2)./(n_flow2_in+n_flow2_out);
+            X.O2 = (Flow1.Outlet.O2+Flow1.Inlet.O2)./(n_flow2_in+n_flow2_out);
         end
     case {'MCFC';'MCEC';'oxyMCFC';}
         if isfield(block,'ClosedCathode') && block.ClosedCathode
             X.O2 = ones(block.nodes,1)/3;
             X.CO2c = 2*ones(block.nodes,1)/3;
         else
-            X.O2 = (Flow2.Outlet.O2+Flow2.Inlet.O2)./(n_flow2_in+n_flow2_out);
-            X.CO2c = (Flow2.Outlet.CO2+Flow2.Inlet.CO2)./(n_flow2_in+n_flow2_out);
+            X.O2 = (Flow1.Outlet.O2+Flow1.Inlet.O2)./(n_flow2_in+n_flow2_out);
+            X.CO2c = (Flow1.Outlet.CO2+Flow1.Inlet.CO2)./(n_flow2_in+n_flow2_out);
         end
 end
-X.H2 = (Flow1.Outlet.H2+Flow1.Inlet.H2)./(n_flow1_in+n_flow1_out);
-X.H2O = (Flow1.Outlet.H2O+Flow1.Inlet.H2O)./(n_flow1_in+n_flow1_out);
-if isfield(Flow1.Outlet,'CO')
-    X.CO = (Flow1.Outlet.CO+Flow1.Inlet.CO)./(n_flow1_in+n_flow1_out);
+X.H2 = (Flow2.Outlet.H2+Flow2.Inlet.H2)./(n_flow1_in+n_flow1_out);
+X.H2O = (Flow2.Outlet.H2O+Flow2.Inlet.H2O)./(n_flow1_in+n_flow1_out);
+if isfield(Flow2.Outlet,'CO')
+    X.CO = (Flow2.Outlet.CO+Flow2.Inlet.CO)./(n_flow1_in+n_flow1_out);
 end
-if isfield(Flow1.Outlet,'CO2')
-    X.CO2a = (Flow1.Outlet.CO2+Flow1.Inlet.CO2)./(n_flow1_in+n_flow1_out);
+if isfield(Flow2.Outlet,'CO2')
+    X.CO2a = (Flow2.Outlet.CO2+Flow2.Inlet.CO2)./(n_flow1_in+n_flow1_out);
 end
 
 k = block.Flow1Dir(:,1);
-if min(Flow1.Inlet.H2(k))==0 && isfield(Flow1.Outlet,'CH4')%gives some reformed methane as anode inlet
-    R.CH4(k) = Flow1.Inlet.CH4(k) - Flow1.Outlet.CH4(k); %Rate of methane reforming R.CH4
-    K_WGS(k) = exp(4189.8./Flow1.Outlet.T(k) -3.8242);% Water gas shift equilibrium constant
-    CO_eq(k) = Flow1.Outlet.CO2(k).*Flow1.Outlet.H2(k)./(K_WGS(k).*Flow1.Outlet.H2O(k));
-    R.WGS(k) = (Flow1.Inlet.CO(k)+R.CH4(k))-CO_eq(k); %inlet CO + CO from reforming - outlet CO
-    X.H2(k) = (Flow1.Outlet.H2(k) + 0.5*(3*R.CH4(k)+R.WGS(k)))./(n_flow1_in(k)+n_flow1_out(k));
-    X.H2O(k) = (Flow1.Outlet.H2O(k) - 0.5*(R.CH4(k) + R.WGS(k))+ Flow1.Inlet.H2O(k))./(n_flow1_in(k)+n_flow1_out(k));
+if min(Flow2.Inlet.H2(k))==0
+    if isfield(Flow2.Inlet,'CH4') && min(Flow2.Inlet.CH4(k))>0%gives some reformed methane as anode inlet
+        R.CH4(k) = Flow2.Inlet.CH4(k) - Flow2.Outlet.CH4(k); %Rate of methane reforming R.CH4
+        K_WGS(k) = exp(4189.8./Flow2.Outlet.T(k) -3.8242);% Water gas shift equilibrium constant
+        CO_eq(k) = Flow2.Outlet.CO2(k).*Flow2.Outlet.H2(k)./(K_WGS(k).*Flow2.Outlet.H2O(k));
+        R.WGS(k) = (Flow2.Inlet.CO(k)+R.CH4(k))-CO_eq(k); %inlet CO + CO from reforming - outlet CO
+        X.H2(k) = (Flow2.Outlet.H2(k) + 0.5*(3*R.CH4(k)+R.WGS(k)))./(n_flow1_in(k)+n_flow1_out(k));
+        X.H2O(k) = (Flow2.Outlet.H2O(k) - 0.5*(R.CH4(k) + R.WGS(k))+ Flow2.Inlet.H2O(k))./(n_flow1_in(k)+n_flow1_out(k));
+    elseif isfield(Flow2.Inlet,'H2O') && min(Flow2.Inlet.H2O(k))>0%gives some split water at anode inlet
+        %do nothing
+    end
 end
 
 %% Calculate local voltages
-currentDen = abs(netCurrent)/block.A_Node;% A/m^2
+currentDen = netCurrent/block.A_Node;% A/m^2
 h = enthalpy(T,{'H2';'H2O';'O2'; 'CO'; 'CO2'});
 s = entropy(T,{'H2';'H2O';'O2';'CO'; 'CO2'});
-if any(strcmp(block.FCtype,{'MCFC';'oxyMCFC';}))
+if any(strcmp(block.FCtype,{'MCFC';}))
     CO2_frac = X.CO2c./X.CO2a;
 else
     CO2_frac = 1;
@@ -58,17 +62,15 @@ end
 E0_H2 = -((h.H2O-s.H2O.*T)-(h.H2-s.H2.*T)-.5*(h.O2-s.O2.*T))/(2*F);
 frac_H2 = sqrt(X.O2).*X.H2./X.H2O.*CO2_frac;% reaction 1/2*O2 + H2 --> H2O    or   1/2*O2 + CO2 --> CO2 + H2O
 V_Nernst_H2 = E0_H2 + Ru*T/(2*F).*log(abs(sqrt(P/101.325)*frac_H2));
-
+if any(isnan(V_Nernst_H2))
+    V_Nernst_H2(isnan(V_Nernst_H2)) = Tags.(block.name).LocalNernst(isnan(V_Nernst_H2));
+end
 if isfield(X,'CO') && isfield(X,'CO2a')
     E0_CO = -((h.CO2-s.CO2.*T)-(h.CO-s.CO.*T)-.5*(h.O2-s.O2.*T))/(2*F); %reference voltage for CO
     frac_CO = sqrt(X.O2).*X.CO./X.CO2a.*CO2_frac;% reaction 1/2*O2 + CO --> CO2    or   1/2*O2 + CO2 + CO --> 2*CO2
     V_Nernst_CO = E0_CO + Ru*T/(2*F).*log(abs(sqrt(P/101.325)*frac_CO)); %nernst voltage for CO reaction
 end
 
-if mean(netCurrent)<0 %electrolyzer or Fuel cell mode
-    pow = -1;
-else pow = 1;
-end
 switch block.FCtype
     case {'SOFC';'SOEC';'oxySOFC';} % note sign convention of current is negative for electrolyzers !!
         %removed the activation energy, because reversible SOFC shows linear through OCV
@@ -103,26 +105,26 @@ switch block.FCtype
             Vloss = V_activation + V_concentration + V_ohmic;
 %         end
     case {'MCFC';'MCEC';'oxyMCFC';}
-        V_activation = pow*Ru*T/(4*F*block.alpha).*log(abs(currentDen)/block.Io);
+        V_activation = Ru*T/(4*F*block.alpha).*log(abs(currentDen)/block.Io);
         if min(abs(currentDen)/block.Io)<exp(1) %in very low current areas, make activation linear function of current density, lets activation loss linearly aproach 0 as current approaches 0
             k = find((abs(currentDen)/block.Io)<exp(1));
-            V_activation(k) = pow*Ru*T(k)/(4*F*block.alpha).*abs(currentDen(k))/block.Io/exp(1);
+            V_activation(k) = Ru*T(k)/(4*F*block.alpha).*abs(currentDen(k))/block.Io/exp(1);
         end
-        V_concentration = pow*Ru*T/(4*F)*(1+1/block.alpha).*log(block.J_L./(block.J_L-abs(currentDen)));
+        V_concentration = Ru*T/(4*F)*(1+1/block.alpha).*log(block.J_L./(block.J_L-abs(currentDen)));
         I_CO = 0*netCurrent;
         I_H2 = netCurrent-I_CO;   %solving for current from H2
         
         V_ohmic = currentDen.*(block.Cr0+block.Cr1*(T-273));
         Vloss = V_activation+V_concentration+V_ohmic;
 end
-nVoltage = V_Nernst_H2 - pow*Vloss;%this is the voltage from the fuel cell
-ASR = mean(Vloss./(currentDen/(100^2))); %should be in neighborhood of 0.25 for SOFC
+nVoltage = sign(mean(netCurrent))*(V_Nernst_H2 - Vloss);%this is the voltage (+ is fuel cell mode, - is electrolyzer mode)
+ASR = mean(Vloss./(abs(currentDen)/(100^2))); %should be in neighborhood of 0.25 for SOFC
 Tags.(block.name).ASR = ASR;
 Tags.(block.name).LocalCurrentDensity = netCurrent'/block.A_Node/1e4;%current in A/cm2
 Tags.(block.name).nCurrent = netCurrent';
 Tags.(block.name).nVoltage = nVoltage';
-Tags.(block.name).nPower = abs(netCurrent)'.*nVoltage';% power per node in W
-Tags.(block.name).Power = sum(abs(netCurrent).*nVoltage)*block.Cells/1000;%power for stack in kW
+Tags.(block.name).nPower = netCurrent'.*abs(nVoltage)';% power per node in W
+Tags.(block.name).Power = sum(netCurrent.*abs(nVoltage))*block.Cells/1000;%power from the  stack in kW
 Tags.(block.name).LocalNernst = V_Nernst_H2';
 Tags.(block.name).LocalActivation = V_activation';
 Tags.(block.name).LocalConcentration = V_concentration';

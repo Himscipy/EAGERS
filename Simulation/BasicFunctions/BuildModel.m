@@ -52,10 +52,6 @@ end
 connectPorts
 %% Converge component initializations to an approximation of steady-state operation
 SimSettings.RunTime = 3600*24;
-% if isfield(modelParam,'NominalPower')
-%     SimSettings.PowerDemand    = [1 1]*modelParam.NominalPower;
-%     SimSettings.PowerTime = linspace(0,SimSettings.RunTime,length(SimSettings.PowerDemand));
-% end
 OldInlet = Inlet; %initial condition inlets
 Error = 1;
 error = zeros(length(controls),1);
@@ -138,6 +134,10 @@ IterCount = 1; TagInf =[]; TagFinal =[]; WaitBar.Text = 'Initialization'; WaitBa
 disp(strcat('Initialization:',num2str(toc),' seconds'));close(WaitBar.Handle); 
 %     PlotSimulation(T,Y,1,0,1)
 modelParam.IC = Y(end,:)';
+%Other global variables specific to this initialization
+modelParam.NominalOutlet = Outlet;
+modelParam.NominalSettings = SimSettings;
+modelParam.NominalTags = Tags;
 end % Ends function BuildModel
 
 function Change = HasInletChanged(New,Old)

@@ -1,4 +1,7 @@
-function [x, Cost, Feasible] = callQPsolver(QP)
+function [x, Cost, Feasible] = callQPsolver(QP,Locked,Enabled,runSetup)
+if ~isempty(Locked) || ~isempty(Enabled)
+    QP = disableGenerators(QP,Locked,Enabled);%Disable generators here
+end
 if strcmp(QP.solver,'linprog') && any(any(QP.H - diag(diag(QP.H)))) %not a seperable QP problem
     QP.solver = 'quadprog';
 end
@@ -81,12 +84,20 @@ switch QP.solver
                 QP.A = [QP.A; I;-I];
                 QP.b = [QP.b;QP.ub(ic+1:end);-QP.lb(ic+1:end);];
             end
+            addpath(genpath('cvx'))
+            if runSetup==true %if this is your first time through run the cvx setup
+                cvx_setup quiet
+            end
             cvx_begin quiet
                 variable x(n) nonnegative
-                minimize ((norm(H*x-b)))
+                %variable y(n,n) nonnegative
+                variable onoff(n) binary
+                minimize ((norm((H*y)*x-b)))
                 subject to
                     QP.Aeq*x == QP.beq;
                     QP.A*x <= QP.b;
+                    QP.lb <= x <= QP.ub;
+                    y == zeros(n,n)+diag(onoff);
             cvx_end
             %% convert back to non-normalized
             x = x.*scale;
@@ -197,9 +208,56 @@ switch QP.solver
         [x,iterations,Feasible] = pcQPgen(QP.H,QP.f,QP.A',QP.b,QP.Aeq',QP.beq,x,y,z,s);
         %% convert back to non-normalized
 %         x = x.*scale;
-        Feasible =1;
 end
 if Feasible ==1
     Cost = 0.5*x'*QP.H*x + x'*QP.f;
 else Cost = 0;
 end
+if isfield(QP,'organize')
+    [m,n] = size(QP.organize);
+    nG = length(QP.constCost);
+    nS = m-1;
+    GenDisp = zeros(m,n);
+    if Feasible ==1
+        %%Getting data for analysis
+        for i = 1:1:nG
+            if QP.Organize.Hydro(i) == 1
+                for t = 1:1:nS+1
+                    %Get SOC of each generator into a matrix for all time steps
+                    SOCGen(t,i) = x(QP.organize{t,i}+1,1);
+                    global Plant
+                    Plant.SOCSolvedQP = SOCGen;
+                end
+            end
+        end
+        for i = 1:1:n
+            if i > nG && i <= n-nG
+                for t = 1:1:nS+1
+                    if ~isempty(QP.organize{t,i})
+                        Trans(t,i-nG) = sum(x(QP.organize{t,i}+1)); %down (positive) lines
+                        Trans(t,i) = sum(x(QP.organize{t,i}+2)); %up (negative) lines
+                    end
+                    if t == nS+1
+                        Plant.Trans = Trans;
+                    end
+                end
+            end
+        end
+        %end analysis data
+        for i = 1:1:n
+            if i<=nG && isfield(QP,'Renewable') && any(QP.Renewable(:,i)~=0)
+                GenDisp(1,i) = RenewableOutput(i,[],'Actual');
+                GenDisp(2:end,i) = QP.Renewable(:,i);
+            else
+                for t = 1:1:nS+1
+                    if ~isempty(QP.organize{t,i})
+                        GenDisp(t,i) = sum(x(QP.organize{t,i})); %record this combination of outputs (SOC for storage)
+                    end
+                end
+            end
+        end
+        GenDisp(abs(GenDisp)<1e-3) = 0; %remove tiny outputs because they are most likely rounding errors
+    end
+    x = GenDisp;
+end
+end%Ends callQPsolver

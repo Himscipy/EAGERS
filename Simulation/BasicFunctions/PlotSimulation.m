@@ -1,10 +1,14 @@
 function PlotSimulation(T,Y,plotFC,animateFC,PlotTurbos)
-global TagInf  modelParam
+global TagInf  modelParam LinMod
+if ~isempty(modelParam)
+    Mod = modelParam;
+else Mod = LinMod;
+end
 time = TagInf.Time;
-if isfield(modelParam,'Plot')
-    n = length(modelParam.Plot);
+if isfield(Mod,'Plot')
+    n = length(Mod.Plot);
     for i = 1:1:n
-        tagName = modelParam.Plot{i};
+        tagName = Mod.Plot{i};
         r = strfind(tagName,'.');
         block = tagName(1:r-1);
         tag = tagName(r+1:end);
@@ -18,39 +22,39 @@ if isfield(modelParam,'Plot')
     end
 end
 if plotFC
-    CompNames = fieldnames(modelParam.Components);
+    CompNames = fieldnames(Mod.Components);
     for i = 1:1:length(CompNames)
-        if strcmp(modelParam.Components.(CompNames{i}).type,'FuelCell') || strcmp(modelParam.Components.(CompNames{i}).type,'Electrolyzer')
-            block = modelParam.Components.(CompNames{i});
+        if isfield(Mod.Components.(CompNames{i}),'type') && (strcmp(Mod.Components.(CompNames{i}).type,'FuelCell') || strcmp(Mod.Components.(CompNames{i}).type,'Electrolyzer'))
+            block = Mod.Components.(CompNames{i});
             CellMap(Y(end,:),block,n+1);
             n = n+1;
         end
     end 
 end
 if animateFC
-    CompNames = fieldnames(modelParam.Components);
+    CompNames = fieldnames(Mod.Components);
     for i = 1:1:length(CompNames)
-        if strcmp(modelParam.Components.(CompNames{i}).type,'FuelCell') || strcmp(modelParam.Components.(CompNames{i}).type,'Electrolyzer')
-            block = modelParam.Components.(CompNames{i});
+        if isfield(Mod.Components.(CompNames{i}),'type') && (strcmp(Mod.Components.(CompNames{i}).type,'FuelCell') || strcmp(Mod.Components.(CompNames{i}).type,'Electrolyzer'))
+            block = Mod.Components.(CompNames{i});
             Animate(T,Y,block,n+1)
             n = n+1;
         end
     end
 end
 if PlotTurbos
-    CompNames = fieldnames(modelParam.Components);
+    CompNames = fieldnames(Mod.Components);
     for i = 1:1:length(CompNames)
-        if strcmp(modelParam.Components.(CompNames{i}).type,'Blower') 
-            CTmap(modelParam.Components.(CompNames{i}),[],n+1)
+        if strcmp(Mod.Components.(CompNames{i}).type,'Blower') 
+            CTmap(Mod.Components.(CompNames{i}),[],n+1)
             n = n+1;
         end
-        if strcmp(modelParam.Components.(CompNames{i}).type,'Compressor') 
-            comp = modelParam.Components.(CompNames{i});
+        if strcmp(Mod.Components.(CompNames{i}).type,'Compressor') 
+            comp = Mod.Components.(CompNames{i});
             CTmap(comp,[],n+1)
             n = n+1;
         end
-        if strcmp(modelParam.Components.(CompNames{i}).type,'Turbine') 
-            turb = modelParam.Components.(CompNames{i});
+        if strcmp(Mod.Components.(CompNames{i}).type,'Turbine') 
+            turb = Mod.Components.(CompNames{i});
             CTmap([],turb,n+1)
             n = n+1;
         end

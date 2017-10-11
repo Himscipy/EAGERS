@@ -1,4 +1,4 @@
-global Plant
+global Plant Model_dir
 Plant = [];
 Plant.Name = 'ColumbiaBasin';
 %%Columbia river: 'GC';'CJ';'W';'RR';'RI';'WNPM';'PR';'MN';'JD';'TD';'BNVL';
@@ -11,25 +11,6 @@ Plant.Data.Temperature = 20*ones(length(Plant.Data.Timestamp),1);
 Plant.Data.Holidays = [];
 Plant.Data.HistProf = [];
 
-% %% Columns of SourceSink, SpillFlow, InFlow and Outflow must correspond to the node in the order of NodeNames
-% %%columns 1->18 (kcfs or KW): Grand Coulee, Chief Joseph, Wells, Rocky Ridge, Rock Island, Wanapum, PriestRiver, McNary, John Day, The Dalles, Bonneville, Brownlee, Oxbow, Hells Canyon, Lower Granite, Little Goose, Lower Monumental, Ice Harbor;
-% %SourceSink = Mass balance; Sinks and Sources in river segments; Negative values = sinks; Positive values = sources;
-% load('SourcesandSinks'); load('Powerflow');load('Spillflow');load('Outflow');load('Inflow');load('PowerGen');
-% Plant.Data.Hydro.SourceSink = SourcesandSinks; 
-% %Powerflow = Flow used to produce power
-% Plant.Data.Hydro.PowerFlow = Powerflow;
-% %Spillflow = Flow that is spilled not used for power
-% Plant.Data.Hydro.SpillFlow = Spillflow;
-% %Outflow = Full amount of discharge flow
-% Plant.Data.Hydro.OutFlow = Outflow;
-% %columns (kilo-cfs): inflow(GC), infl(CJ)-Disch(GC), infl(W)-Disch(CJ), infl(RR)-Disch(W), infl(RI)-Disch(RR), infl(WNP)-Disch(RI), infl(PR)-Disch(WNP), infl(MN)-Disch(IH)-Disch(PR), infl(JD)-Disch(MN), infl(TD)-Disch(JD), infl(BNVL)-Disch(TD), inflow(BRW), infl(OX)-Disch(BRW), infl(HC)-Disch(OX), infl(LGRT)-Disch(HC), infl(LGS)-Disch(LGRT), infl(LMNT)-Disch(LG), infl(IH)-Disch(LMNT);
-% Plant.Data.Hydro.InFlow = Inflow;
-% %PowerGen = Generation (kW) every hour
-% Plant.Data.Hydro.PowerGen = PowerGen;
-% PowerGen(isnan(PowerGen)) = 0;
-% Plant.Data.Demand = [];
-% %Still need 
-% %            storage data
 
 %% Network Setup
 %Brownlee, Oxbow, and Hells Canyon Dams ommitted
@@ -62,7 +43,8 @@ Equipment = {'Plant1';'Plant2';'Plant3';'Plant4';'Plant5';...
 HydroConnection = {'Plant1';'Plant2';'Plant2';'Plant3';'Plant3';'Plant4';'Plant4';'Plant6';...
                 'Plant7';'Plant7';'Plant8';'Plant10';'Plant9';'Plant9';'Plant5'};             %BRWN/OX/HC: {'Cambridge, Id';'Oxbow, Or';'Hells Canyon, Or'}
          
-InstreamFlow = [ 0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;];
+% InstreamFlow = [ 0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;];
+InstreamFlow = [2;2;2;2;2;2;2;2;2;2;2;2;2;2;2];
 Time2Sea = [80.6;73.7;69.7;64.0;61.3;56.2;53.7;39.5;29.1;25.9;19.7;58.5;53.4;49.5;45.2];
 RiverMile = [596.6;545.1;515.8;473.7;453.4;415.8;397.1;292;215.6;191.5;146.1;107.5;70.3;41.6;9.7;]; %was used to calculate the Time2Sea
 
@@ -79,7 +61,7 @@ Plant.optimoptions.tspacing = 'constant';
 Plant.optimoptions.sequential = false;
 Plant.optimoptions.excessHeat = true;
 Plant.optimoptions.thresholdSteps = 1;
-Plant.optimoptions.Buffer = 40;
+Plant.optimoptions.Buffer = 50;
 Plant.optimoptions.method = 'Dispatch';
 Plant.optimoptions.MixedInteger = false;
 Plant.optimoptions.SpinReserve = false;
@@ -538,20 +520,20 @@ end
 
 
 %% Loading Data
-load('allHistHydroGenData_2007_2016'); %Historical Generation Data(hourly)(kW)
-% load('SourcesandSinks_2007_2016'); %Source and Sink Data; UpstreamOutFlow(t-T)-DownstreamInFlow(t)
+load(fullfile(Model_dir,'Data','Hydro','allHistHydroGenData_2007_2016')); %Historical Generation Data(hourly)(kW)
+% load(fullfile(Model_dir,'Data','Hydro','SourcesandSinks_2007_2016')); %Source and Sink Data; UpstreamOutFlow(t-T)-DownstreamInFlow(t)
 %%columns 1->18 (kcfs or KW): Grand Coulee, Chief Joseph, Wells, Rocky Ridge, Rock Island, Wanapum, PriestRiver, McNary, John Day, The Dalles, Bonneville, Brownlee, Oxbow, Hells Canyon, Lower Granite, Little Goose, Lower Monumental, Ice Harbor;
 %SourceSink = Mass balance; Sinks and Sources in river segments; Negative values = sinks; Positive values = sources;
 
 %These are corrected data 
-load('SourceSinkHrly')
-load('InFlowCrctd')
-load('OutFlowNMD')
-load('powerFlowNMD')
+load(fullfile(Model_dir,'Data','Hydro','SourceSinkHrly'))
+load(fullfile(Model_dir,'Data','Hydro','InFlowCrctd'))
+load(fullfile(Model_dir,'Data','Hydro','OutFlowNMD'))
+load(fullfile(Model_dir,'Data','Hydro','powerFlowNMD'))
 
 for i = 1:1:length(Dam) 
-    if exist(strcat(DamNames{i},'_','2007','_','2016','.mat'),'file')
-        name = strcat(DamNames{i},'_','2007','_','2016');
+    if exist(fullfile(Model_dir,'Data','Hydro',strcat(DamNames{i},'_','2007','_','2016','.mat')),'file')
+        name = fullfile(Model_dir,'Data','Hydro',strcat(DamNames{i},'_','2007','_','2016'));
         R = load(name);
         ix = fieldnames(R);
         Plant.Data.Hydro.Dams(i,1) = { R.(ix{1}) };
@@ -661,20 +643,20 @@ for i = 1:1:length(NodeNames)%number of dams in network
         for j = 1:1:length(Down)
             if ~isempty(Down{j})
                 Plant.Network(i).Electrical.connections(end+1) = (Down(j));
-                Plant.Network(i).Electrical.Trans_Eff(end+1) = 1-(i*.01);
+                Plant.Network(i).Electrical.Trans_Eff(end+1) = 0.999;
                 Plant.Network(i).Electrical.Trans_Limit(end+1) = inf;
             end  
         end
         for j = 1:1:length(up)
             if ~isempty(up{j})
                 Plant.Network(i).Electrical.connections(end+1) = (up(j)); %upconnections electric
-                Plant.Network(i).Electrical.Trans_Eff(end+1) = 1-(i*.01);
+                Plant.Network(i).Electrical.Trans_Eff(end+1) = 0.999;
                 Plant.Network(i).Electrical.Trans_Limit(end+1) = inf;
             end
         end 
     end 
 end
-Plant.Network(5).Electrical.Load = 1; %put all the load at the first node
+Plant.Network(1).Electrical.Load = 1; %put all the load at the first node
 % calculateHistoricalFit %might need to update this to do extra hydro specific fitting of data
 
 %% Temporary filling in missing data
@@ -692,11 +674,20 @@ for i = 1:1:length(Dam)
         if isnan(Plant.Data.Hydro.PowerGen(k,i))
             Plant.Data.Hydro.PowerGen(k,i) = Plant.Data.Hydro.PowerGen(k-1,i);
         end
+        if isnan(Plant.Data.Hydro.PowerFlow(k,i))
+            Plant.Data.Hydro.PowerFlow(k,i) = Plant.Data.Hydro.PowerFlow(k-1,i);
+        end
         if isnan(Plant.Data.Hydro.SourceSink(k,i))
             Plant.Data.Hydro.SourceSink(k,i) = Plant.Data.Hydro.SourceSink(k-1,i);
         end
         if isnan(Plant.Data.Hydro.InFlow(k,i))
             Plant.Data.Hydro.InFlow(k,i) = Plant.Data.Hydro.InFlow(k-1,i);
+        end
+        if isnan(Plant.Data.Hydro.OutFlow(k,i))
+            Plant.Data.Hydro.OutFlow(k,i) = Plant.Data.Hydro.OutFlow(k-1,i);
+        end
+        if isnan(Plant.Data.Hydro.SpillFlow(k,i))
+            Plant.Data.Hydro.SpillFlow(k,i) = Plant.Data.Hydro.SpillFlow(k-1,i);
         end
     end
     HydroPerc(:,i) = Plant.Data.Hydro.PowerGen(:,i)/Plant.Generator(i).VariableStruct.MaxGenCapacity*100;

@@ -17,10 +17,14 @@ if length(varargin)==1 % first initialization
     %%
     block.InletPorts = {'Power','Supply','Tamb','ambHumidity'};
     block.Power.IC = 1;
+    block.Power.Saturation = [0,inf];
     block.Supply.IC.T = 25+273.15;
     block.Supply.IC.H2O = block.Cooling_Tons*3.517/(Cp_H2O*(block.Supply.IC.T-273.15-block.Scale(3)));
+    block.Supply.Saturation = [0,inf];
     block.Tamb.IC = 25;
+    block.Tamb.Saturation = [-50,50];
     block.ambHumidity.IC = 0.01;
+    block.ambHumidity.Saturation = [0,.1];
     
     block.OutletPorts = {'Return';'Temperature';};
     block.Return.IC.T = 22+273.15;
@@ -32,6 +36,7 @@ if length(varargin)==1 % first initialization
 elseif length(varargin)==2 %% Have inlets connected, re-initialize  
     block = varargin{1};
     Inlet = varargin{2};
+    Inlet = checkSaturation(Inlet,block);
     AirFlow = Inlet.Power*block.FanEfficiency*1e3/(9.81*block.HeadLoss); % flow rate in kg/s
     P = 101.325;
     P_H2O = P*Inlet.ambHumidity/(0.621945+Inlet.ambHumidity);
@@ -67,6 +72,7 @@ else%running the model
     Inlet = varargin{3};
     block = varargin{4};
     string1 = varargin{5};
+    Inlet = checkSaturation(Inlet,block);
     P = 101.325;
     P_H2O = P*Inlet.ambHumidity/(0.621945+Inlet.ambHumidity);
     Tamb_K = Inlet.Tamb + 273.15;

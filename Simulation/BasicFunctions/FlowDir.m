@@ -30,7 +30,7 @@ if flows>=2
 end
 if flows>=3 %reformer/methanator
     for j = 1:1:columns
-        block.Flow3Dir(:,j) = (columns-j+1:columns:nodes)';%assumed opposite of flow 1
+        block.Flow3Dir(:,j) = block.Flow2Dir(:,end+1-j);%assumed opposite of flow 2
     end
 end
 block.HTadjacent = zeros(nodes,4);

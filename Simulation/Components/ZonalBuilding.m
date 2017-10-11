@@ -14,15 +14,23 @@ if length(varargin)==1 % first initialization
     %%
     block.InletPorts = {'Tamb';'ambHumidity';'Flow';'Tset';'DPset';'Damper';'CWflow';'HWflow';};
     block.Tamb.IC = 25;
+    block.Tamb.Saturation = [-50,50];
     block.ambHumidity.IC = 0.01;
+    block.ambHumidity.Saturation = [0,.1];
     block.Flow.IC = 1*ones(block.zones,1); %mass flow of dry air supply
+    block.Flow.Saturation = [0,inf];
     block.Tset.IC = 12.8*ones(block.zones,1); %zone HVAC temperature set point
+    block.Tset.Saturation = [10,30];
     block.DPset.IC = 11*ones(block.zones,1); %dew point set point
+    block.DPset.Saturation = [0,30];
     block.Damper.IC = 0.4*ones(block.zones,1); %split between recirculated air and fresh air
+    block.Damper.Saturation = [0,1];
     block.CWflow.IC.T = 4*ones(block.zones,1); %cold water temperature
     block.CWflow.IC.H2O = 0*ones(block.zones,1); %cold water flow
+    block.CWflow.Saturation = [0,inf];
     block.HWflow.IC.H2O = 40*ones(block.zones,1); %hot water temperature
     block.HWflow.IC.H2O = 0*ones(block.zones,1); %hot water flow
+    block.HWflow.Saturation = [0,inf];
     
     block.OutletPorts = {'Temperature';'Humidity';'Qcool';'Qheat';'CWreturn';'HWreturn';'Mode';};
     block.Temperature.IC = 22.2*ones(block.zones,1); %temperature of each zone
@@ -41,6 +49,7 @@ if length(varargin)==1 % first initialization
 elseif length(varargin)==2 %% Have inlets connected, re-initialize
     block = varargin{1};
     Inlet = varargin{2};
+    Inlet = checkSaturation(Inlet,block);
     t = 0;
     n = block.zones;
     Cp_H2O = 4.184; % kJ/kg H2O
@@ -94,6 +103,7 @@ else%running the model
     Inlet = varargin{3};
     block = varargin{4};
     string1 = varargin{5};
+    Inlet = checkSaturation(Inlet,block);
     n = block.zones;
     P = 101.325; %kPa, atmospheric pressure value
     Cp_H2O = 4.184; % kJ/kg H2O

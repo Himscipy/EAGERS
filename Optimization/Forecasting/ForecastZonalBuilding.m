@@ -31,7 +31,7 @@ Cooling = zeros(length(t),n);
 Heating = zeros(length(t),n);
 
 for i = 1:1:n
-    %% Occupancy and internal gains can be replaced with lookup functions of the smae name where the schedules are stored in SimSettings
+    %% Occupancy and internal gains can be replaced with lookup functions of the same name where the schedules are stored in SimSettings
     Occupancy(:,i) = interp1(linspace(0,24,length(build.OccupancySchedule(i,:))+1),build.Occupancy(i)*[build.OccupancySchedule(i,end),build.OccupancySchedule(i,:)]*build.Area(i),h);
     IntGains(:,i) = Occupancy(:,i)*120; %heat from occupants (W)
     IntGains(:,i)  = IntGains(:,i)  + interp1(linspace(0,24,length(build.PlugSchedule(i,:))+1),build.PlugLoad(i)*[build.PlugSchedule(i,end),build.PlugSchedule(i,:)]*build.Area(i),h);%heat from plug loads (W)
