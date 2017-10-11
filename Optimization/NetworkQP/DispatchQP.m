@@ -2,9 +2,7 @@ function [GenDisp,Feasible] = DispatchQP(QP,Locked)
 [m,n] = size(QP.organize);
 nG = length(QP.constCost);
 nS = m-1;
-
-QP = disableGenerators(QP,Locked,[]);%Disable generators here
-[GenSetting, cost,Feasible] = callQPsolver(QP);
+[GenSetting, cost,Feasible] = callQPsolver(QP,Locked,[]);
 GenDisp = zeros(nS+1,n);
 if Feasible ~=1
     Feasible = false;

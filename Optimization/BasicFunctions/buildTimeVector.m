@@ -1,7 +1,7 @@
 function Time = buildTimeVector(options)
 %% set up dt vector of time interval length
 if strcmp(options.tspacing,'constant') == 1
-    nS = options.Horizon/options.Resolution; % # of time inervals
+    nS = options.Horizon/options.Resolution; % # of time intervals
     Time = linspace(options.Resolution,options.Horizon,nS)';
 %% if user manually specified timesteps
 elseif strcmp(options.tspacing, 'manual')
@@ -12,7 +12,7 @@ elseif strcmp(options.tspacing, 'manual')
     roundTime = round(Time/(options.Tmpc/3600));%make sure that each step can contain a whole number of MPC steps
     Time = roundTime*(options.Tmpc/3600);
     [m,n] = size(Time);
-    if m==1 & n>1
+    if m==1 && n>1
         Time = Time';
     end
 %% if user specified logarithmic timesteps, then have more steps in the beggining, placing less certainty on the distant predictions

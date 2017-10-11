@@ -1,23 +1,28 @@
-function [GenOutput,Binary] = checkStartupCosts(Alt,Binary,StartCost,dt,I,nL)
+function [GenOutput,Binary] = checkStartupCosts(GenOutput,Alt,Binary,StartCost,dt,Type,include,n)
 %This function finds the n shortest segments of time the generator is on or
 %off, and compares the start-up cost to the alternative configuration that
 %avoids the start or re-start
-n = 8; % # of segments to check
-nG = length(StartCost);
+% GenOutput is the bet dispatch at each time without considering start-up costs
+% Alt is all of the other feasible combinations tested
+% Binary is the current best on/off configuration
+% StartCost is the startup cost of each generator
+% dt is the duration of each time segment
+% Type specifies the category of generator (currently this function is only interested in electric and CHP generators.
+% include is what type of generators to consider (currently this is always electric and CHP generators)
+% n is # of segments to check
+I = ones(length(dt),1);
 nS = length(Alt.Disp);
+InitialOutput = GenOutput;
 SkipOn = [];
 SkipOff = [];
 %find I(t), index that results in lowest cost once start-up is considered.
 for k = 1:1:n
     %%Try and remove the shortest generator on segment
-    [onSeg, offSeg] = segmentLength(Binary,StartCost,dt,SkipOn,SkipOff);
+    [onSeg, offSeg] = segmentLength(Binary,StartCost,dt,SkipOn,SkipOff,Type,include);
     if isempty(onSeg) && isempty(offSeg)
         break %no  segments to check
     elseif ~isempty(onSeg)
-        %% first check if the prior configuration is always feasible, and if it is cheaper after factoring in start-up cost
-        
-        
-        %% Otherwise find the cheapest alternative
+        %% Find the cheapest feasible alternative dispatch without this generator (only use generators that were on previously or will be on
         [~,Ion] = min(onSeg(:,4)+StartCost(onSeg(:,1))'/(2*max(StartCost))); %shortest segment, and if equal lengths, highest start cost
         %only allow generators that are on at begining or end to be involved (or that have smaller start-up cost)
         Ialt = I;
@@ -49,24 +54,24 @@ for k = 1:1:n
     end
     
     %%Try and remove the shortest generator off segment
-    [~, offSeg] = segmentLength(Binary,StartCost,dt,SkipOn,SkipOff);
+    [~, offSeg] = segmentLength(Binary,StartCost,dt,SkipOn,SkipOff,Type,include);
     if isempty(onSeg) && isempty(offSeg)
         break %no  segments to check
     elseif ~isempty(offSeg)
-        %% first check if the prior configuration is always feasible, and if it is cheaper after factoring in start-up cost
-        
-        %% Otherwise find the cheapest alternative
+        %% Find the cheapest feasible alternative dispatch that keeps this generator on (only use generators that were on previously or will be on)
         [~,Ioff] = min(offSeg(:,4)+StartCost(offSeg(:,1))'/(2*max(StartCost))); %shortest segment, and if equal lengths, highest start cost
         %only allow generators that are on at begining or end to be involved (or that have smaller start-up cost)
         Ialt = I;
         i = offSeg(Ioff,1); %generator index
         t1 = offSeg(Ioff,2); %index when generator turns on
         t2 = offSeg(Ioff,3);%index when generator shuts off
+        notAllowed = (~Binary(t1,:) & ~Binary(t2,:)); %generators that are off at the beginning and end
         dCost = zeros(t2-t1,1);
         for t = t1:1:t2-1
             Opt = Alt.Binary{t}; %all feasible options tested at this time
             cost2 = Alt.Cost{t}; %cost for these options
             cost2(~Opt(:,i)) = inf;%make the cost infinite for all combinations without generator i
+            cost2(any(Opt(:,notAllowed),2)) = inf;%make the cost infinite for all feasible combinations with notAllowed generators
             if any(~isinf(cost2))
                 [dCost(t-t1+1),Ialt(t)] = min(cost2);
             else
@@ -82,20 +87,16 @@ for k = 1:1:n
         else
             SkipOff(end+1,1:4) = offSeg(Ioff,:); %add to list of segments to avoid
         end
-    end
-    
-    
-    %b) don't create any smaller on/off segments (how?)
-    
+    end    
 end
 
 %pull the corresponding best dispatches with the start-cost considered
-GenOutput = zeros(nS,nG+nL);
 for t = 1:1:nS
-    GenOutput(t,:) = Alt.Disp{t}(I(t),:);
+    GenOutput(t+1,:) = Alt.Disp{t}(I(t),:);
 end
+diff = GenOutput - InitialOutput;
 
-function [onSeg, offSeg] = segmentLength(Binary,StartCost,dt,SkipOn,SkipOff)
+function [onSeg, offSeg] = segmentLength(Binary,StartCost,dt,SkipOn,SkipOff,Type,include)
 onSeg = [];
 offSeg = [];
 nG = length(StartCost);
@@ -103,7 +104,7 @@ nS = length(dt);
 Horizon = sum(dt);
 % find length of segments that a generator is on or off
 for i = 1:1:nG
-    if StartCost(i)>0 && any(~Binary(:,i))
+    if StartCost(i)>0 && any(~Binary(:,i)) && ismember(Type{i},include)
         starts = nonzeros((1:nS)'.*(Binary(2:end,i) & ~Binary(1:nS,i)));
         stops = nonzeros((1:nS)'.*(~Binary(2:end,i) & Binary(1:nS,i)));
         nOn = length(starts);

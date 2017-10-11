@@ -46,6 +46,7 @@ if length(varargin) ==1 %first initialization
     
     block.InletPorts = {'V'};
     block.V.IC = block.BatMaxV*(block.k1 + block.k2*log(block.Scale(2)*block.IC(2)) + block.k3*log(1-block.Scale(2)*block.IC(2)));
+    block.V.Saturation = [-inf,inf];
     
     block.OutletPorts = {'IbatMax','IbatMin','VbatMax','VbatMin','E','EMax'};
     block.IbatMax.IC = -block.IMax;%current at max applied voltage
@@ -78,7 +79,7 @@ if length(varargin) ==1 %first initialization
 elseif length(varargin) ==2 %have inlets
     block = varargin{1};
     Inlet = varargin{2};
-    
+    Inlet = checkSaturation(Inlet,block);
     Y = block.IC.*block.Scale;
     %Vsoc = block.BatMaxV*(block.k1 + block.k2*log(Y(2)) + block.k3*log(1-Y(2)));%open circuit battery voltage
     %V = Inlet.V - Vsoc;
@@ -136,6 +137,8 @@ else%running the model
     Inlet = varargin{3};
     block = varargin{4};
     string1 = varargin{5};
+    
+    Inlet = checkSaturation(Inlet,block);
     Vsoc = block.BatMaxV*(block.k1 + block.k2*log(Y(2)) + block.k3*log(1-Y(2)));%open circuit battery voltage
     V = Inlet.V - Vsoc;
     I = V/block.Resistance;

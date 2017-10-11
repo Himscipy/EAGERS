@@ -21,10 +21,12 @@ if length(varargin)==1 %first initialization
         name = strcat('Inlet',num2str(i));
         block.(name) = [];
         block.InletPorts(end+1) = cellstr(name);
+        block.(name).Saturation = [0,inf];
     end
     
     block.InletPorts(end+1) = {'Pout'};
     block.Pout.IC = 101;
+    block.Pout.Saturation = [0,inf];
     block.Pout.Pstate = []; %identifies the state # of the pressure state if this block has one
     
     block.OutletPorts = {'Outlet';'Temperature';'Pin';};
@@ -40,6 +42,7 @@ if length(varargin)==1 %first initialization
 elseif length(varargin)==2%% Have inlets connected, re-initialize
     block = varargin{1};
     Inlet =varargin{2};
+    Inlet = checkSaturation(Inlet,block);
     n = block.inlets;     
 
     inlets = fieldnames(Inlet);
@@ -92,6 +95,7 @@ else%running the model
     Inlet = varargin{3};
     block = varargin{4};
     string1 = varargin{5};
+    Inlet = checkSaturation(Inlet,block);
     Pin =Y(end);
     NetOut.T = Y(1);
     inlets = fieldnames(Inlet);

@@ -44,11 +44,11 @@ else
         QPform.Y.lb = 0;
         QPform.Y.ub = inf;
         if strcmp(Gen.Source, 'Electricity')
-            QPform.output.E = [1,-1];
+            QPform.output.E = [1;-1];
         elseif strcmp(Gen.Source, 'Heat')%loads the parameters for a distric heating supply. 
-            QPform.output.H = [1,-1];
+            QPform.output.H = [1;-1];
         elseif strcmp(Gen.Source, 'Cooling')%loads the parameters for a distric cooling supply. 
-            QPform.output.C = [1,-1];
+            QPform.output.C = [1;-1];
         else 
         end
     else
@@ -81,21 +81,19 @@ if Plant.optimoptions.sequential
 else
     %this loads a segmented convex fit of an electric chiller, where the eletric load 
     %shows up in the electric energy balance
-    if strcmp(Gen.Source,'Electricity')
-%         [QPform,dX_dt,SSi] = segmentedChiller(Gen,'C');
-        [QPform,dX_dt,SSi] = constantChiller(Gen,'E');
-    else
-        %this loads an absorption chiller, where the heat load 
-        %shows up in the heating energy balance
-        % [QPform,dX_dt,SSi] = segmentedChiller(Gen,'H');
-        [QPform,dX_dt,SSi] = constantChiller(Gen,'H');
-    end
+        [QPform,dX_dt,SSi] = segmentedChiller(Gen);
+%         [QPform,dX_dt,SSi] = constantChiller(Gen);
 end
 end%Ends function loadChiller
 
-function [QPform,dX_dt,SSi] = constantChiller(Gen,source)
+function [QPform,dX_dt,SSi] = constantChiller(Gen)
 %loads a convex segmented COP fit of an electric or absorption chiller
 global Plant
+if strcmp(Gen.Source,'Electricity')
+    source = 'E';
+else
+    source = 'H';
+end
 maxCOP = max(Gen.Output.Cooling);
 LB = Gen.VariableStruct.Startup.Cooling(end); %chiller
 UB = Gen.Size;
@@ -108,58 +106,86 @@ QPform.A.H = 0;
 QPform.A.f = 0;
 QPform.A.lb = 0;
 QPform.A.ub = UB;
+QPform.output.C = 1;
+QPform.output.(source) = -1/maxCOP;
+
+%% Fit B has a constant electric demand
+xi = min(length(Gen.Output.Capacity)-2,nnz(Gen.Output.Capacity<0.5*Gen.Output.Capacity(end))); %fit the top 50% of output
+FitB = polyfit(Gen.Output.Capacity(xi:end)*UB,Gen.Output.Capacity(xi:end)*UB./Gen.Output.Cooling(xi:end),1);%calculating fit of input vs output
 QPform.A.H(2) = 0;
 QPform.A.f(2) = 0;
 QPform.A.lb(2) = LB;
 QPform.A.ub(2) = UB;
-QPform.output.C = 1;
-QPform.output.(source) = -1/maxCOP;
+QPform.output.C(2) = 1;
+QPform.constDemand.(source) = FitB(2);%constant electrical demand (kWe) when using fitB
+QPform.output.(source)(2) = -FitB(1);%marginal kWe for each kWthermal
 end%Ends function constantChiller
 
-function [QPform,dX_dt,SSi] = segmentedChiller(Gen,source)
+function [QPform,dX_dt,SSi] = segmentedChiller(Gen)
 %loads a convex segmented COP fit of an electric or absorption chiller
 global Plant
-[maxCOP,index] = max(Gen.Output.Cooling);
-n = min(3,length(Gen.Output.Cooling)-index+1); %number of linear segments to the chiller COP fit
+if strcmp(Gen.Source,'Electricity')
+    source = 'E';
+else
+    source = 'H';
+end
+[~,index] = max(Gen.Output.Cooling);
 LB = Gen.VariableStruct.Startup.Cooling(end); %chiller
 UB = Gen.Size;
+n = min(3,length(Gen.Output.Cooling)-index+1); %number of linear segments for the chiller COP fit
 [dX_dt,SSi] = RampRateCalc(Gen.VariableStruct.StateSpace,LB,UB,[]);
 dX_dt = dX_dt/Plant.optimoptions.scaletime;  
 QPform.Ramp.b = [dX_dt;dX_dt]; %-output1+output2=ramp up %output1-output2=-rampdown
 letters = {'A';'B';'C';'D';'E';'F';'G';'H';'I';'J';'K';'L';};
 QPform.states(1:n,1) = letters(1:n);
 QPform.states(1:n,2) = letters(1:n);
-xi = 1;
+xi = 2;
+ub = max(Gen.Output.Capacity(index)*UB,LB + (UB-LB)/n);
 for i = 1:1:n
     QPform.(letters{i}).H = 0;
     QPform.(letters{i}).f = 0;
     QPform.(letters{i}).lb = 0;
     if i ==1
-        QPform.(letters{i}).ub = max(Gen.Output.Cooling(index)*Gen.Size,LB + (UB-LB)/n);
+        QPform.(letters{i}).ub = ub;
     else
-        QPform.(letters{i}).ub = (UB-QPform.(letters{i-1}).ub)/(n-i+1);
+        ub = ub + (UB-QPform.(letters{1}).ub(1))/(n-1);
+        QPform.(letters{i}).ub = (UB-QPform.(letters{1}).ub(1))/(n-1);
     end
 
     QPform.(letters{i}).H(2) = 0;
     QPform.(letters{i}).f(2) = 0;
     if i ==1
         QPform.(letters{i}).lb(2) = LB;
-        QPform.(letters{i}).ub(2) = max(Gen.Output.Cooling(index)*Gen.Size,LB + (UB-LB)/n);
+        QPform.(letters{i}).ub(2) = QPform.(letters{i}).ub;
     else
         QPform.(letters{i}).lb(2) = 0;
-        QPform.(letters{i}).ub(2) = (UB-QPform.(letters{i-1}).ub(2))/(n-i+1);
+        QPform.(letters{i}).ub(2) = (UB-QPform.(letters{1}).ub(1))/(n-1);
     end
     xend = xi;
-    while Gen.Output.Capacity(xend)*UB<QPform.(letters{i}).ub(1) && xend<length(Gen.Output.Capacity)
+    while Gen.Output.Capacity(xend)*UB<ub && xend<length(Gen.Output.Capacity)
         xend = xend+1;
     end
-    if i == 1
-        Cratio = maxCOP;
-    else Cratio = mean(interp1(Gen.Output.Capacity(xi:xend),Gen.Output.Cooling(xi:xend),linspace(LB/Gen.Size+(i-1)/n,LB/Gen.Size+i/n,10)'));%ensure it is convex
+    COPavg = mean(interp1(Gen.Output.Capacity(xi:xend)*UB,Gen.Output.Cooling(xi:xend),linspace(max(Gen.Output.Capacity(xi)*UB,ub-QPform.(letters{i}).ub(1)),ub,10)'));
+    FitB = polyfit(Gen.Output.Capacity(xi:xend)*UB,Gen.Output.Capacity(xi:xend)*UB./Gen.Output.Cooling(xi:xend),1);%calculating fit of input vs output
+    if i ==1
+        QPform.constDemand.(source) = FitB(2);%constant  demand (kW) 
     end
-    QPform.output.C(i) = 1;
-    QPform.output.(source)(i) = -1/Cratio;
+    QPform.output.C(i,1:2) = 1;
+    QPform.output.(source)(i,1) = -1/COPavg;
+    QPform.output.(source)(i,2) = -FitB(1);
     xi = max(1,xend-1);
+    
+%     if i ==1
+%         figure(1)
+%         plot(Gen.Output.Capacity*UB,Gen.Output.Capacity*UB./Gen.Output.Cooling)
+%     elseif i ==2
+%         hold on
+%         plot(Gen.Output.Capacity(xi:xend)*UB, Gen.Output.Capacity(xi:xend)*UB*FitB(1)+FitB(2),'r')
+%     elseif i == 3
+%         plot(Gen.Output.Capacity(xi:xend)*UB, Gen.Output.Capacity(xi:xend)*UB*FitB(1)+FitB(2),'g')
+%     elseif i ==4
+%         plot(Gen.Output.Capacity(xi:xend)*UB, Gen.Output.Capacity(xi:xend)*UB*FitB(1)+FitB(2),'k')
+%     end
 end
 end%Ends function segmentedChiller
 
@@ -364,8 +390,10 @@ SSi =[];
 Eff = Gen.VariableStruct.MaxGenCapacity/(Gen.VariableStruct.MaxGenFlow*Gen.VariableStruct.MaxHead/0.01181);%Power (kW)/ideal power in kW
 QPform.Stor.Size = Gen.Size*Plant.optimoptions.scaletime;
 QPform.Stor.SelfDischarge  = 0; %needs to be evaporative losses
-QPform.Stor.UsableSize  = QPform.Stor.Size*((Gen.VariableStruct.MaxHead-Gen.VariableStruct.MinHead)/Gen.VariableStruct.MaxHead);
-QPform.Stor.Power2Flow = 1/(Eff*Gen.VariableStruct.MaxHead*84.674);%Power (kW) = efficiency(%) * Flow (1000 ft^3/s) * Head (ft) * 87.674 kJ/ (1000ft^3*ft)
+%Put this at 1/2 full capacity until the MaxHead-MinHead/MaxHead is fixed
+%Currently, with the previous solution, some plants lost a vast majority of usable space
+QPform.Stor.UsableSize  = QPform.Stor.Size*0.5;%*((Gen.VariableStruct.MaxHead-Gen.VariableStruct.MinHead)/Gen.VariableStruct.MaxHead);
+QPform.Stor.Power2Flow = 1/(Eff*Gen.VariableStruct.MaxHead*84.674);%Power (kW) = efficiency(%) * Flow (1000 ft^3/s) * Head (ft) * 84.674 kJ/ (1000ft^3*ft)
 QPform.output.E = [1 0];
 QPform.output.W = 0;
 

@@ -1,163 +1,155 @@
-  function LockedNet = fireNeurons(FirstDisp,GenDemand,marginCost,scaleCost)
-global Plant dischEff UB LB Si DateSim CurrentState
+  function LockedNet = fireNeurons(FirstDisp,GenDemand,marginCost,scaleCost,IC)
+global Plant dischEff Si DateSim
 global lockedNet lockederror net %these are created in this function and used in each subsequent step
 global Last24hour
 %input: inputs for neuron dispatch and network training
 %output: dispatch from network
 Time = buildTimeVector(Plant.optimoptions);%% set up dt vector of time interval length
-dt = Time - [0, Time(1:end-1)];
+dt = [Time - [0; Time(1:end-1)]]';
 nG = length(Plant.Generator);
 nS = length(Time);
 allgens = 1:nG;
-stor = allgens(dischEff>0);
-gens = allgens(and(UB~=inf,dischEff==0));
-gensandstor = [gens,stor];   
-ngs = length(gensandstor);
-ngens = length(gens);
 Out = Plant.optimoptions.Outputs;
 renews = []; %number of renewables
-for i = 1:1:nG
+gens = []; %generators
+stor = []; %storage
+UB = zeros(1,nG);
+LB = zeros(1,nG);
+QPsingle = Plant.OpMatB;
+f = zeros(1,nG);%linear costs of each comp
+H = zeros(1,nG);%quadratic costs of each comp
+Hratio = zeros(1,nG);
+Cratio = zeros(1,nG);
+for i = 1:1:nG%find renewables and upper and lower bounds
+    states = QPsingle.Organize.States{i};
     if strcmp(Plant.Generator(i).Source, 'Renewable')
         renews(end+1) = i;
+        UB(i) = Plant.Generator(i).Size;
+        LB(i) = 0;
+    elseif ~isempty(strfind(Plant.Generator(i).Type,'Storage'))
+        stor(end+1) = i;
+        UB(i) = Plant.Generator(i).Size;
+        LB(i) = UB(i).*.2;
+    elseif ~strcmp(Plant.Generator(i).Type,'Utility') && ~strcmp(Plant.Generator(i).Type,'Heater')%no unit commitment for utilities, storage, renewables, or heaters
+        gens(end+1) = i;
+        UB(i) = Plant.Generator(i).Size;
+        LB(i) = min(0,sum(QPsingle.lb(states)));
+        f(i) = Plant.OpMatB.f(states(1));%linear costs
+        H(i) = Plant.OpMatB.H(states(2),states(2));%quadratic costs
+        if isfield(Plant.Generator(i).Output, 'H')
+            Hratio(i) = Plant.Generator(i).Output.H(end);
+        end
+    else
+        UB(i) = inf;
+        LB(i) = 0;
     end
 end
+gensandstor = [gens,stor];   
+ngs = length(gensandstor);
+renewgen = zeros(nS,nG);
+ngens = length(gens);
 
-if Si==2
+if Si==1
     training = true;
 else training = false;
 end
 %% create training data for 7 days at different start times
 if training %train the first time through
-    Tdays = min(100, floor(length(Plant.Data.Demand.E)/(24*4)));%number of training data sets (Training days). You can only train for the number of days you have data for
+    Tdays = min(14, floor(length(Plant.Data.Demand.E)/(24*4)));%number of training data sets (Training days). You can only train for the number of days you have data for
     DateSim1 = DateSim;
     histdataTime = datevec(Plant.Data.Timestamp(1));
     DateSimVec = datevec(DateSim);
     DateSim = datenum([histdataTime(1), DateSimVec(2:5), 0]);%make sure you are training over the same year you have data for, don't include seconds
     Last24hour1 = Last24hour;
     tic
-    GenDisp = zeros(nS*Tdays,nG);
-    scaleCostT = zeros(nS*Tdays,length(scaleCost(1,:)));
-    FirstDispT = zeros(nS*Tdays,length(FirstDisp(1,:)));
-    predictDisp = [];
+    GenDisp = zeros(nS*Tdays,nG);%preallocate recording of solution
+    scaleCostT = zeros(nS*Tdays,length(scaleCost(1,:)));%preallocate recording of cost
+    FirstDispT = zeros(nS*Tdays,length(FirstDisp(1,:)));%preallocate recording of first dispatch (FitA)
+    RenewE = zeros(nS*Tdays,1);%preallocate recording of renewable gen
+    PredictDispatch = [];
     maxGenDem = 0;
+    DemandT1day = GenDemand;
     for i = 1:1:length(Out)
         DemandT.(Out{i}) = zeros(nS*Tdays, length(GenDemand.(Out{i})(1,:)));%this is demand Total: all the demand including what is provided by renewables over all the training days
     end
     for day = 0:1:Tdays-1%run for number of training days
-        if day==0
-            for i = 1:1:nG
-                if isfield(Plant.Generator(i).OpMatA.output, 'C') %make sure chillers have positive initial conditions
-                    if CurrentState.Generators(i)<0
-                        CurrentState.Generators(i) = LBmpc(i);
-                    end
-                end
-            end
-            IC = CurrentState.Generators;
-        else IC = predictDisp(1,:);
-            DateSim = DateSim+1;
-        end
-        if ~isempty(dischEff) %must be a storage system
-            IC(stor)=max(IC(stor).*(1-(1-dischEff(stor))*dt(1)),LB(stor));%scale storage value by discharge efficiency (this scaling is used in optimizations)
-        end
-        Date = Time/24+DateSim;
-        IC = min(UB,IC);
-        scaleCost = updateGeneratorCost(Date); %% All feedstock costs were assumed to be 1 when building matrices 
-        if day<1
+       %% Update IC & matrices (including Make forecast & predict renewables, to create forecasted demands)
+       DateSim = DateSim+1;%Plant.Data.Timestamp(day+1);
+        if isempty(PredictDispatch)
             PredictDispatch = ones(length(Time)+1,1)*IC;
-        else PredictDispatch = [IC;predictDisp(2:end,:)];
         end
+        scaleCost = updateGeneratorCost(Time/24 + DateSim); %% All feedstock costs were assumed to be 1 when building matrices 
         marginCost = updateMarginalCost(PredictDispatch,scaleCost,Time);%the dispatch is whatever has been dispatched so far, except for the initial condition.
-        %change demand to be the historical data + some gaussian noise
-        Organize = Plant.OpMatA.Organize;
         
-        [QPall,~] = updateMatrices(Plant.OpMatA.QP,Organize,IC,Time,scaleCost,marginCost,[]);
         %the demand should be historical data + gaussian noise (-renewable
         %generation if it is added to the QP)
-        renewgen = zeros(nS,1);
-        for i = 1:1:nG
-            if strcmp(Plant.Generator(i).Source, 'Renewable')
-                renewgen(i) = RenewableOutput(i,Date,'Predict');%Add forecast of renewable power @ resulution equal to the Time vector
-            end
+        for i =1:1:length(renews)%renewable generation
+            renewgen(:,renews(i))= RenewableOutput(Plant.Generator(renews(i)).VariableStruct,DateSim,Time,'Predict');%Add forecast of renewable power @ resulution equal to the Time vector
         end
-        renewgen = sum(renewgen,2);%this assumes that all renewable generation goes to electric demand
-        ibeq = 0;%index of demand within beq matrix
+        %rgen = sum(renewgen,2);%this assumes that all renewable generation goes to electric demand
         for j = 1:1:length(Out)
-            index = nnz(Plant.Data.Timestamp<=Date(1)):1:nnz(Plant.Data.Timestamp<=Date(end));
-            histData = Plant.Data.Demand.(Out{j})(index);%assumes data is every 15 minutes
+            histData = Plant.Data.Demand.(Out{j})(int16((DateSim-Plant.Data.Timestamp(1))*24*4+[1:nS].*dt*4'));%assumes data is every 15 minutes
             sizeHistData = size(histData);
             if sizeHistData(1) == 1 %if format is in a single row, change it to a single collumn
                 Last24hour.(Out{j}) = histData;
                 histData = histData';
             else Last24hour.(Out{j}) = histData';
             end
-            sigma = std(histData)/2;
+            sigma = std(histData)/5;
             qpdemand = max(histData + randn(size(histData))*sqrt(sigma),0);%historical data plus gaussian noise
             DemandT.(Out{j})(1+nS*day:nS*(1+day),:) = qpdemand;
-            if strcmp('H',Out{j}) && Plant.optimoptions.excessHeat
-                QPall.(Out{1}).b(1:nS) = qpdemand;
-            elseif ~Plant.optimoptions.sequential && strcmp('C',Out{j})
-                QPall.(Out{1}).beq(ibeq+1:ibeq+nS) = qpdemand;
-                ibeq = ibeq+nS;
-            else
-                QPall.(Out{1}).beq(ibeq+1:ibeq+nS) = qpdemand-renewgen;
-                ibeq = ibeq+nS;
-            end
+            DemandT1day.(Out{j}) = qpdemand;
         end
-            
-        %% Step 3 Determine initial dispatch
-        [FirstDisp,~,Feasible] = DispatchQP(QPall,Organize,[]);
-
-        %% Step 4 Refine Dispatch & Plot
-        for j = 1:1:length(Out)
-            StorPower.(Out{j}) = zeros(nS,1);
-            GenDemand.(Out{j}) = zeros(nS,1);
-            for i = 1:1:nG
-                if isfield(Plant.Generator(i).OpMatA.output,Out{j})
-                    if ~isfield(Plant.Generator(i).OpMatA,'Stor') %don't include the storage use/charging in this new profile;
-                        GenDemand.(Out{j}) = GenDemand.(Out{j}) + FirstDisp(2:end,i)*Plant.Generator(i).OpMatB.output.(Out{j});
-                    else  StorPower.(Out{j}) = StorPower.(Out{j}) + (FirstDisp(1:end-1,i)-FirstDisp(2:end,i))./dt'; 
-                    end
-                end
-            end
-        end
-        OptimalState = StepByStepDispatch(GenDemand,scaleCost,dt,IC,'initially constrained',FirstDisp);
-
-        %% check if any gen can be completley removed
+        QP = updateMatrices(Plant.OpMatB,IC,Time,scaleCost,marginCost,DemandT1day,renewgen,[]); %update fit B matrices
+        
+        %% Step 1 Determine initial dispatch
         Locked = true(nS+1,nG);
-        %% Rule 1 if off-line for entire optimal dispatch, then the generator should be off
-        for i = 1:1:ngens
-            if nnz(OptimalState(:,gens(i)))==0
-                Locked(:,gens(i))=false;
+        for i = 1:1:nG
+            if ~Plant.Generator(i).Enabled
+                Locked(:,i) = 0;
             end
         end
-        [FirstDisp, ~, Feasible] = DispatchQP(QPall,Organize,Locked);%this is the dispatch with fit A
-        if Feasible ~=1
-            Locked = true(nS+1,nG); %reset to all on default
+        [FirstDisp,~,Feasible] = DispatchQP(QP,Locked);
+        if ~(Feasible==1)%% hopefully not here
+            disp('error in training: initial dispatch was infeasible. Defaulting to previous dispatch');
+            FirstDisp= PredictDispatch;
         end
-
-        Organize = Plant.OpMatB.Organize;
-        marginCost = updateMarginalCost(FirstDisp,scaleCost,Time);
-        [QPall,Forecast] = updateMatrices(Plant.OpMatB.QP,Organize,IC,Time,scaleCost,marginCost,[]); %update fit B matrices
-        %make sure that demand is correct
-        ibeq = 0;%index of demand within beq matrix
-        for j = 1:1:length(Out)
-            if strcmp('H',Out{j}) && Plant.optimoptions.excessHeat
-                QPall.(Out{1}).b(1:nS) = DemandT.(Out{j})(1+nS*day:nS*(1+day),:);
-            elseif ~Plant.optimoptions.sequential && strcmp('C',Out{j})
-                QPall.(Out{1}).beq(ibeq+1:ibeq+nS) = DemandT.(Out{j})(1+nS*day:nS*(1+day),:);
-                ibeq = ibeq+nS;
-            else
-                QPall.(Out{1}).beq(ibeq+1:ibeq+nS) = DemandT.(Out{j})(1+nS*day:nS*(1+day),:)-renewgen;
-                ibeq = ibeq+nS;
+        %% Step 2 Dispatch step by step
+%         if Plant.optimoptions.MixedInteger
+%             tic
+%             OptimalState = StepByStepDispatch(Forecast,Renewable,scaleCost,dt,IC,'initially constrained',FirstDisp);
+%             tsim(1,2) = toc;
+%         else
+            OptimalState = FirstDisp;
+%         end
+        %% Start with optimal dispatch, and check if feasible
+        tic
+        marginCost = updateMarginalCost(OptimalState,scaleCost,Time);
+        QP = updateMatrices(Plant.OpMatB,IC,Time,scaleCost,marginCost,DemandT1day,renewgen,[]); %update fit B matrices
+        for i = 1:1:nG
+            if QP.Organize.Dispatchable(i) ==1
+                Locked(OptimalState(:,i)==0,i)=false;
             end
         end
-        [DayDisp, dX] = FilterGenerators(QPall,Organize,IC,Forecast,FirstDisp,OptimalState,scaleCost,Locked);
+%         if Plant.optimoptions.MixedInteger
+%             [DayDisp, ~, Feasible] = DispatchQP(QP,Locked);%this is the dispatch with fit B
+%             if Feasible ~=1
+%                 [DayDisp, ~, Feasible] = FindFeasible(QP,Locked);
+%                 if ~(Feasible==1)%% hopefully not here
+%                     disp('error: Cannot Find Feasible Dispatch');
+%                 end
+%             end
+%         else
+            DayDisp = FilterGenerators(QP,OptimalState,Locked,[0;Time/24] + DateSim);
+%         end
+        %record
         GenDisp(1+nS*day:nS*(day+1),:) = DayDisp(2:end,:);
         scaleCostT(1+nS*day:nS*(day+1),:) = scaleCost;
         FirstDispT(1+nS*day:nS*(1+day),:) = FirstDisp(2:end,:);
-        predictDisp = DayDisp;%[DayDisp(ceil(.3*nS):end,:);DayDisp(1:ceil(.3*nS)-1,:)];
+        PredictDispatch = DayDisp;%[DayDisp(ceil(.3*nS):end,:);DayDisp(1:ceil(.3*nS)-1,:)];
         maxGenDem = max(max(GenDemand.E),maxGenDem);
-        Last24hour.Timestamp = Date(1)-1:Plant.optimoptions.Resolution/24:Date(1)-Plant.optimoptions.Resolution/24;
+        RenewE(1+nS*day:nS*(day+1),:) = sum(renewgen,2);
+        Last24hour.Timestamp = DateSim+Time./24;
     end
     GenDisp = [GenDisp(1,:);GenDisp];
     scaleCost = scaleCostT;
@@ -165,7 +157,7 @@ if training %train the first time through
     for i = 1:1:length(Out)
         GenDemand.(Out{i}) = DemandT.(Out{i});
     end
-    Time = repmat(Time,1,Tdays);
+    Time = repmat(Time,Tdays,1);
     dt = repmat(dt,1,Tdays);
     nS = length(Time);
     DateSim = DateSim1;
@@ -173,33 +165,54 @@ if training %train the first time through
 end
 
 %% create train and dispatch a locked network
-lockInputs = zeros(nS, 5*ngens+2+length(Out));
+lockInputs = zeros(nS, 8*ngens+1+length(stor)+length(Out));
 for i = 1:1:length(Out)
-    lockInputs(:,i) = GenDemand.(Out{i})./(max(GenDemand.(Out{i}))*1.5);%demands
+    if strcmp(Out,'E')
+        lockInputs(:,i) = (GenDemand.(Out{i})-RenewE)./(max(GenDemand.(Out{i})));
+    else
+        lockInputs(:,i) = GenDemand.(Out{i})./(max(GenDemand.(Out{i})));
+    end
 end
-%lockInputs(:,1) = GenDemand.E./(maxGenDem*1.5);%demand
-lockInputs(:,2) = (scaleCost(:,1).*dt')./max(scaleCost(:,1).*dt');%cost of utility electrical
-lockInputs(:,3) = FirstDisp(1:end-1,stor)./UB(stor);%SOC of battery at previous step
+col = length(Out)+1;%collumn for input
+lockInputs(:,col) = (scaleCost(:,1).*dt')./max(Plant.Generator(1).VariableStruct.SumRates(:,1)).*dt';%cost of utility electrical
+lockInputs(:,col+1:col+length(stor)) = (FirstDisp(1:end-1,stor)-FirstDisp(2:end,stor))./(ones(nS,1)*max(FirstDisp(1:end-1,stor)-FirstDisp(2:end,stor)));%SOC of battery at previous step
+col = col+length(stor);
 for i = 1:1:ngens
     j = gens(i);
-    if ~isempty(renews)
-        j1 = j-nnz(renews<j);%this index is used for f and H matrices
-    else j1 = j;
+    j1 = QPsingle.Organize.States{i};
+    if ~isempty(j1)
+        if ~isfield(Plant.Generator(j).OpMatB.output,'C') || ~Plant.optimoptions.sequential %if its not a chiller or the chillers are run concurrently pull costs from OneStep.E
+            lockInputs(:,col) = scaleCost(:,2).*f(j)./(max(scaleCost(:,2))*max(f)-min(scaleCost(:,2))*min(f));
+            lockInputs(:,col+1) = scaleCost(:,2).*H(j)./(max(scaleCost(:,2))*max(H));%minH is 0
+            lockInputs(:,col+2) = Hratio(j)./max(Hratio);
+            col = col+3;
+        else %if its a chiller have cost be proportional to the energy it uses up
+            lockInputs(:,col) = scaleCost(:,1).*(Cratio(j))./(max(Cratio)*max(scaleCost(:,1)));
+            col = col+1;
+            %lockInputs(:,col+i) = (scaleCost(:,2).*Plant.OpMatB.f(j1(1)).*dt')./max(scaleCost(:,2).*Plant.OpMatB.f(j1(1)).*dt');%linear cost
+            %lockInputs(:,col+ngens+i) = (scaleCost(:,2).*Plant.OpMatB.H(j1(2),j1(2)).*dt')./max(scaleCost(:,2).*Plant.OpMatB.H(j1(2),j1(2)).*dt');%quadratic cost
+        end
+%         if isfield(Plant.Generator(j).VariableStruct, 'StartCost') %heaters don't have this
+%             lockInputs(:,col+2*ngens+i) = (scaleCost(:,2).*Plant.Generator(j).VariableStruct.StartCost.*dt')./max(scaleCost(:,2).*Plant.Generator(j).VariableStruct.StartCost.*dt');%onCost
+%         end
+        lockInputs(:,col) = min(FirstDisp(1:end-1,j)+Plant.Generator(j).OpMatB.Ramp.b(1),UB(j))./UB(j);%upper bound
+        lockInputs(:,col+1) = max(FirstDisp(1:end-1,j)-Plant.Generator(j).OpMatB.Ramp.b(1),LB(j))./UB(j);%lower bound
+        lockInputs(:,col+2) = FirstDisp(2:end,j)./UB(j);
+        lockInputs(:,col+3) = (FirstDisp(1:end-1,j)-LB(j))./UB(j);
+        lockInputs(:,col+4) = [FirstDisp(3:end,j);FirstDisp(1,j)]./UB(j);
+        col = col+4;
     end
-    if ~isfield(Plant.Generator(j).OpMatB.output,'C') || ~Plant.optimoptions.sequential %if its not a chiller or the chillers are run concurrently pull costs from OneStep.E
-        lockInputs(:,3+i) = (scaleCost(:,2).*Plant.OneStep.E(1).f(j1).*dt')./max(scaleCost(:,2).*Plant.OneStep.E(1).f(j1).*dt');%linear cost
-        lockInputs(:,3+ngens+i) = (scaleCost(:,2).*Plant.OneStep.E(1).H(j1,j1).*dt')./max(scaleCost(:,2).*Plant.OneStep.E(1).H(j1,j1).*dt');%quadratic cost
-    else %if its a chiller run in sequence before generators, pull costs from OneStep.C
-        lockInputs(:,3+i) = (scaleCost(:,2).*Plant.OneStep.C(1).f(j1).*dt')./max(scaleCost(:,2).*Plant.OneStep.C(1).f(j1).*dt');%linear cost
-        lockInputs(:,3+ngens+i) = (scaleCost(:,2).*Plant.OneStep.C(1).H(j1,j1).*dt')./max(scaleCost(:,2).*Plant.OneStep.C(1).H(j1,j1).*dt');%quadratic cost
-    end
-    lockInputs(:,3+2*ngens+i) = (scaleCost(:,2).*Plant.Generator(j).OpMatB.constCost.*dt')./max(scaleCost(:,2).*Plant.Generator(j).OpMatB.constCost.*dt');%onCost
-    lockInputs(:,3+3*ngens+i) = min(FirstDisp(1:end-1,j)+Plant.Generator(j).OpMatB.Ramp.b(1),UB(j))./UB(j);%upper bound
-    lockInputs(:,3+4*ngens+i) = max(FirstDisp(1:end-1,j)+Plant.Generator(j).OpMatB.Ramp.b(1),LB(j))./UB(j);%lower bound
 end
 
 %prevent Nans
 lockInputs(isnan(lockInputs)) = 0;
+%removeCols = true(1,length(lockInputs(1,:))); %if no variance, remove that collumn
+% for i = 1:1:length(lockInputs(1,:))
+%     if nnz(lockInputs(:,i)~=0)==0
+%         removeCols(i) = false;
+%     end
+% end
+%lockInputs = lockInputs(:,removeCols);
 
 if training %train it the first time through, use it later
     lockedNet = Neural_Network(length(lockInputs(1,:)),ngens,'classify',1);
@@ -209,8 +222,8 @@ if training %train it the first time through, use it later
 end
 %use the network to find which generators to lock off or on
 LockedNet = forward(lockedNet, lockInputs(1:nS,:));
-LockedNet(LockedNet>=0.7) = 1;
-LockedNet(LockedNet<0.7) = 0;
+% LockedNet(LockedNet>=0.95) = 1;
+% LockedNet(LockedNet<0.95) = 0;
 
 %% create train and dispatch dispatch network
 % geninputs = zeros(nS, length(lockInputs(1,:))+3*length(stor)+length(LockedNet(:,1)));

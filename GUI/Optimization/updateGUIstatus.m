@@ -29,7 +29,7 @@ end
 if ~isempty(GENINDEX)
     if ~isempty(strfind(Plant.Generator(GENINDEX).Type,'Storage'))
         if strcmp(Plant.Generator(GENINDEX).Type,'Hydro Storage')
-            power = (GenDisp(2,Plant.Generator(GENINDEX).QPform.DownRiverSegment) - GenDisp(2,Plant.Generator(GENINDEX).QPform.SpillFlow))*Plant.Generator(GENINDEX).QPform.output.E;
+            power = (GenDisp(2,GENINDEX));
         else
             power = (GenDisp(1,GENINDEX)- GenDisp(2,GENINDEX))/Plant.optimoptions.Resolution*Plant.Generator(GENINDEX).QPform.Stor.DischEff;
         end

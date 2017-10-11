@@ -38,14 +38,17 @@ if length(varargin)==1 % first initialization
     block.Air.IC.T = 700;
     block.Air.IC.N2 = .79;
     block.Air.IC.O2 = .21;
+    block.Air.Saturation = [0,inf];
     
     block.Fuel.IC.T = 700;
     block.Fuel.IC.CH4 = 0.9;
     block.Fuel.IC.CO = 0.05;
     block.Fuel.IC.CO2 = 0.03;
     block.Fuel.IC.N2 = 0.02;
+    block.Fuel.Saturation = [0,inf];
     
     block.Pout.IC = 100;
+    block.Pout.Saturation = [0,inf];
     block.Pout.Pstate = []; %identifies the state # of the pressure state if this block has one
     
     block.OutletPorts = {'Bypass','Main','Pin'};
@@ -68,6 +71,8 @@ if length(varargin)==1 % first initialization
 elseif length(varargin)==2 %% Have inlets connected, re-initialize
     block = varargin{1};
     Inlet = varargin{2};
+    
+    Inlet = checkSaturation(Inlet,block);
     Bypass = 1 - (2*Inlet.Fuel.CH4+.5*Inlet.Fuel.CO+.5*Inlet.Fuel.H2)/(Inlet.Air.O2*block.EquivSet);
     R(1) = Inlet.Fuel.CH4*block.Rxn1;
     R(2) = (Inlet.Fuel.CO+R(1))*block.Rxn2;
@@ -141,6 +146,8 @@ else%running the model
     string1 = varargin{5};
     Bypass = Y(5);
     Pin = Y(6);
+    
+    Inlet = checkSaturation(Inlet,block);
     NetOut = block.Pfactor*(Pin-Inlet.Pout);%total cold flow out
     spec = {'CH4','CO','CO2','H2','H2O'};
     for i =1:1:length(spec)

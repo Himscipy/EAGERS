@@ -1,13 +1,19 @@
 function IC = automaticInitialCondition(Data_t0)
 global Plant DateSim OnOff CurrentState
-nG = length(Plant.Generator);
-nB = length(Plant.Building);
-nL = length(Plant.OpMatA.Organize.IC)-nG-nB;
 if strcmp(Plant.optimoptions.solver,'NREL')
-    %skip initialization
+    nG = length(Plant.Generator);%skip initialization
     IC = zeros(1,nG);
+    
+    for i=1:1:nG
+        if ismember(Plant.Generator(i).Type,{'Electric Storage';'Thermal Storage';})
+            IC(i) = 0.5*Plant.Generator(i).Size*(Plant.Generator(i).VariableStruct.MaxDOD/100); % IC = halfway charged energy storage
+        end
+    end
     CurrentState.Generators=IC(1:nG);
 else
+    nG = length(Plant.Generator);
+    nB = length(Plant.Building);
+    nL = length(Plant.OpMatA.Organize.IC)-nG-nB;
     scaleCost = updateGeneratorCost(DateSim);%% All costs were assumed to be 1 when building matrices, update Generator costs for the given time
     Data_t0.Renewable = zeros(1,length(Plant.Generator));
     for i = 1:1:nG
@@ -21,13 +27,10 @@ else
         CurrentState.Buildings(i) = 21.1; %initial temperature guess
     end
     
-    if ~isfield(Plant.Network,'Hydro')
-        %%need to make this work for a case with Hydro and other generators
-        IC = StepByStepDispatch(Data_t0,scaleCost,Plant.optimoptions.Resolution,'',[]);
-    end
+    IC = StepByStepDispatch(Data_t0,scaleCost,Plant.optimoptions.Resolution,'',[]);
     OnOff = true(1,nG);
     for i=1:1:nG
-        if ismember(Plant.Generator(i).Type,{'Electrical Storage';'Thermal Storage';})
+        if ismember(Plant.Generator(i).Type,{'Electric Storage';'Thermal Storage';})
             IC(i) = 0.5*Plant.Generator(i).QPform.Stor.UsableSize; % IC = halfway charged energy storage
         elseif Plant.OpMatA.Organize.Dispatchable(i)
             states = Plant.Generator(i).QPform.states(:,end);
@@ -48,7 +51,7 @@ else
                 i = equip(k);
                 if strcmp(Plant.Generator(i).Type,'Hydro Storage')
                     CurrentState.Hydro(i) = 0.5*Plant.Generator(i).QPform.Stor.UsableSize; % IC = halfway charged energy storage
-                    IC(i) = (Data_t0.Hydro.OutFlow(n) - Data_t0.Hydro.SpillFlow(n))/Plant.Generator(i).QPform.Stor.Power2Flow; %inital power
+%                     IC(i) = (Data_t0.Hydro.OutFlow(n) - Data_t0.Hydro.SpillFlow(n))/Plant.Generator(i).QPform.Stor.Power2Flow; %inital power
                 end
             end
         end

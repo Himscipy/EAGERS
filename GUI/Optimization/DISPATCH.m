@@ -325,9 +325,7 @@ function PlotSwitch(hObject)
 % otherwise swap the small plot picked and main plot
 global Plant
 handles = guihandles;
-networkNames = fieldnames(Plant.Network);
-networkNames = networkNames(~strcmp('name',networkNames));
-networkNames = networkNames(~strcmp('Equipment',networkNames));
+networkNames = fieldnames(Plant.subNet);
 nPlot = length(networkNames);
 net = get(hObject,'String');
 plotI = get(hObject,'UserData');
@@ -450,7 +448,7 @@ end
 list = get(handles.uipanelMain1,'UserData');
 gen = length(list);
 page = get(handles.(strcat('PrevGen',num2str(tab))),'UserData');%current page of the list
-if page<2
+if (page-1)<2%if the new page is the 1st
     set(handles.(strcat('PrevGen',num2str(tab))),'Visible','off','UserData',page-1)
 else
     set(handles.(strcat('PrevGen',num2str(tab))),'Visible','on','UserData',page-1);
@@ -629,7 +627,7 @@ end
 
 % --- Executes on button press in Start.
 function Start_Callback(hObject, eventdata, handles)
-global Plant Virtual RealTime DispatchWaitbar DateSim Last24hour GenAvailTime RestartTime RealTimeData
+global Model_dir Plant Virtual RealTime DispatchWaitbar DateSim Last24hour GenAvailTime RestartTime RealTimeData
 %Virtual: Running a simulation only, set to zero when the end of the test data set is reached
 %DateSim: Current time in the simulation.
 %NumSteps: the number of dispatch optimiztions that will occur during the entire simulation
@@ -683,14 +681,24 @@ if any(strcmp(Plant.optimoptions.method,{'Control'}))
     end
     GenAvailTime = ones(1,nG).*DateSim; %  Global variable needed in controller mode
 end
-[~,n] = size(Plant.OneStep.organize);
-nL = n-nG-nB;
-NumSteps = Plant.optimoptions.Interval*24/Plant.optimoptions.Resolution;
+if isempty(Plant.OneStep)
+    nL = 0;
+else
+    [~,n] = size(Plant.OneStep.organize);
+    nL = n-nG-nB;
+end
+NumSteps = Plant.optimoptions.Interval*24/Plant.optimoptions.Resolution+1;
 Plant.Dispatch.Temperature = zeros(NumSteps,1);
 Plant.Dispatch.Timestamp = zeros(NumSteps,1);
 Plant.Dispatch.GeneratorState = zeros(NumSteps,nG+nL+nB);
 Plant.Predicted.GenDisp = zeros(round(Plant.optimoptions.Horizon/Plant.optimoptions.Resolution)+1,nG+nL+nB,NumSteps);
 Plant.Predicted.Timestamp = zeros(round(Plant.optimoptions.Horizon/Plant.optimoptions.Resolution)+1,NumSteps);
+Plant.Predicted.Cost = zeros(NumSteps,1);
+if Plant.optimoptions.MixedInteger%if you are running mixed integer, run simplified for comparison
+    Plant.Predicted.GenDispcQP = zeros(round(Plant.optimoptions.Horizon/Plant.optimoptions.Resolution)+1,nG+nL+nB,NumSteps);
+    Plant.Predicted.CostcQP = zeros(NumSteps,1);
+    timerscQP = zeros(NumSteps,3);
+end
 if isfield(RealTimeData,'Demand')
     Outs =  fieldnames(RealTimeData.Demand);
     for i = 1:1:length(Outs)
@@ -734,7 +742,7 @@ mainFig = gcf;
 DispatchWaitbar=waitbar(0,'Running Dispatch','Visible','off');
 Time = buildTimeVector(Plant.optimoptions);%% set up vector of time interval
 timers = zeros(NumSteps,3); % To record times set to zeros(1,3), to not record set to [];
-while Si<NumSteps
+while Si<NumSteps-1
     Date = DateSim+[0;Time/24];
     if isempty(Plant.Building)
         Data = GetCurrentData(DateSim);
@@ -742,7 +750,16 @@ while Si<NumSteps
         Data = updateForecast(DateSim,[]);
     end
     Forecast = updateForecast(Date(2:end),Data);%% function that creates demand vector with time intervals coresponding to those selected
-    [LastDispatch,timers(Si,:)] = DispatchLoop(Date,Forecast,LastDispatch);
+    [LastDispatch1,timers(Si,:),Cost] = DispatchLoop(Date,Forecast,LastDispatch);
+    Plant.Predicted.Cost(Si) = Cost;
+    if Plant.optimoptions.MixedInteger %if you are running mixed integer, compare it to non-MI
+        Plant.optimoptions.MixedInteger = false;
+        [LastDispatchcQP,timerscQP(Si,:),Cost] = DispatchLoop(Date,Forecast,LastDispatch);
+        Plant.optimoptions.MixedInteger = true;
+        Plant.Predicted.GenDispcQP(:,:,Si) = LastDispatchcQP;
+        Plant.Predicted.CostcQP(Si) = Cost;
+    end
+    LastDispatch = LastDispatch1;
 %     disp(strcat('FistDisp:',num2str(timers(Si,1))));
 %     disp(strcat('StebByStep:',num2str(timers(Si,2))));
 %     disp(strcat('FinalDisp:',num2str(timers(Si,3))));
@@ -759,6 +776,13 @@ while Si<NumSteps
     
     Si = StepDispatchForward(Si,Date,Data,Forecast,LastDispatch);
     waitbar(Si/NumSteps,DispatchWaitbar,strcat('Running Dispatch'));
+    if rem(Si,100)==0 
+        if Plant.optimoptions.MixedInteger
+            save(fullfile(Model_dir,'GUI','Optimization','Results',strcat(Plant.Name,'_MixedInteger_',num2str(ceil(Si/100)),'.mat')),'Plant')
+        else
+            save(fullfile(Model_dir,'GUI','Optimization','Results',strcat(Plant.Name,'_Non_MixedInteger_',num2str(ceil(Si/100)),'.mat')),'Plant')
+        end
+    end
 end
 if strcmp(Plant.optimoptions.method,'Dispatch')
     Plant.Cost.Dispatch = NetCostCalc(Plant.Dispatch.GeneratorState,Plant.Dispatch.Timestamp,'Dispatch');

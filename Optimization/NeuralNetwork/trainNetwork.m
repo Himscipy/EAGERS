@@ -48,8 +48,9 @@ for i = 1:1:length(dedW(1,:)) %each set for each node output must be trained ind
     iterations = 0;
     laststep = zeros(size(dedW1));
     lastbstep = zeros(size(dedb1));
-    a = 100;
+    a = 10000;
     failed = false;
+    direction = 0;
 %     a = 100/(100^Net.classify);%start at 100 for numeric, start at 1 for classification
     while nnz(sqrerror1>tolerance)>0 %keep training until you get the desired output
         iterations = iterations+1;
@@ -73,7 +74,7 @@ for i = 1:1:length(dedW(1,:)) %each set for each node output must be trained ind
         end
         scalar = a;%/max(max(abs(trainingstep)));
         if Net.classify
-            momentum = .1;%.3 is too high, .1 is too low, .2 does well for test2E_1BS
+            momentum = .25;%.3 is too high, .1 is too low, .2 does well for test2E_1BS
         else momentum = 0.5;
         end
         step = -trainingstep.*scalar+laststep.*momentum;
@@ -86,6 +87,7 @@ for i = 1:1:length(dedW(1,:)) %each set for each node output must be trained ind
         dedbnew1 = dedbnew(:,i);
         if sum(sum(abs(sqrerrornew1)))>=sum(sum(abs(sqrerror1))) || nnz(abs(dedWnew1)>1e-30)==0 || nnz(isinf(sqrerrornew1))>0%|| nnz(isnan(dedWnew))>0%if the error gets worse or you have reached a flat point
             if abs(a) <1e-12 %try the other direction
+                direction = direction + 1;
                 a = -a*1e15/(100^Net.classify);
             else
                 a = a/10;
@@ -95,6 +97,7 @@ for i = 1:1:length(dedW(1,:)) %each set for each node output must be trained ind
             laststep = zeros(size(laststep));
             lastbstep = zeros(size(lastbstep));
         else
+            direction = 0;
 %             yk = dedWnew1 - dedW1;%this is the change in dedW from the step
             laststep = step;
             lastbstep = bstep;
@@ -121,13 +124,14 @@ for i = 1:1:length(dedW(1,:)) %each set for each node output must be trained ind
 %                 end
 %             end
         end
-        if iterations>1e+4*length(desiredOut(1,:))/100%10^4 iterations per 100 timesteps
+        if iterations>1e+4*length(desiredOut(1,:))/10 || direction >=2 %|| (iterations>1e+4*length(desiredOut(1,:))/100 && nnz(sqrerrornew1>tolerance)/length(desiredOut(1,:))<0.01)%/100%10^4 iterations per 100 timesteps
             disp('not converging after 10^4 iterations, exiting loop');
             if Net.classify
-                if failed ==false && sum(sum(sqrerror))>length(sqrerror)*0.025%wrong for more than 5 percent of timesteps
+                if failed ==false && sum(sum(sqrerror(i,:)))>length(sqrerror(i,:))*0.025%wrong for more than 5 percent of timesteps
                     Net.Wlayer1(:,i) = rand(length(Net.Wlayer1(:,i)),1);%start with new initial values
                     iterations = 0;
                     failed = true;
+                    direction = 0;
                 else
                     sqrerror(i,:) = sqrerrornew1;
                     break

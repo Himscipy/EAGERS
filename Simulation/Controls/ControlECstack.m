@@ -11,8 +11,12 @@ global Tags
 F=96485.339; % %Faraday's constant in Coulomb/mole
 if length(varargin)==1 %first initialization
     block = varargin{1};
-    block.PIdescription = {'Oxidant Flow Rate';'Fuel Cell Current';};
-    block.TargetDescription = {'Operating Temperature';'Net Power'};
+    OxFlow = NetFlow(ComponentProperty(block.OxidantFlow)); 
+    if OxFlow>0
+        block.PIdescription = {'Oxidant Flow Rate';'Oxidant Temperature';};
+    else block.PIdescription = {'Current'};
+    end
+    block.TargetDescription = {'Operating Temperature';'Hot/Cold Temperature Differential';'Net Power'};
     Target = zeros(length(block.Target),1);
     for j = 1:1:length(Target)
         Target(j) = ComponentProperty(block.Target{j});
@@ -24,24 +28,25 @@ if length(varargin)==1 %first initialization
         block.InletPorts(end+1) = {strcat('Target',num2str(i))};
         block.OutletPorts(end+1) = {strcat('Measured',num2str(i))};
         block.(strcat('Target',num2str(i))).IC = block.Target(i);
+        block.(strcat('Target',num2str(i))).Saturation =  [-inf,inf];
         block.(strcat('Measured',num2str(i))).IC = block.Target(i);
     end
-    block.InletPorts(end+1:end+2) = {'Temperature','Voltage'};
-    block.Temperature.IC = ComponentProperty(strcat(block.connections{3},'.IC'));
-    block.Voltage.IC = ComponentProperty(strcat(block.connections{4},'.IC'));
+    block.InletPorts(end+1:end+2) = {'Hot','Voltage'};
+    block.Hot.IC = ComponentProperty(strcat(block.connections{4},'.IC'));
+    block.Hot.Saturation =  [0,inf];
+    block.Voltage.IC = ComponentProperty(strcat(block.connections{5},'.IC'));
+    block.Voltage.Saturation =  [-inf,inf];
     
-    block.deltaTStack = ComponentProperty(block.deltaTStack);
     block.Cells = ComponentProperty(block.Cells);
     block.Steam = ComponentProperty(block.Steam);
     block.Utilization = ComponentProperty(block.Utilization);
     block.SteamTemperature = ComponentProperty(block.SteamTemperature);
     
-    OxFlow = NetFlow(ComponentProperty(block.OxidantFlow)); 
-    Current = block.Target2.IC*1000/(block.Voltage.IC*block.Cells);
-    SteamFlow = (block.Cells*abs(Current)/(2*F*block.Utilization*block.Steam.H2O)/1000);
+    Current = block.Target3.IC*1000/(block.Voltage.IC*block.Cells);
+    SteamFlow = (block.Cells*abs(Current)/(2000*F*block.Utilization*block.Steam.H2O));
     [h,~] = enthalpy(block.Target1.IC,{'H2','H2O','O2'});
     h_rxn3 = h.H2+.5*h.O2-h.H2O;
-    block.Vbalance = 1./(2*F)*h_rxn3; %voltage that balances heat
+    block.Vbalance = h_rxn3./(2*F); %voltage that balances heat
 
     block.OutletPorts = {'OxidantTemp','OxidantFlow','SteamTemp','SteamFlow','Current'};
     block.OxidantTemp.IC = block.Target1.IC;
@@ -52,16 +57,16 @@ if length(varargin)==1 %first initialization
     
     block.P_Difference = {};
 
-    block.IC = 1; % inital condition
-        
     if OxFlow>0
+        block.IC = [1, 1]; % inital condition
         block.HasFlow = true;
-        block.Scale = [OxFlow;];
+        block.Scale = [OxFlow;block.OxidantTemp.IC];
         block.UpperBound = inf;
         block.LowerBound = 0;
-    else 
+    else
+        block.IC = 1; % inital condition
         block.HasFlow = false;
-        block.Scale = [Current;];
+        block.Scale = Current;
         block.UpperBound = inf;
         block.LowerBound = -inf;
     end
@@ -69,32 +74,35 @@ if length(varargin)==1 %first initialization
 elseif length(varargin)==2 %% Have inlets connected, re-initialize
     block = varargin{1};
     Inlet = varargin{2};
-    PowerError = (Inlet.Target2-abs(block.Current.IC)*Inlet.Voltage*block.Cells/1000)/Inlet.Target2;
+    Inlet = checkSaturation(Inlet,block);
+    PowerError = (Inlet.Target3-block.Current.IC*Inlet.Voltage*block.Cells/1000)/Inlet.Target3;
     block.Current.IC = block.Current.IC*(1 + PowerError);
     block.SteamFlow.IC = (block.Cells*abs(block.Current.IC)/(2*F*block.Utilization*block.Steam.H2O)/1000);
     block.SteamTemp.IC = block.SteamTemp.IC; %currently not manipulated during initialization
     
-    averageT = mean(Inlet.Temperature);
+    PEN_Temperature = mean(ComponentProperty('EC1.T.Elec'));
+    averageT = (mean(Inlet.Hot)+block.OxidantTemp.IC)/2; %average temperature of cathode 
+    block.dT_cath_PEN = PEN_Temperature - averageT; %temperature differencce between cathode and PEN 
+    
+    
+    averageT = (block.OxidantTemp.IC+mean(Inlet.Hot))/2+block.dT_cath_PEN;
     
     block.Measured1.IC = averageT;
     block.Measured2.IC = block.Current.IC*Inlet.Voltage*block.Cells/1000; %Power in kW
     
     if block.HasFlow
-        Q_anode = block.OxidantFlow.IC*40*block.deltaTStack;
-        
-        if ((block.Cells*(Inlet.Voltage - block.Vbalance)*abs(block.Current.IC)/1000) - Q_anode)>0
-            block.OxidantTemp.IC = Inlet.Target1-100; %cooling stack
-            TavgError = (averageT -Inlet.Target1)/block.deltaTStack; % too hot = increase flow
-        else
-            block.OxidantTemp.IC = Inlet.Target1+100;%heating stack
-            TavgError = (Inlet.Target1-averageT)/block.deltaTStack; %too hot = reduce flow
-        end
-        block.InitializeError = abs(TavgError); 
+        deltaT = (mean(Inlet.Hot)-block.OxidantTemp.IC);
+        dTerror =(deltaT-Inlet.Target2)/Inlet.Target2;
 
-        newFlow = block.OxidantFlow.IC*(1+.5*TavgError);
-        block.OxidantFlow.IC = newFlow;
-        block.Scale = [block.OxidantFlow.IC];
-        block.IC = [1-TavgError*block.PropGain(1)]; %Oxidant flow rate
+        TavgError = (Inlet.Target1-averageT)/Inlet.Target2; 
+        block.InitializeError = max(abs(TavgError),abs(dTerror));
+
+        a = .5;
+        block.OxidantFlow.IC = block.OxidantFlow.IC*(1+a*dTerror); 
+        block.OxidantTemp.IC = block.OxidantTemp.IC + a*(TavgError + .75*dTerror)*Inlet.Target2;
+        
+        block.Scale = [block.OxidantFlow.IC;block.OxidantTemp.IC];
+        block.IC = [1-dTerror*block.PropGain(1);1-TavgError*block.PropGain(2)]; %Oxidant flow rate
     else
         block.InitializeError = 0;
         block.Scale = [block.Current.IC];
@@ -107,11 +115,10 @@ else %running the model
     Inlet = varargin{3};
     block = varargin{4};
     string1 = varargin{5};
-    averageT = mean(Inlet.Temperature);
-    % averageT = (Inlet.Hot - Inlet.Cold + block.dT_cath_PEN);
-
+    Inlet = checkSaturation(Inlet,block);
+    P_Gain = block.PropGain.*block.Scale;
     if block.HasFlow
-        Current = -Inlet.Target2*1000/(Inlet.Voltage*block.Cells);
+        Current = Inlet.Target3*1000/(Inlet.Voltage*block.Cells);
     else
         Current = Y(1);
         VoltError = block.Vbalance - Inlet.Voltage;
@@ -119,23 +126,28 @@ else %running the model
     SteamFlow = block.Cells*abs(Current)/(2*F*block.Utilization*block.Steam.H2O)/1000;
 
     if block.HasFlow
-        Q_anode = Y(1)*40*block.deltaTStack;
-        if ((block.Cells*(Inlet.Voltage - block.Vbalance)*abs(Current)/1000) - Q_anode)>0
-            Out.OxidantTemp = Inlet.Target1-100; %cooling stack
-            TavgError = (averageT -Inlet.Target1)/block.deltaTStack; % too hot = increase flow
+        averageT = (Y(2)+mean(Inlet.Hot))/2+block.dT_cath_PEN;
+        TavgError = (Inlet.Target1-averageT)/Inlet.Target2; %too hot = reduce flow
+        deltaT = abs(mean(Inlet.Hot)-(Y(2)+TavgError*P_Gain(2)));
+        dTerror =(deltaT-Inlet.Target2)/Inlet.Target2;
+        OxFlow = Y(1)+dTerror*P_Gain(1);
+        OxTemp = Y(2)+TavgError*P_Gain(2);
+        if OxFlow < block.OxidantFlow.IC*block.MinOxidantFlowPerc/100
+            OxFlow = block.OxidantFlow.IC*block.MinOxidantFlowPerc/100;
+            FixedFlow = true;
         else
-            Out.OxidantTemp = Inlet.Target1+100;%heating stack
-            TavgError = (Inlet.Target1-averageT)/block.deltaTStack; %too hot = reduce flow
+            FixedFlow = false;
         end
-        Out.OxidantFlow = max(0,Y(1)+(TavgError*block.PropGain(1))*block.Scale(1));
     else
-        Out.OxidantTemp = Inlet.Target1;
-        Out.OxidantFlow = 0;
+        OxTemp = Inlet.Target1;
+        OxFlow = 0;
     end
 
     if strcmp(string1,'Outlet')
         Out.Measured1.IC = averageT;
         Out.Measured2.IC = Current*Inlet.Voltage*block.Cells/1000; %Power in kW
+        Out.OxidantFlow = OxFlow;
+        Out.OxidantTemp = OxTemp;
         Out.SteamTemp = block.SteamTemp.IC;%currently no control of fuel inlet temp
         Out.SteamFlow = SteamFlow;
         Out.Current = Current;
@@ -144,14 +156,19 @@ else %running the model
         Tags.(block.name).Tsteam = block.SteamTemp.IC;%currently no control of steam inlet temp
         Tags.(block.name).SteamFlow = SteamFlow;
         Tags.(block.name).Current = Current;
+        Tags.(block.name).deltaT = deltaT;
     elseif strcmp(string1,'dY')
         dY = Y*0;
+        Gain = block.Gain.*block.Scale;
         if block.HasFlow
-            if Y(1)>0 || TavgError>0 %anti-windup so flow does not go negative
-                dY(1) = block.Gain(1)*TavgError;
+            if FixedFlow %avoid reducing air flow as power goes to zero
+                dY(1) = Gain(1)*(OxFlow - Y(1));
+            else
+                dY(1) = Gain(1)*dTerror;
             end
+            dY(2) = Gain(2)*TavgError;
         else
-            dY(1) = block.Gain(1)*VoltError;
+            dY(1) = Gain(1)*VoltError;
         end
         Out = dY;
     end

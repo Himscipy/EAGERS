@@ -36,8 +36,13 @@ for i = 1:1:nG
         [~,fit] = size(Gen.states);% fit = 2 for generators with 2 different piecewise quadratics when Op = 'B'
         if ismember(Plant.Generator(i).Type,{'Electric Storage';'Thermal Storage';'Hydro Storage'})
             s = 1;% Storage treated as generator with 1 state
-            lb(end+1) = -Gen.Ramp.b(1);
-            ub(end+1) = Gen.Ramp.b(2);
+            if ismember(Plant.Generator(i).Type,{'Hydro Storage'})
+                lb(end+1) = Gen.X.lb; 
+                ub(end+1) = Gen.X.ub; % Upper bound is MaxGenCapacity
+            else
+                lb(end+1) = -Gen.Ramp.b(1);
+                ub(end+1) = Gen.Ramp.b(2);
+            end 
         else %dispatchable generator or utility
             states = Gen.states(:,fit);
             s = length(states);%generator with multiple states
@@ -46,9 +51,11 @@ for i = 1:1:nG
                 ub(end+1) = Gen.(states{k}).ub(fit);
             end
             if ismember(Plant.Generator(i).Type,{'Electric Generator';'CHP Generator';'Heater';'Chiller';'Absorption Chiller';})
-                Organize.Dispatchable(i) = 1;
                 if isfield(Plant.Generator(i).QPform,'constCost') 
                      QP.constCost(i) = Plant.Generator(i).QPform.constCost;
+                end
+                if QP.constCost(i)>0 || Plant.Generator(i).QPform.(Plant.Generator(i).QPform.states{1,end}).lb(end)>0 % first state has a non-zero lower bound for second optimization or a nonzero cost at an output of zero
+                    Organize.Dispatchable(i) = 1;
                 end
             end
         end
@@ -64,7 +71,7 @@ for i = 1:1:nG
                     ub(end+1) = Plant.Generator(i).VariableStruct.MaxGenCapacity;
                 end
             end
-            include = {'ElectricStorage'};
+            include = {'Electric Storage'};
             if ismember(Plant.Generator(i).Type,include)
                 Organize.SpinReserveStates(i) = xL +s+1; %state of spinning reserve at time 1
                 lb(end+1) = -Plant.Generator(i).QPform.Stor.PeakCharge;
@@ -303,7 +310,11 @@ for net = 1:1:length(networkNames)
                             f(states(j)) = Gen.(stateNames{j}).f(fit);
                         end
                     end
-                    Aeq(req,states) = Plant.Generator(equip(k)).QPform.output.(out);
+                    if length(Plant.Generator(equip(k)).QPform.output.(out)(1,:))>1
+                        output = Plant.Generator(equip(k)).QPform.output.(out)(:,fit);
+                    else output = Plant.Generator(equip(k)).QPform.output.(out);
+                    end
+                    Aeq(req,states) = output;
                 end
             end
             %%any heat loss term to balance equality

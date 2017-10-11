@@ -9,17 +9,7 @@ ControlStates = [];%find controller states
 for i = 1:length(controls)
     ControlStates((end+1):(end+length(modelParam.Controls.(controls{i}).States))) = modelParam.Controls.(controls{i}).States;
 end
-components = fieldnames(modelParam.Components);
-for i = 1:length(components)
-    list2 = modelParam.Components.(components{i}).InletPorts;
-    for j = 1:1:length(list2)
-        port = list2{j};
-        if ~isempty(modelParam.Components.(components{i}).(port).connected)
-            LinMod.Components.(components{i}).(port) = modelParam.Components.(components{i}).(port).connected;%connected to another block
-%         else LinMod.Components.(components{i}).(port) = modelParam.Components.(components{i}).(port).IC;%constant value, won't be part of linear model input since it is fixed
-        end
-    end
-end
+LinMod.Components = modelParam.Components;
 if isfield(modelParam,'Scope')
     LinMod.Scope = modelParam.Scope;
 end
@@ -27,6 +17,10 @@ LinMod.UpperBound = modelParam.UpperBound;
 LinMod.LowerBound = modelParam.LowerBound;
 LinMod.IC = modelParam.IC;
 LinMod.Input = ModelInlet; %initial model input
+LinMod.Output = ModelOutlet; %initial model output
+LinMod.NominalOutlet = modelParam.NominalOutlet;
+LinMod.NominalSettings = modelParam.NominalSettings;
+LinMod.NominalTags = modelParam.NominalTags;
 Y0 =  LinMod.IC;
 controls = fieldnames(LinMod.Controls);
 i = 0;
@@ -55,14 +49,14 @@ for i = 1:1:length(F)
     if strcmp(F{i},'RunTime')
         %do nothing
     elseif ~isempty(strfind(F{i},'Time')) && length(SimSettings.(F{i}))>1
-        SimSettings.(F{i}) = [0, SimSettings.RunTime/3600];
+        SimSettings.(F{i}) = SimSettings.RunTime/3600*[0,.25,.75,1];
     elseif length(SimSettings.(F{i}))>1
-        SimSettings.(F{i}) = [SimSettings.(F{i})(1), SimSettings.(F{i})(1)];%hold inputs constant
+        SimSettings.(F{i}) = SimSettings.(F{i})(1)*ones(1,4);%hold inputs constant
     end
 end
 
 for n = 1:length(SetPoints)
-    SimSettings.(globvar{L2}) = [SimSettings.(globvar{L2})(end),SetPoints(n)];
+    SimSettings.(globvar{L2}) = [SimSettings.(globvar{L2})(end),SimSettings.(globvar{L2})(end),SetPoints(n),SetPoints(n)];
     IterCount = 1; TagInf =[]; TagFinal =[]; LinMod.Interupt = []; WaitBar.Show = 0;
 %     WaitBar.Show = 1;  WaitBar.Text = 'Running non-linear model with transient';WaitBar.Handle =waitbar(0,WaitBar.Text);
     [~, Y] = ode15s(@RunBlocks, [0, SimSettings.RunTime],Y0);
@@ -76,65 +70,51 @@ for n = 1:length(SetPoints)
     ModelStates = (1:1:length(Y0))';
     ModelStates(ControlStates) = [];
     Y1 = Y0(ModelStates);
-    
+    per = 1e-7;
     A = zeros(length(Y1));
-    C = zeros(length(Out0));
-    Perturbation = eye(length(Y0))*1e-9;
+    C = zeros(length(Out0),length(Y1));
+    Perturbation = eye(length(Y0))*per;
+    dYstd = RunBlocks(SimSettings.RunTime,Y0);%record resulting dY's
+    dYstd(ControlStates)=[];%ignore dY's from ignored states
+    Outstd = ModelOutlet;
     for i = 1:length(Y1)%for all non-ignored states
-        epsY = 2e-9;
-        if (Y1(i)<0 && Y1(i)>-1e-9) || Y1(i)==LinMod.UpperBound(ModelStates(i)) % avoid switching signs on states or passing an absolute threshold
-            dYplus = 0*Y1;
-            OutPlus = Out0;
-            epsY = 1e-9;
-        else
-            dYplus = RunBlocks(SimSettings.RunTime,Y0+Perturbation(:,ModelStates(i)));%record resulting dY's
-            dYplus(ControlStates)=[];%ignore dY's from ignored states
-            OutPlus = ModelOutlet;
-        end
-        if (Y1(i)>=0 && Y1(i)<1e-9) || Y1(i)==LinMod.LowerBound(ModelStates(i)) % avoid switching signs on states or passing an absolute threshold
-            dYminus = 0*Y1;
-            OutMinus = Out0;
-            epsY = 1e-9;
-        else
-            dYminus = RunBlocks(SimSettings.RunTime,Y0-Perturbation(:,ModelStates(i)));
-            dYminus(ControlStates) = [];
-            OutMinus = ModelOutlet;
-        end
-        A(:,i) = (dYplus-dYminus)/epsY;
-        C(:,i) = (OutPlus-OutMinus)/epsY;
+        dYplus = RunBlocks(SimSettings.RunTime,Y0+Perturbation(:,ModelStates(i)));%record resulting dY's
+        dYplus(ControlStates)=[];%ignore dY's from ignored states
+        OutPlus = ModelOutlet;
+
+        dYminus = RunBlocks(SimSettings.RunTime,Y0-Perturbation(:,ModelStates(i)));
+        dYminus(ControlStates) = [];
+        OutMinus = ModelOutlet;
+
+        epsX = 2*per - per*((dYplus==dYstd) | (dYminus==dYstd)); %if either perturbation did not change the dY, then a saturation must have been reached so divide by 1 per (or there was no impact in which case the change is zero and divide by 1 per = 0)
+        epsX2 = 2*per - per*((OutPlus==Outstd) | (OutMinus==Outstd));
+
+        A(:,i) = (dYplus-dYminus)./epsX;
+        C(:,i) = (OutPlus-OutMinus)./epsX2;
     end
 
     %% find effect of input perturbations on dY and Outputs
     B = zeros(length(Y1),length(U0));
     D = zeros(length(Out0),length(U0));
-    Perturbation = eye(length(U0))*1e-9;
+    
+    Perturbation = eye(length(U0))*per;
     for i = 1:length(U0)%for all inputs
-        epsU = 2e-9;
-        if (U0(i)<0 && U0(i)>-1e-9) || U0(i)==LinMod.UpperBound(ControlStates(i)) % avoid switching signs on states or passing an absolute threshold
-            dYplus = 0*Y1;
-            OutPlus = Out0;
-            epsU = 1e-9;
-        else
-            OverideInput(U0 + Perturbation(:,i),i);
-            dYplus = RunBlocks(SimSettings.RunTime,Y0);%record resulting dY's
-            dYplus(ControlStates)=[];%ignore dY's from ignored states
-            OutPlus = ModelOutlet;
-        end
-        if (U0(i)>0 && U0(i)<1e-9) || U0(i)==LinMod.LowerBound(ControlStates(i)) % avoid switching signs on states or passing an absolute threshold
-            dYminus = 0*Y1;
-            OutMinus = Out0;
-            epsU = 1e-9;
-        else
-            OverideInput(U0 - Perturbation(:,i),i);
-            dYminus = RunBlocks(SimSettings.RunTime,Y0);
-            dYminus(ControlStates) = [];
-            OutMinus = ModelOutlet;
-        end
+        OverideInput(U0 + Perturbation(:,i),i);
+        dYplus = RunBlocks(SimSettings.RunTime,Y0);%record resulting dY's
+        dYplus(ControlStates)=[];%ignore dY's from ignored states
+        OutPlus = ModelOutlet;
 
-        B(:,i) = (dYplus - dYminus)/epsU;
-        D(:,i) = (OutPlus-OutMinus)/epsU;
+        OverideInput(U0 - Perturbation(:,i),i);
+        dYminus = RunBlocks(SimSettings.RunTime,Y0);
+        dYminus(ControlStates) = [];
+        OutMinus = ModelOutlet;
+        
+        epsU = 2*per - per*((dYplus==dYstd) | (dYminus==dYstd)); %if either perturbation did not change the dY, then a saturation must have been reached so divide by 1 per (or there was no impact in which case the change is zero and divide by 1 per = 0)
+        epsU2 = 2*per - per*((OutPlus==Outstd) | (OutMinus==Outstd));
+
+        B(:,i) = (dYplus - dYminus)./epsU;
+        D(:,i) = (OutPlus-OutMinus)./epsU2;
     end
-
     Model.A = A;
     Model.B = B;
     Model.C = C;
@@ -144,7 +124,6 @@ for n = 1:length(SetPoints)
     Model.Out0 = Out0;
     Model.UX0 = Y0(ControlStates);
     Model.X = Y1;
-    LinMod.Options = [];
     LinMod.Model{n} = Model;
     disp(strcat('Created linear model_',num2str(n),'_of_',num2str(length(SetPoints))))
 end
@@ -157,7 +136,7 @@ LinMod.Model{n}.Sys = Sys;
 LinMod.Model{n}.HSV = g;
 LinMod.Model{n}.T = T;
 LinMod.Model{n}.Ti = Ti;
-
+LinMod.Interupt=[];
 %removes states using balred and hankel singular values
 HSVtol = 0; %what should this be set to?
 keep = (1:length(LinMod.Model{1}.A));
@@ -185,13 +164,13 @@ k = 0;
 while n<interupt
     k = k+1;
     block = components{k};
-    list = fieldnames(LinMod.Components.(block)); %only field should be ports with a connection to a block, lookup function or tag
+    list = LinMod.Components.(block).InletPorts; %only field should be ports with a connection to a block, lookup function or tag
     i = 0;
     while i<length(list)
         i = i+1;
         port = list{i};
         A = [];
-        BlockPort = char(LinMod.Components.(block).(port));
+        BlockPort = char(LinMod.Components.(block).(port).connected);
         r = strfind(BlockPort,'.');
         if ~isempty(r)
             connectedBlock = BlockPort(1:r-1);
@@ -203,7 +182,7 @@ while n<interupt
                 connectedPort = BlockPort(r+1:end);
                 A = Outlet.(connectedBlock).(connectedPort);
             end
-        else
+        elseif ~isempty(BlockPort)
             A = feval(BlockPort,0);%finds value of look-up function at time = 0
         end
         if ~isempty(A)
@@ -248,11 +227,11 @@ components = fieldnames(LinMod.Components);
 controls = fieldnames(LinMod.Controls);
 U0 = []; 
 for k = 1:1:length(components)
-    list = fieldnames(LinMod.Components.(components{k})); %only field should be ports with a connection to a block, lookup function or tag
+    list = LinMod.Components.(components{k}).InletPorts; %looking for ports with a connection to a control block, lookup function or tag
     for i = 1:1:length(list)
         port = list{i};
         A = [];
-        BlockPort = char(LinMod.Components.(components{k}).(port));
+        BlockPort = char(LinMod.Components.(components{k}).(port).connected);
         r = strfind(BlockPort,'.');
         if ~isempty(r)
             connectedBlock = BlockPort(1:r-1);
@@ -264,7 +243,7 @@ for k = 1:1:length(components)
                 connectedPort = BlockPort(r+1:end);
                 A = Outlet.(connectedBlock).(connectedPort);
             end
-        else
+        elseif ~isempty(BlockPort)
             A = feval(BlockPort,0);%finds value of look-up function at time = 0
         end
         if ~isempty(A)

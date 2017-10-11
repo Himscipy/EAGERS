@@ -56,14 +56,18 @@ if length(varargin)==1 % first initialization
     block.FlowIn.IC.N2 = .79;
     block.FlowIn.IC.O2 = .21;
     block.FlowIn.IC.T = 300;
+    block.FlowIn.Saturation = [0,inf];
     
     block.Pin.IC = 101;%in kPa
+    block.Pin.Saturation = [0,inf];
     block.Pin.Pstate = []; %identifies the state # of the pressure state if this block has one
     
     block.Pout.IC = block.Pin.IC*block.Pdesign;%in kPa
+    block.Pout.Saturation = [0,inf];
     block.Pout.Pstate = []; %identifies the state # of the pressure state if this block has one
     
     block.RPMin.IC = block.RPMdesign;
+    block.RPMin.Saturation = [0,inf];
     
     block.OutletPorts = {'Flow','Work'};
     
@@ -87,7 +91,7 @@ if length(varargin)==1 % first initialization
 elseif length(varargin)==2 %% Have inlets connected, re-initialize
     block = varargin{1};
     Inlet = varargin{2};
-    
+    Inlet = checkSaturation(Inlet,block);
     NetFlowIn = NetFlow(Inlet.FlowIn);
     specname = fieldnames(Inlet.FlowIn);
     for i = 1:1:length(specname) %normalize flow rate in to 1
@@ -195,6 +199,8 @@ else%running the model
     Inlet = varargin{3};
     block = varargin{4};
     string1 = varargin{5};
+    
+    Inlet = checkSaturation(Inlet,block);
     NetFlowIn = NetFlow(Inlet.FlowIn);
     Mmass = MassFlow(Inlet.FlowIn)/NetFlowIn;
     %compressor map

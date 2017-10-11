@@ -1,8 +1,11 @@
-function Cost = NetCostCalc(Var1,Timestamp,method)
+function [Cost,Eimbalance,Himbalance] = NetCostCalc(Var1,Timestamp,method)
 global Plant
+letters = {'A';'B';'C';'D';'E';'F';'G';'H';'I';'J';'K';'L';};
 if strcmp(method,'Dispatch')
     Dispatch = Var1;
     Input = 0*Dispatch;
+    Eimbalance = 0*Timestamp;
+    Himbalance = 0*Timestamp;
     for i = 1:1:length(Plant.Generator)
         skip = false;
         if ~isempty(Plant.Generator(i).Output)
@@ -11,16 +14,39 @@ if strcmp(method,'Dispatch')
         if strcmp(Plant.Generator(i).Type,'Electric Generator') || strcmp(Plant.Generator(i).Type,'CHP Generator')
             eff = Plant.Generator(i).Output.Electricity;
         elseif strcmp(Plant.Generator(i).Type,'Chiller') 
-%             eff = Plant.Generator(i).Output.Cooling;
-%             if ~Plant.optimoptions.sequential && ~isfield(Plant.Generator(i).QPform.output,'E')%don't include cost if it shows up in generator demand
+            eff = Plant.Generator(i).Output.Cooling;
+            COP = interp1(cap,eff,Dispatch(:,i));
+            if strcmp(Plant.Generator(i).Source,'Electricity')
+                E_use = Plant.Generator(i).QPform.constDemand.E*(Dispatch(:,i)>0);
+                Output = Dispatch(:,i);
+                for j = 1:1:length(Plant.Generator(i).QPform.states(:,1))
+                    E_use = E_use - min(Output,Plant.Generator(i).QPform.(letters{j}).ub(2))*Plant.Generator(i).QPform.output.E(j,2);
+                    Output = max(0,Output - min(Output,Plant.Generator(i).QPform.(letters{j}).ub(2)));
+                end
+                Eimbalance = Eimbalance + (Dispatch(:,i)./COP - E_use);
+                if ~Plant.optimoptions.sequential
+                    skip = true;
+                end
+            elseif strcmp(Plant.Generator(i).Source,'Heat')
+                H_use = Plant.Generator(i).QPform.constDemand.H*(Dispatch(:,i)>0);
+                Output = Dispatch(:,i);
+                for j = 1:1:length(Plant.Generator(i).QPform.states(:,1))
+                    H_use = H_use - min(Output,Plant.Generator(i).QPform.(letters{j}).ub(2))*Plant.Generator(i).QPform.output.H(j,2);
+                    Output = max(0,Output - min(Output,Plant.Generator(i).QPform.(letters{j}).ub(2)));
+                end
+                Himbalance = Himbalance + (Dispatch(:,i)./COP - H_use);
                 skip = true;
-%             end
+            end
         elseif strcmp(Plant.Generator(i).Type,'Heater')
-            eff = Plant.Generator(i).Output.Heat;    
+            eff = Plant.Generator(i).Output.Heat;  
         else skip = true;
         end
         if ~skip %dont add the cost of a chiller if you ran E and C simultaneously, or you will double count the chiller demand
             Input(:,i) = Dispatch(:,i)./interp1(cap,eff,Dispatch(:,i));
+            if nnz(Dispatch(:,i))<length(Timestamp) %if you have steps where the dispatch is zero, prevent Nan
+                OffSteps = (Dispatch(:,i)==0);
+                Input(OffSteps,i) = 0;
+            end
         elseif strcmp(Plant.Generator(i).Type,'Utility')
             Input(:,i) = Dispatch(:,i);
         end
@@ -57,15 +83,15 @@ elseif strcmp(method,'Input')
     Dispatch = 0*Input;
     Dispatch(Input>1) = 1;
 end
-run = nnz(Timestamp);
+nS = nnz(Timestamp);
 nG = length(Plant.Generator);
-dt = (Timestamp(2:run) - Timestamp(1:run-1))*24;
-scaleCost = updateGeneratorCost(Timestamp(1:run-1)).*(dt*ones(1,nG));%% All costs were assumed to be 1 when building matrices
+dt = (Timestamp(2:nS) - Timestamp(1:nS-1))*24;
+scaleCost = updateGeneratorCost(Timestamp(1:nS-1)).*(dt*ones(1,nG));%% All costs were assumed to be 1 when building matrices
 stor =[];
-startupcost = zeros(run-1,nG);
+startupcost = zeros(nS-1,nG);
 for i = 1:1:nG
     if isfield(Plant.Generator(i).VariableStruct, 'StartCost')
-        nStartups = (Dispatch(2:run,i)>0).*(Dispatch(1:run-1,i)==0);
+        nStartups = (Dispatch(2:nS,i)>0).*(Dispatch(1:nS-1,i)==0);
         startupcost(:,i) = nStartups*Plant.Generator(i).VariableStruct.StartCost;
     end
     if isfield(Plant.Generator(i).QPform,'Stor')
@@ -73,4 +99,4 @@ for i = 1:1:nG
     end
 end
 scaleCost(:,stor)=0; %remove cost of storage
-Cost = sum(Input(2:run,1:nG).*scaleCost + startupcost,2);
+Cost = sum(Input(2:nS,1:nG).*scaleCost + startupcost,2);

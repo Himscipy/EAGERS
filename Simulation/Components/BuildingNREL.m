@@ -16,8 +16,11 @@ if length(varargin)==1 % first initialization
     %%
     block.InletPorts = {'massflow','temperature','Tamb'};
     block.massflow.IC = 4;
+    block.massFlow.Saturation = [0,inf];
     block.temperature.IC = 12.8;
+    block.temperature.Saturation = [10,30];
     block.Tamb.IC = 25;
+    block.Tamb.Saturation = [-50,50];
     
     block.OutletPorts = {'Temperature';'WallTemperature';'Mode';};
     block.Temperature.IC = 22.2;
@@ -33,6 +36,8 @@ if length(varargin)==1 % first initialization
 elseif length(varargin)==2 %% Have inlets connected, re-initialize
     block = varargin{1};
     Inlet = varargin{2};
+    
+    Inlet = checkSaturation(Inlet,block);
     t = 0;
     h = mod(t/3600,24);
     T = block.Scale;
@@ -62,6 +67,8 @@ else%running the model
     Inlet = varargin{3};
     block = varargin{4};
     string1 = varargin{5};
+    
+    Inlet = checkSaturation(Inlet,block);
     h = mod(t/3600,24);
     Occupancy = interp1(linspace(0,24,length(block.OccupancySchedule)+1),block.Occupancy*[block.OccupancySchedule(end),block.OccupancySchedule]*block.Area,h);
     IntGains = Occupancy*120; %heat from occupants (W)

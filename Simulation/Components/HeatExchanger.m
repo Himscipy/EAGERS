@@ -55,31 +55,41 @@ if length(varargin)==1 % first initialization
     block.AcondPN = block.Vol_Solid/block.Length/block.rows;
     block.ConductionPN = block.Solid_CondCoef*block.AcondPN/(block.L_node/2)/1000; %heat transfer coefficient between previous and next node of plate
     block.ConductionLR  = block.Solid_CondCoef*block.AcondLR/(block.W_node/2)/1000; %heat transfer coefficient between left and right adjacent nodes of oxidant plate
-
-    [block.Scale , block.HTcond, block.HTconv] = SteadyTemps(block,Inlet.Flow1,Inlet.Flow2);
+    
+    mdot_Cp(1) = SpecHeat(Inlet.Flow1).*NetFlow(Inlet.Flow1)/block.rows;
+    if strcmp(block.direction ,'crossflow')
+        mdot_Cp(2) = SpecHeat(Inlet.Flow2).*NetFlow(Inlet.Flow2)/block.columns;
+    else
+        mdot_Cp(2) = SpecHeat(Inlet.Flow2).*NetFlow(Inlet.Flow2)/block.rows;
+    end
+    [block.Scale , block.HTcond, block.HTconv] = SteadyTemps(block,mdot_Cp,[Inlet.Flow1.T,Inlet.Flow2.T]);
     block.Scale(end+1:end+2,1) = [101+block.PdropCold;101+block.PdropHot;];
     block.IC = ones(3*block.nodes+2,1);
     block.UpperBound = inf*ones(3*block.nodes+2,1);
     block.LowerBound = zeros(3*block.nodes+2,1);
     
-    ColdOut = Inlet.Flow1;
-    ColdOut.T =  mean(block.Scale(block.Flow1Dir(:,end),1));
-    HotOut = Inlet.Flow2;
-    HotOut.T = mean(block.Scale(2*block.nodes+block.Flow2Dir(:,end),1));
-    block.Effectiveness = FindEffectiveness(Inlet.Flow1,Inlet.Flow2,ColdOut,[]);%calculate effectiveness
+    Flow1 = Inlet.Flow1;
+    Flow1.T =  mean(block.Scale(block.Flow1Dir(:,end),1));
+    Flow2 = Inlet.Flow2;
+    Flow2.T = mean(block.Scale(2*block.nodes+block.Flow2Dir(:,end),1));
+    block.Effectiveness = FindEffectiveness(Inlet.Flow1,Inlet.Flow2,Flow1,[]);%calculate effectiveness
 
     %% set up ports : Inlets need to either connected or have initial condition, outlets need an initial condition, and it doesn't matter if they have a connection 
     block.InletPorts = {'Flow1','Flow2','ColdPout','HotPout'};
     block.Flow1.IC = Inlet.Flow1;
+    block.Flow1.Saturation = [0,inf];
     block.Flow2.IC = Inlet.Flow2;
+    block.Flow2.Saturation = [0,inf];
     block.ColdPout.IC = 101; %Atmospheric pressure
+    block.ColdPout.Saturation = [0,inf];
     block.ColdPout.Pstate = []; %identifies the state # of the pressure state if this block has one
     block.HotPout.IC = 101; %Atmospheric pressure
+    block.HotPout.Saturation = [0,inf];
     block.HotPout.Pstate = []; %identifies the state # of the pressure state if this block has one
     
     block.OutletPorts = {'ColdOut','HotOut','ColdPin','HotPin'};
-    block.ColdOut.IC = ColdOut;
-    block.HotOut.IC = HotOut;
+    block.ColdOut.IC = Flow1;
+    block.HotOut.IC = Flow2;
     block.ColdPin.IC  = block.ColdPout.IC+block.PdropCold;
     block.ColdPin.Pstate = 3*block.nodes+1; %identifies the state # of the pressure state if this block has one
     block.HotPin.IC  = block.HotPout.IC+block.PdropHot;
@@ -91,6 +101,7 @@ if length(varargin)==1 % first initialization
 elseif length(varargin)==2 %% Have inlets connected, re-initialize
     block = varargin{1};
     Inlet = varargin{2};
+    Inlet = checkSaturation(Inlet,block);
     Target = ComponentProperty(block.Target);
     nodes = block.nodes;
     block.ColdPout.IC = Inlet.ColdPout;
@@ -100,20 +111,20 @@ elseif length(varargin)==2 %% Have inlets connected, re-initialize
     block.ColdPin.IC  = Inlet.ColdPout+block.PdropCold;
     block.HotPin.IC  = Inlet.HotPout+block.PdropHot;
     
-    specCold = fieldnames(Inlet.Flow1);
-    specHot = fieldnames(Inlet.Flow2);
+    specFlow1 = fieldnames(Inlet.Flow1);
+    specFlow2 = fieldnames(Inlet.Flow2);
     %% Cold flow
     r = length(block.Flow1Dir(:,1));
-    for i = 1:1:length(specCold)
-        if ~strcmp(specCold{i},'T')
-            ColdOutlet.(specCold{i})(1:block.nodes,1) = Inlet.Flow1.(specCold{i})/r;
+    for i = 1:1:length(specFlow1)
+        if ~strcmp(specFlow1{i},'T')
+            Flow1Out_k.(specFlow1{i})(1:block.nodes,1) = Inlet.Flow1.(specFlow1{i})/r;
         end
     end
     %% Hot flow
     r = length(block.Flow2Dir(:,1));
-    for i = 1:1:length(specHot)
-        if ~strcmp(specHot{i},'T')
-            HotOutlet.(specHot{i})(1:block.nodes,1) = Inlet.Flow2.(specHot{i})/r;
+    for i = 1:1:length(specFlow2)
+        if ~strcmp(specFlow2{i},'T')
+            Flow2Out_k.(specFlow2{i})(1:block.nodes,1) = Inlet.Flow2.(specFlow2{i})/r;
         end
     end
     AreaOld = block.Area;
@@ -121,33 +132,33 @@ elseif length(varargin)==2 %% Have inlets connected, re-initialize
     [block.Area,block.Effectiveness,method] = findArea(Inlet.Flow1,Inlet.Flow2,block.h_conv,Target,block.sizemethod);
     
     %% rescale guessed temperatures to match current inlets and this effectiveness
-    ColdOut = Inlet.Flow1;
-    ColdOut.T  = Inlet.Flow2.T;
-    HotOut = Inlet.Flow2;
-    HotOut.T = Inlet.Flow1.T;
-    Q1 = enthalpy(ColdOut) - enthalpy(Inlet.Flow1);
-    Q2 = enthalpy(Inlet.Flow2) - enthalpy(HotOut);
-    if Q1>Q2
-        HotOut.T = Inlet.Flow2.T - block.Effectiveness*(Inlet.Flow2.T - HotOut.T);
-        Q2 = enthalpy(Inlet.Flow2) - enthalpy(HotOut);
-        ColdEffective = Q2/Q1;
-        ColdOut.T = Inlet.Flow1.T + ColdEffective*(ColdOut.T - Inlet.Flow1.T);
+    Flow1 = Inlet.Flow1;
+    Flow1.T  = Inlet.Flow2.T;
+    Flow2 = Inlet.Flow2;
+    Flow2.T = Inlet.Flow1.T;
+    Q1 = enthalpy(Flow1) - enthalpy(Inlet.Flow1);%heat added to the stream
+    Q2 = enthalpy(Flow2) - enthalpy(Inlet.Flow2);%heat added to the stream
+    if abs(Q1)>abs(Q2)
+        Flow2.T = Inlet.Flow2.T - block.Effectiveness*(Inlet.Flow2.T - Flow2.T);
+        Q2 = enthalpy(Flow2) - enthalpy(Inlet.Flow2);%heat added to the stream
+        ColdEffective = abs(Q2/Q1);
+        Flow1.T = Inlet.Flow1.T + ColdEffective*(Flow1.T - Inlet.Flow1.T);
     else
-        ColdOut.T = Inlet.Flow1.T + block.Effectiveness*(ColdOut.T - Inlet.Flow1.T);
-        Q1 = enthalpy(ColdOut) - enthalpy(Inlet.Flow1);
-        HotEffective = Q1/Q2;
-        HotOut.T = Inlet.Flow2.T - HotEffective*(Inlet.Flow2.T - ColdOut.T);
+        Flow1.T = Inlet.Flow1.T + block.Effectiveness*(Flow1.T - Inlet.Flow1.T);
+        Q1 = enthalpy(Flow1) - enthalpy(Inlet.Flow1);
+        HotEffective = abs(Q1/Q2);
+        Flow2.T = Inlet.Flow2.T - HotEffective*(Inlet.Flow2.T - Flow1.T);
     end
-    cDist = (block.Scale(1:nodes) - block.Scale(block.Flow1Dir(1,1)))/(block.Scale(block.Flow1Dir(1,end)) - block.Flow1.IC.T);
-    hDist = (block.Scale(2*nodes+1:3*nodes) - block.Scale(2*nodes+block.Flow2Dir(1,1)))/(block.Scale(2*nodes+block.Flow2Dir(1,end)) - block.Flow2.IC.T);
-    block.Scale(1:nodes) = Inlet.Flow1.T + cDist*(ColdOut.T - Inlet.Flow1.T);
-    block.Scale(2*nodes+1:3*nodes) = Inlet.Flow2.T + hDist*(HotOut.T - Inlet.Flow2.T);
+    Dist1 = (block.Scale(1:nodes) - block.Scale(block.Flow1Dir(1,1)))/(block.Scale(block.Flow1Dir(1,end)) - block.Flow1.IC.T);
+    Dist2 = (block.Scale(2*nodes+1:3*nodes) - block.Scale(2*nodes+block.Flow2Dir(1,1)))/(block.Scale(2*nodes+block.Flow2Dir(1,end)) - block.Flow2.IC.T);
+    block.Scale(1:nodes) = Inlet.Flow1.T + Dist1*(Flow1.T - Inlet.Flow1.T);
+    block.Scale(2*nodes+1:3*nodes) = Inlet.Flow2.T + Dist2*(Flow2.T - Inlet.Flow2.T);
     block.Scale(nodes+1:2*nodes) = (block.Scale(1:nodes) + block.Scale(2*nodes+1:3*nodes))/2;% Average hot and cold side
     %%%
     
     block.HTconv = block.HTconv*block.Area/AreaOld;
     Y = [block.Scale(1:3*nodes);1];
-    [T, Y] = ode15s(@(t,y) SolveTempsDynamic(t,y,block,ColdOutlet,HotOutlet,Inlet,method,Target), [0, 1e5], Y);
+    [T, Y] = ode15s(@(t,y) SolveTempsDynamic(t,y,block,Flow1Out_k,Flow2Out_k,Inlet,method,Target), [0, 1e5], Y);
     Y = Y(end,:)';
     block.Area = Y(end)*block.Area;
     block.HTconv = Y(end)*block.HTconv;
@@ -170,79 +181,86 @@ else%running the model
     Inlet = varargin{3};
     block = varargin{4};
     string1 = varargin{5};
-    ColdFlow = NetFlow(Inlet.Flow1);
-    HotFlow = NetFlow(Inlet.Flow2);
+    
+    Inlet = checkSaturation(Inlet,block);
+    Flow1 = NetFlow(Inlet.Flow1);
+    Flow2 = NetFlow(Inlet.Flow2);
 
     %% seperate out temperatures
     nodes = block.nodes;
-    Tcold = Y(1:nodes);
-    Tplate = Y(nodes+1:2*nodes);
-    Thot = Y(2*nodes+1:3*nodes);
-    PcoldIn = Y(3*nodes+1);
-    PhotIn = Y(3*nodes+2);
+    Tflow1 = Y(1:nodes);
+    Tsolid = Y(nodes+1:2*nodes);
+    Tflow2 = Y(2*nodes+1:3*nodes);
+    Pflow1In = Y(3*nodes+1);
+    Pflow2In = Y(3*nodes+2);
 
-    NcoldOut = block.PfactorCold*(PcoldIn-Inlet.ColdPout);%total cold flow out
-    NhotOut = block.PfactorHot*(PhotIn-Inlet.HotPout);%total cold flow out
-
-    specCold = fieldnames(Inlet.Flow1);
-    specHot = fieldnames(Inlet.Flow2);
+    Nflow1Out = block.PfactorCold*(Pflow1In-Inlet.ColdPout);%total cold flow out
+    Nflow2Out = block.PfactorHot*(Pflow2In-Inlet.HotPout);%total hot flow out
+    if Nflow1Out<=0
+        disp('WTF')
+    end
+    specFlow1 = fieldnames(Inlet.Flow1);
+    specFlow2 = fieldnames(Inlet.Flow2);
 
     if strcmp(string1,'Outlet')
-        ColdOut.T  = mean(Tcold(block.Flow1Dir(:,end),1));
-        for i = 1:1:length(specCold)
-            if ~strcmp(specCold{i},'T')
-                ColdOut.(specCold{i}) = Inlet.Flow1.(specCold{i})*NcoldOut/ColdFlow;
+        if Nflow1Out<=0
+            Nflow1Out = Flow1;
+        end
+        Flow1Out.T  = mean(Tflow1(block.Flow1Dir(:,end),1));
+        for i = 1:1:length(specFlow1)
+            if ~strcmp(specFlow1{i},'T')
+                Flow1Out.(specFlow1{i}) = Inlet.Flow1.(specFlow1{i})*Nflow1Out/Flow1;
             end
         end
-        HotOut.T  = mean(Thot(block.Flow2Dir(:,end),1));
-        for i = 1:1:length(specHot)
-            if ~strcmp(specHot{i},'T')
-                HotOut.(specHot{i}) = Inlet.Flow2.(specHot{i})*NhotOut/HotFlow;
+        Flow2Out.T  = mean(Tflow2(block.Flow2Dir(:,end),1));
+        for i = 1:1:length(specFlow2)
+            if ~strcmp(specFlow2{i},'T')
+                Flow2Out.(specFlow2{i}) = Inlet.Flow2.(specFlow2{i})*Nflow2Out/Flow2;
             end
         end
         %% Outlet Ports
-        Out.ColdOut = ColdOut;
-        Out.HotOut = HotOut;
+        Out.ColdOut = Flow1Out;
+        Out.HotOut = Flow2Out;
 
-        Out.ColdPin = PcoldIn;
-        Out.HotPin = PhotIn;
-        Tags.(block.name).ColdOut = Tcold(block.Flow1Dir(:,end),1);
-        Tags.(block.name).HotOut = Thot(block.Flow2Dir(:,end),1);
+        Out.ColdPin = Pflow1In;
+        Out.HotPin = Pflow2In;
+        Tags.(block.name).ColdOut = Tflow1(block.Flow1Dir(:,end),1);
+        Tags.(block.name).HotOut = Tflow2(block.Flow2Dir(:,end),1);
         [Tags.(block.name).Effectiveness , Tags.(block.name).NetImbalance] = FindEffectiveness(Inlet.Flow1,Inlet.Flow2,Out.ColdOut,Out.HotOut); %% calculate effectiveness & imbalance
     elseif strcmp(string1,'dY')
-        %% Cold flow
-        ColdOutlet.T = Tcold;
+        %% Flow1
+        Flow1Out_k.T = Tflow1;
         for j = 1:1:length(block.Flow1Dir(1,:));%1:columns
             k = block.Flow1Dir(:,j);
             r = length(k);
             if j==1
-                ColdInlet.T(k,1) = Inlet.Flow1.T;
+                Flow1In_k.T(k,1) = Inlet.Flow1.T;
             else
-                ColdInlet.T(k,1) = ColdOutlet.T(kprev);
+                Flow1In_k.T(k,1) = Flow1Out_k.T(kprev);
             end
-            for i = 1:1:length(specCold)
-                if ~strcmp(specCold{i},'T')
-                    ColdInlet.(specCold{i})(k,1) = Inlet.Flow1.(specCold{i})/r;
-                    ColdOutlet.(specCold{i})(k,1) = Inlet.Flow1.(specCold{i})/r;
+            for i = 1:1:length(specFlow1)
+                if ~strcmp(specFlow1{i},'T')
+                    Flow1In_k.(specFlow1{i})(k,1) = Inlet.Flow1.(specFlow1{i})/r;
+                    Flow1Out_k.(specFlow1{i})(k,1) = Inlet.Flow1.(specFlow1{i})/r;
                 end
             end
             kprev = k;
         end
 
-        %% Hot flow
-        HotOutlet.T = Thot;
+        %% Flow 2
+        Flow2Out_k.T = Tflow2;
         for j = 1:1:length(block.Flow2Dir(1,:));%1:columns
             k = block.Flow2Dir(:,j);
             r = length(k);
             if j==1
-                HotInlet.T(k,1) = Inlet.Flow2.T;
+                Flow2In_k.T(k,1) = Inlet.Flow2.T;
             else
-                HotInlet.T(k,1) = HotOutlet.T(kprev);
+                Flow2In_k.T(k,1) = Flow2Out_k.T(kprev);
             end
-            for i = 1:1:length(specHot)
-                if ~strcmp(specHot{i},'T')
-                    HotInlet.(specHot{i})(k,1) = Inlet.Flow2.(specHot{i})/r;
-                    HotOutlet.(specHot{i})(k,1) = Inlet.Flow2.(specHot{i})/r;
+            for i = 1:1:length(specFlow2)
+                if ~strcmp(specFlow2{i},'T')
+                    Flow2In_k.(specFlow2{i})(k,1) = Inlet.Flow2.(specFlow2{i})/r;
+                    Flow2Out_k.(specFlow2{i})(k,1) = Inlet.Flow2.(specFlow2{i})/r;
                 end
             end
             kprev = k;
@@ -250,21 +268,21 @@ else%running the model
         QT = block.HTconv*Y(1:3*nodes) + block.HTcond*Y(1:3*nodes);
         dY = 0*Y;
         %energy flows & sepcific heats
-        HoutCold = enthalpy(ColdOutlet);
-        HinCold = enthalpy(ColdInlet);
-        Cp_cold = SpecHeat(ColdOutlet);
-        HoutHot = enthalpy(HotOutlet);
-        HinHot = enthalpy(HotInlet);
-        Cp_hot = SpecHeat(HotOutlet);
+        Hout1 = enthalpy(Flow1Out_k);
+        Hin1 = enthalpy(Flow1In_k);
+        Cp_1 = SpecHeat(Flow1Out_k);
+        Hout2 = enthalpy(Flow2Out_k);
+        Hin2 = enthalpy(Flow2In_k);
+        Cp_2 = SpecHeat(Flow2Out_k);
 
         % time constants for states
-        tC1 = (block.Vol_Cold*Cp_cold(k)*PcoldIn./(block.Ru*Tcold(k)));
+        tC1 = (block.Vol_Cold*Cp_1(k)*Pflow1In./(block.Ru*Tflow1(k)));
         tC2 = (block.Mass*block.Solid_SpecHeat);
-        tC3 = (block.Vol_Hot*Cp_hot(k)*PhotIn./(block.Ru*Thot(k)));
+        tC3 = (block.Vol_Hot*Cp_2(k)*Pflow2In./(block.Ru*Tflow2(k)));
 
         for i=1:1:length(block.Flow1Dir(1,:))
             k = block.Flow1Dir(:,i);
-            dY(k)= (QT(k) + HinCold(k) - HoutCold(k))./tC1; %Cold flow
+            dY(k)= (QT(k) + Hin1(k) - Hout1(k))./tC1; %Cold flow
             if i>1
                 dY(k) = dY(k)+dY(kprev);
             end
@@ -273,7 +291,7 @@ else%running the model
         dY(nodes+1:2*nodes)= QT(nodes+1:2*nodes)./tC2;  % Solid
         for i=1:1:length(block.Flow2Dir(1,:))
             k = block.Flow2Dir(:,i);
-            dY(2*nodes+k)= (QT(2*nodes+k) + HinHot(k) - HoutHot(k))./tC3; %Hot flow
+            dY(2*nodes+k)= (QT(2*nodes+k) + Hin2(k) - Hout2(k))./tC3; %Hot flow
             if i>1
                 dY(2*nodes+k) = dY(2*nodes+k)+dY(2*nodes+kprev);
             end
@@ -281,8 +299,8 @@ else%running the model
         end
         n = 3*nodes;
         %% Pressure
-        dY(n+1) = (ColdFlow-NcoldOut)*block.Ru*Inlet.Flow1.T/(block.Vol_Cold);%working with total flow rates 
-        dY(n+2) = (HotFlow-NhotOut)*block.Ru*Inlet.Flow2.T/(block.Vol_Hot);%working with total flow rates 
+        dY(n+1) = (Flow1-Nflow1Out)*block.Ru*Inlet.Flow1.T/(block.Vol_Cold);%working with total flow rates 
+        dY(n+2) = (Flow2-Nflow2Out)*block.Ru*Inlet.Flow2.T/(block.Vol_Hot);%working with total flow rates 
         Out = dY;
     end
 end
@@ -294,32 +312,32 @@ block.HTconv = block.HTconv*Y(end);
 dY = 0*Y;
 QT = block.HTconv*Y(1:3*nodes) + block.HTcond*Y(1:3*nodes);
 Flow1.T = Y(1:nodes);
-ColdInlet = Flow1;
-ColdInlet.T(block.Flow1Dir(:,1),1) = Inlet.Flow1.T;
+Flow1_In = Flow1;
+Flow1_In.T(block.Flow1Dir(:,1),1) = Inlet.Flow1.T;
 for j = 1:1:length(block.Flow1Dir(1,:));%1:columns
     k = block.Flow1Dir(:,j);
     if j~=1
-        ColdInlet.T(k,1) = Flow1.T(kprev);
+        Flow1_In.T(k,1) = Flow1.T(kprev);
     end
     kprev = k;
 end
 
 Flow2.T = Y(2*nodes+1:3*nodes);
-HotInlet = Flow2;
-HotInlet.T(block.Flow2Dir(:,1),1) = Inlet.Flow2.T;
+Flow2_In = Flow2;
+Flow2_In.T(block.Flow2Dir(:,1),1) = Inlet.Flow2.T;
 for j = 1:1:length(block.Flow2Dir(1,:));%1:columns
     k = block.Flow2Dir(:,j);
     if j~=1
-        HotInlet.T(k,1) = Flow2.T(kprev);
+        Flow2_In.T(k,1) = Flow2.T(kprev);
     end
     kprev = k;
 end
 
 %energy flows & sepcific heats
 Hout1 = enthalpy(Flow1);
-Hin1 = enthalpy(ColdInlet);
+Hin1 = enthalpy(Flow1_In);
 Hout2 = enthalpy(Flow2);
-Hin2 = enthalpy(HotInlet);
+Hin2 = enthalpy(Flow2_In);
 tC = (block.Mass*block.Solid_SpecHeat); %have everything scale with the slower time constant of the plate, until it is initialized
 
 dY(1:nodes)= (QT(1:nodes) + Hin1 - Hout1)./tC; %Cold flow
@@ -333,12 +351,12 @@ elseif strcmp(method,'Effectiveness')
     ColdOut = Inlet.Flow1;
     ColdOut.T =  mean(Y(block.Flow1Dir(:,end),1));
     QT = enthalpy(ColdOut) - enthalpy(Inlet.Flow1);
-    ColdMax = Inlet.Flow1;
-    ColdMax.T = Inlet.Flow2.T;
-    HotMin = Inlet.Flow2;
-    HotMin.T = Inlet.Flow1.T;
-    maxQT1 = enthalpy(ColdMax) - enthalpy(Inlet.Flow1);
-    maxQT2 = enthalpy(Inlet.Flow2) - enthalpy(HotMin);
+    Flow1_Max = Inlet.Flow1;
+    Flow1_Max.T = Inlet.Flow2.T;
+    Flow2_Min = Inlet.Flow2;
+    Flow2_Min.T = Inlet.Flow1.T;
+    maxQT1 = enthalpy(Flow1_Max) - enthalpy(Inlet.Flow1);
+    maxQT2 = enthalpy(Inlet.Flow2) - enthalpy(Flow2_Min);
 
     error = block.Effectiveness - QT/min(maxQT1,maxQT2);
 elseif strcmp(method,'fixed')

@@ -48,6 +48,7 @@ end
 % repeat order of generators and lines for t = 2:nS
 xL = ic; lb =[]; ub = [];
 Organize.SpinReserveStates = zeros(nG+2,1);
+Organize.Fit = Op;
 for i = 1:1:nG
     Gen = Plant.Generator(i).QPform;
     if strcmp(Op,'B') 
@@ -67,9 +68,11 @@ for i = 1:1:nG
         else
             QP.organize{2,i} = xL+1:xL+s; %output is sum of multiple states at each time step
             if ismember(Plant.Generator(i).Type,{'Electric Generator';'CHP Generator';'Heater';'Chiller';'Absorption Chiller';})
-                Organize.Dispatchable(i) = 1;
                 if isfield(Plant.Generator(i).QPform,'constCost') 
                      QP.constCost(i) = Plant.Generator(i).QPform.constCost;
+                end
+                if QP.constCost(i)>0 || Plant.Generator(i).QPform.(Plant.Generator(i).QPform.states{1,end}).lb(end)>0 % first state has a non-zero lower bound for second optimization or a nonzero cost at an output of zero
+                    Organize.Dispatchable(i) = 1;
                 end
             end
         end
@@ -357,8 +360,12 @@ for net = 1:1:length(networkNames)
                         H((T-1)*t1States+states(j)) = Gen.(stateNames{j}).H(fit);%generator  cost fit
                         f((T-1)*t1States+states(j)) = Gen.(stateNames{j}).f(fit);
                     end
+                    if length(Plant.Generator(equip(k)).QPform.output.(out)(1,:))>1
+                        output = Plant.Generator(equip(k)).QPform.output.(out)(:,fit);
+                    else output = Plant.Generator(equip(k)).QPform.output.(out);
+                    end
                     for t = 1:1:nS
-                        Aeq((t-1)*t1Balances+req,(t-1)*t1States+states) = Plant.Generator(equip(k)).QPform.output.(out);
+                        Aeq((t-1)*t1Balances+req,(t-1)*t1States+states) = output;
                     end
                 end
             end
@@ -418,7 +425,7 @@ for i = 1:1:nG
                     while tt>(T+sum(dt(1:step)))
                         step = step+1;
                     end
-                    frac = (tt-(T+sum(dt(1:step))))/dt(step);%portion of flow from step, remainder from previous step
+                    frac = abs((tt-(T+sum(dt(1:step))))/dt(step));%portion of flow from step, remainder from previous step
                     Aeq((t-1)*t1Balances+req,(step-1)*t1States+Organize.States{nG+K(j)})= frac; % Qupriver at t - floor(T)
                     Aeq((t-1)*t1Balances+req,(step-2)*t1States+Organize.States{nG+K(j)})= (1-frac); % Qupriver at t - ceil(T)
                 end 
@@ -528,7 +535,7 @@ for i = 1:1:nG
     if Organize.Inequalities(i,1)>0
         ineqRow = Organize.Inequalities(i,1);
         for t = 1:1:nS
-            for k = 1:1:length(ineqRow)
+            for k = 1:1:Organize.Inequalities(i,2)
                 if k == 1 && ismember(Plant.Generator(i).Type,{'Electric Storage';'Thermal Storage'}) && ismember('Y',Plant.Generator(i).QPform.states)
                     A((t-1)*t1ineq+ineqRow,(t-1)*t1States+states(1)) = Plant.Generator(i).QPform.link.ineq(1,1)/dt(t);  % SOC at t  
                     A((t-1)*t1ineq+ineqRow,(t-1)*t1States+states(2)) = Plant.Generator(i).QPform.link.ineq(1,2)/dt(t);  % charging state at t: value is -1/(1-efficiency)
@@ -683,55 +690,51 @@ t1ineq = Organize.t1ineq;
 t1States = Organize.t1States;
 for i = 1:1:nB
     states = Organize.States{nG+nL+i};
-    %put demands into electrical (heating and cooling) balances
+    %Electric equality
+    req = Organize.Balance.Electrical(Plant.Building(i).QPform.nodeE);
+    Organize.Building.req(i) = req;
     for t = 1:1:nS
-        %Electric equality
-        req = Organize.Balance.Electrical(Plant.Building(i).QPform.nodeE);
-        Organize.Building.req(i) = req;
         Aeq((t-1)*t1Balances+req,(t-1)*t1States+states(2)) = -Plant.Building(i).QPform.H2E;% Electricity = E0 + H2E*(Heating-H0) + C2E*(Cooling-C0)
         Aeq((t-1)*t1Balances+req,(t-1)*t1States+states(3)) = -Plant.Building(i).QPform.C2E;% Electricity = E0 + H2E*(Heating-H0) + C2E*(Cooling-C0)
-        if Plant.Building(i).QPform.Cooling%put into cooling eqn
-            req = Organize.Balance.DistrictCool(Plant.Building(i).QPform.nodeC);
+    end
+    if Plant.Building(i).QPform.Cooling%put into cooling eqn
+        req = Organize.Balance.DistrictCool(Plant.Building(i).QPform.nodeC);
+        for t = 1:1:nS
             Aeq((t-1)*t1Balances+req,(t-1)*t1States+states(3)) = -1;%subtract building cooling needs from cooling energy balance
         end
-        if Plant.Building(i).QPform.Heating %put into heating eqn
-            req = Organize.Balance.DistrictHeat(Plant.Building(i).QPform.nodeH);
+    end
+    if Plant.Building(i).QPform.Heating %put into heating eqn
+        req = Organize.Balance.DistrictHeat(Plant.Building(i).QPform.nodeH);
+        for t = 1:1:nS
             Aeq((t-1)*t1Balances+req,(t-1)*t1States+states(2)) = -1;%subtract building heating needs from heating energy balance
         end
     end
     r = Organize.Building.r(i);
-    %heating inequality
+    
     for t = 1:1:nS
+        %heating inequality
         A((t-1)*t1ineq+r,(t-1)*t1States+states(1)) = (Plant.Building(i).QPform.UA+Plant.Building(i).QPform.Cap/(3600*dt(t)));% Heating>= H0 + UA*(Ti-Tset_H) + Cap*(Ti - T(i-1))/dt where dt is in seconds
         A((t-1)*t1ineq+r,(t-1)*t1States+states(2)) = -1;% Heating>= H0 + UA*(Ti-Tset_H) + Cap*(Ti - T(i-1))/dt where dt is in seconds
         if t == 1
             A(r,Organize.IC(nG+nL+i)) = -Plant.Building(i).QPform.Cap/(3600*dt(t));
         else
-            A((t-2)*t1ineq+r,(t-2)*t1States+states(1)) = -Plant.Building(i).QPform.Cap/(3600*dt(t));% Heating>= H0 + UA*(Ti-Tset_H) + Cap*(Ti - T(i-1))/dt where dt is in seconds
+            A((t-1)*t1ineq+r,(t-2)*t1States+states(1)) = -Plant.Building(i).QPform.Cap/(3600*dt(t));% Heating>= H0 + UA*(Ti-Tset_H) + Cap*(Ti - T(i-1))/dt where dt is in seconds
         end
-    end
-    %Cooling inequality
-    for t = 1:1:nS
-        A((t-1)*t1ineq+r+1,(t-1)*t1States+states(1)) = -(Plant.Building(i).QPform.UA+Plant.Building(i).QPform.Cap)/(3600*dt(t));% Cooling>= C0 + UA*(Tset_C-Ti) + Cap*(T(i-1)-Ti)/dt where dt is in seconds
+        %Cooling inequality
+        A((t-1)*t1ineq+r+1,(t-1)*t1States+states(1)) = -(Plant.Building(i).QPform.UA+Plant.Building(i).QPform.Cap/(3600*dt(t)));% Cooling>= C0 + UA*(Tset_C-Ti) + Cap*(T(i-1)-Ti)/dt where dt is in seconds
         A((t-1)*t1ineq+r+1,(t-1)*t1States+states(3)) = -1;% Cooling>= C0 + UA*(Tset_C-Ti) + Cap*(T(i-1)-Ti)*dt
         if t == 1
             A(r+1,Organize.IC(nG+nL+i)) = Plant.Building(i).QPform.Cap/(3600*dt(t));
         else
-            A((t-2)*t1ineq+r+1,(t-2)*t1States+states(1)) = Plant.Building(i).QPform.Cap/(3600*dt(t));% Cooling>= C0 + UA*(Tset_C-Ti) + Cap*(T(i-1)-Ti)/dt where dt is in seconds
+            A((t-1)*t1ineq+r+1,(t-2)*t1States+states(1)) = Plant.Building(i).QPform.Cap/(3600*dt(t));% Cooling>= C0 + UA*(Tset_C-Ti) + Cap*(T(i-1)-Ti)/dt where dt is in seconds
         end
-    end
-    %Upper bound inequality
-    for t = 1:1:nS
+        %Upper bound inequality
         A((t-1)*t1ineq+r+2,(t-1)*t1States+states(1)) = 1;% Upper buffer >= Ti - (Tset + Comfort width/2)
         A((t-1)*t1ineq+r+2,(t-1)*t1States+states(4)) = -1;% Upper buffer >= Ti - (Tset + Comfort width/2)
-    end
-    %Lower bound inequality
-    for t = 1:1:nS
+        %Lower bound inequality
         A((t-1)*t1ineq+r+3,(t-1)*t1States+states(1)) = -1;% Lower buffer >= (Tset - Comfort width/2) - Ti
         A((t-1)*t1ineq+r+3,(t-1)*t1States+states(5)) = -1;% Lower buffer >= (Tset - Comfort width/2) - Ti
-    end
-    %Cost penalty for exceeding temperature bounds
-    for t = 1:1:nS
+        %Cost penalty for exceeding temperature bounds
         H((t-1)*t1States+states(4)) = dt(t)*Plant.Building(i).QPform.Discomfort;
         H((t-1)*t1States+states(5)) = dt(t)*Plant.Building(i).QPform.Discomfort;
         f((t-1)*t1States+states(4)) = dt(t)*Plant.Building(i).QPform.Discomfort;

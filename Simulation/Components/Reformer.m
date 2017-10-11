@@ -97,8 +97,13 @@ if length(varargin)==1 % first initialization
     block.Qref = h_rxn1.*R.CH4+h_rxn2.*R.WGS; %heat transfer to reforming reactions;
 %     
 %     block.Qref = zeros(length(block.Flow1Dir),1);
-    
-    [block.Tstates,block.HTcond,block.HTconv] = SteadyTemps(block,Inlet.Flow1,Inlet.Flow2);
+    mdot_Cp(1) = SpecHeat(Inlet.Flow1).*NetFlow(Inlet.Flow1)/block.nodes;
+    mdot_Cp(2) = SpecHeat(Inlet.Flow2).*NetFlow(Inlet.Flow2)/block.nodes;
+    if ~isempty(Inlet.Flow2)
+        T_in = [Inlet.Flow1.T,Inlet.Flow2.T];
+    else T_in = Inlet.Flow1.T;
+    end
+    [block.Tstates,block.HTcond,block.HTconv] = SteadyTemps(block,mdot_Cp,T_in);
     block = Set_IC(block,Primary,Inlet.Flow2);
 
     [Primary, Secondary,block] = solveInitCond(Inlet,block);
@@ -106,7 +111,9 @@ if length(varargin)==1 % first initialization
     %% set up ports : Inlets need to either connected or have initial condition, outlets need an initial condition, and it doesn't matter if they have a connection 
     block.InletPorts = {'Flow1','Flow1Pout'};
     block.Flow1.IC  = Inlet.Flow1;
+    block.Flow1.Saturation = [0,inf];
     block.Flow1Pout.IC = 101; %Atmospheric pressure
+    block.Flow1Pout.Saturation = [0,inf];
     block.Flow1Pout.Pstate = []; %identifies the state # of the pressure state if this block has one
 
     block.OutletPorts = {'Reformed','ReformedPin','MeasureReformT','MeasureS2C'};
@@ -116,11 +123,13 @@ if length(varargin)==1 % first initialization
     block.MeasureReformT.IC = Primary.T;
     block.MeasureS2C.IC = block.S2C;
     block.PfactorPrimary = NetFlow(Primary)/block.Pdrop1;
-
+    block.P_Difference = {'ReformedPin','Flow1Pout';};  
     if block.hotStream==1
         block.InletPorts = {'Flow1','Flow1Pout','Flow2','Flow2Pout'};
         block.Flow2.IC  = Inlet.Flow2;
+        block.Flow2.Saturation = [0,inf];
         block.Flow2Pout.IC = 101; %Atmospheric pressure
+        block.Flow2Pout.Saturation = [0,inf];
         block.Flow2Pout.Pstate = []; %identifies the state # of the pressure state if this block has one
         
         block.OutletPorts = {'Reformed','ReformedPin','Cooled','CooledPin','MeasureReformT','MeasureS2C'};
@@ -137,6 +146,7 @@ if length(varargin)==1 % first initialization
 elseif length(varargin)==2 %% Have inlets connected, re-initialize
     block = varargin{1};
     Inlet = varargin{2};
+    Inlet = checkSaturation(Inlet,block);
     N = 2;
     if block.hotStream==1
         N=3;
@@ -211,6 +221,7 @@ else%running the model
     Inlet = varargin{3};
     block = varargin{4};
     string1 = varargin{5};
+    Inlet = checkSaturation(Inlet,block);
     newSpec = fieldnames(Inlet.Flow1);
     for i = 1:1:length(block.spec1)
         if ~ismember(block.spec1{i},newSpec)

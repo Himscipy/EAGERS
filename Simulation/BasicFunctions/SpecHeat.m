@@ -93,9 +93,13 @@ end
 
 if exist('Inlet','var')
     Flow = NetFlow(Inlet);
-    CPnet =0;
-    for i = 1:1:length(spec)
-        CPnet = CPnet + Cp.(spec{i}).*Inlet.(spec{i})./Flow;
+    if Flow ==0
+         CPnet = Cp.(spec{1});%no flow, just use specific heat of first species.
+    else
+        CPnet =0;
+        for i = 1:1:length(spec)
+            CPnet = CPnet + Cp.(spec{i}).*Inlet.(spec{i})./Flow;
+        end
     end
     Cp = CPnet;
 end

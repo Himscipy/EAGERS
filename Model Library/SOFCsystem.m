@@ -2,7 +2,7 @@
 function Plant = SOFCsystem
 global SimSettings
 SimSettings.NominalPower= 300;
-Reformer = 'external';
+Reformer = 'internal';
 % options are 'internal' for indirect internal reforming, 
 % 'direct' for  direct internal reforming, 
 % 'adiabatic' for external reforming using the heat from the anode (over-rides S2C ratio), 
@@ -58,7 +58,7 @@ Plant.Components.FuelSource.connections = {300;'';'Controller.FuelFlow';};
 %Blower
 Plant.Components.Blower.type = 'Blower';
 Plant.Components.Blower.name = 'Blower';
-Plant.Components.Blower.Map = 'RadialCompressor1'; % Loads a saved compressor map
+Plant.Components.Blower.Map = 'BlowerMap'; % Loads a saved compressor map
 Plant.Components.Blower.InitialComposition = Air;
 Plant.Components.Blower.PeakEfficiency = 0.65;
 Plant.Components.Blower.Tdesign = 300;%Design temp(K)
@@ -66,30 +66,30 @@ Plant.Components.Blower.RPMdesign = 30000;%Design RPM
 Plant.Components.Blower.FlowDesign = 2;%design flow rate(kg/Sec)
 Plant.Components.Blower.Pdesign = 1.2;%design pressure ratio
 Plant.Components.Blower.connections = {'';'';'';'HX1.ColdPin';'Controller.Blower';}; %no species or temperature connection, stick to IC
-Plant.Components.Blower.TagInf = {'Flow';'NRPM';'Power';'PR';'Nflow';'Temperature';'MassFlow';'Eff'};
+Plant.Components.Blower.TagInf = {'Flow';'RPM';'Power';'PR';'Nflow';'Temperature';'MassFlow';'Eff'};
 
 %recircValve
 Plant.Components.recircValve.type = 'Valve3Way';
 Plant.Components.recircValve.name = 'recircValve';
 Plant.Components.recircValve.InitialFlowIn = FuelOut;
 Plant.Components.recircValve.InitialFlowIn.T = 1050;
-Plant.Components.recircValve.connections = {'FC1.Flow1Out','Controller.AnodeRecirc'};
+Plant.Components.recircValve.connections = {'FC1.Flow2Out','Controller.AnodeRecirc'};
 Plant.Components.recircValve.PercOpen = 0.5; %INITIAL valve position
 
-%Mixing
-Plant.Components.Mix1.type = 'MixingVolume';
-Plant.Components.Mix1.name = 'Mix1';
-Plant.Components.Mix1.Vol = 0.1;
-Plant.Components.Mix1.inlets = 2;
-Plant.Components.Mix1.SpeciesInit = FuelIn;
-Plant.Components.Mix1.Tinit = 800;
+%Fuel/Steam Mixing
+Plant.Components.Mix2.type = 'MixingVolume';
+Plant.Components.Mix2.name = 'Mix2';
+Plant.Components.Mix2.Vol = 0.1;
+Plant.Components.Mix2.inlets = 2;
+Plant.Components.Mix2.SpeciesInit = FuelIn;
+Plant.Components.Mix2.Tinit = 800;
 switch Reformer
     case {'internal';'direct'}
-        Plant.Components.Mix1.connections = {'FuelSource.Outlet';'recircValve.Out1';'FC1.Flow1Pin'};
+        Plant.Components.Mix2.connections = {'FuelSource.Outlet';'recircValve.Out1';'FC1.Flow2Pin'};
     case {'external';'adiabatic';'pox'}
-        Plant.Components.Mix1.connections = {'FuelSource.Outlet';'recircValve.Out1';'Reformer.ReformedPin'};
+        Plant.Components.Mix2.connections = {'FuelSource.Outlet';'recircValve.Out1';'Reformer.ReformedPin'};
 end
-Plant.Components.Mix1.TagInf = {'MassFlow';'Temperature';};
+Plant.Components.Mix2.TagInf = {'MassFlow';'Temperature';};
 
 %Oxidizer
 Plant.Components.Oxidizer.type = 'Oxidizer';
@@ -100,9 +100,9 @@ Plant.Components.Oxidizer.InitialFlowOut.T = 1050;
 Plant.Components.Oxidizer.Vol = .1; %volume in m^3
 switch Reformer
     case {'internal';'direct'}
-        Plant.Components.Oxidizer.connections = {'recircValve.Out2';'FC1.Flow2Out';'HX1.HotPin';};
+        Plant.Components.Oxidizer.connections = {'recircValve.Out2';'FC1.Flow1Out';'HX1.HotPin';};
     case {'external';'adiabatic';'pox'}
-        Plant.Components.Oxidizer.connections = {'recircValve.Out2';'FC1.Flow2Out';'Reformer.CooledPin';};
+        Plant.Components.Oxidizer.connections = {'recircValve.Out2';'FC1.Flow1Out';'Reformer.CooledPin';};
 end
 Plant.Components.Oxidizer.TagInf = {'EquivelanceRatio';'Temperature';'MassFlow'};
 
@@ -118,14 +118,14 @@ switch Reformer
         Plant.Components.Reformer.ReformTarget = .75; %    If there is a 2nd stream providing heat, it can use one of the following 4 targets to initialize reformer: Reforming percent, cold outlet temp, hot outlet temp, effectiveness of heat transfer from hot stream. Note that due to the reforming chemistry, a simple heat exchanger effectivess is not applicable.
         Plant.Components.Reformer.method = 'RefPerc'; %method for sizing reformer to initial conditions. Options are: 'none' fixed size during intialization, 'RefPerc' sizes for a specific external reforming percent, 'ColdT' sizes to match cold exit temp, 'HotT' sizes to match hot ext temp, 'Effectiveness' sizes to match a target effectiveness: % of ideal (infinite area) heat transfer (with no conduction between nodes)
         Plant.Components.Reformer.InletGuess = FuelIn;
-        Plant.Components.Reformer.connections = {'Mix1.Outlet';'FC1.Flow1Pin';'Oxidizer.Flow';'HX1.HotPin';};
+        Plant.Components.Reformer.connections = {'Mix2.Outlet';'FC1.Flow2Pin';'Oxidizer.Flow';'HX1.HotPin';};
         Plant.Components.Reformer.TagInf = {'H2flow';'CH4';};
     case 'adiabatic'
         Plant.Components.Reformer.type = 'Reformer';
         Plant.Components.Reformer.name = 'Reformer';
         Plant.Components.Reformer.nodes = 1; % adiabatic reformer only needs 1 node, it is an equilibrium reactor
         Plant.Components.Reformer.InletGuess = FuelIn;
-        Plant.Components.Reformer.connections = {'Mix1.Outlet';'FC1.Flow1Pin';};
+        Plant.Components.Reformer.connections = {'Mix2.Outlet';'FC1.Flow2Pin';};
         Plant.Components.Reformer.TagInf = {'H2flow';'CH4';};
     case 'pox'
         %have not made reformer handle pox yet
@@ -161,21 +161,21 @@ Plant.Components.HX1.ColdSpecIn = Air;
 Plant.Components.HX1.HotSpecIn = Oxidized;
 switch Reformer
     case {'internal';'direct';'adiabatic';'pox'}
-        Plant.Components.HX1.connections = {'bypassValve.Out2';'Oxidizer.Flow';'Mix2.Pin';'';}; 
+        Plant.Components.HX1.connections = {'bypassValve.Out2';'Oxidizer.Flow';'Mix1.Pin';'';}; 
     case 'external'
-        Plant.Components.HX1.connections = {'bypassValve.Out2';'Reformer.Cooled';'Mix2.Pin';'';}; 
+        Plant.Components.HX1.connections = {'bypassValve.Out2';'Reformer.Cooled';'Mix1.Pin';'';}; 
 end
 Plant.Components.HX1.TagInf = {'ColdOut';'HotOut';'Effectiveness';'NetImbalance'};
 
 % Air Bypass mixing
-Plant.Components.Mix2.type = 'MixingVolume';
-Plant.Components.Mix2.name = 'Mix2';
-Plant.Components.Mix2.Vol = 0.1;
-Plant.Components.Mix2.inlets = 2;
-Plant.Components.Mix2.SpeciesInit= Air;
-Plant.Components.Mix2.Tinit = 970;
-Plant.Components.Mix2.connections = {'bypassValve.Out1';'HX1.ColdOut';'FC1.Flow2Pin'};
-Plant.Components.Mix2.TagInf = {'MassFlow';'Temperature';};
+Plant.Components.Mix1.type = 'MixingVolume';
+Plant.Components.Mix1.name = 'Mix1';
+Plant.Components.Mix1.Vol = 0.1;
+Plant.Components.Mix1.inlets = 2;
+Plant.Components.Mix1.SpeciesInit= Air;
+Plant.Components.Mix1.Tinit = 970;
+Plant.Components.Mix1.connections = {'bypassValve.Out1';'HX1.ColdOut';'FC1.Flow1Pin'};
+Plant.Components.Mix1.TagInf = {'MassFlow';'Temperature';};
 
 % fuel cell
 Plant.Components.FC1.type = 'FuelCell';
@@ -183,14 +183,15 @@ Plant.Components.FC1.name = 'FC1';
 Plant.Components.FC1.FCtype = 'SOFC'; %SOFC, or MCFC or oxySOFC
 Plant.Components.FC1.Reformer = Reformer; 
 Plant.Components.FC1.direction = 'coflow'; % 'coflow', or 'counterflow' or 'crossflow'
-Plant.Components.FC1.ClosedCathode = 0; %0 means air or some excess flow of O2 in the cathode used as primary means of temerature control (initializations hold to design fuel utilization), 1 means closed end cathode, or simply a fixed oxygen utilization, cooling is done with excess fuel, and the design voltage is met during initialization
+Plant.Components.FC1.ClosedCathode = false; %false means air or some excess flow of O2 in the cathode used as primary means of temerature control (initializations hold to design fuel utilization), true means closed end cathode, or simply a fixed oxygen utilization, cooling is done with excess fuel, and the design voltage is met during initialization
 Plant.Components.FC1.CoolingStream = 'cathode'; % choices are 'anode' or 'cathode'. Determines which flow is increased to reach desired temperature gradient.
+Plant.Components.FC1.Mode = 'fuelcell'; % options are 'fuelcell' or 'electrolyzer'
 Plant.Components.FC1.PressureRatio = 1.1;
 Plant.Components.FC1.columns = 4;
-Plant.Components.FC1.rows = 4;
+Plant.Components.FC1.rows = 1;
 Plant.Components.FC1.RatedStack_kW = 300; %Nominal Stack Power in kW
-Plant.Components.FC1.Fuel = Fuel; %raw fuel fed to the system (calculates anode recirculation from this to reach S2C)
-Plant.Components.FC1.Flow2Spec = Air; %initial oxidant composition
+Plant.Components.FC1.Flow1Spec = Air; %initial oxidant composition
+Plant.Components.FC1.Flow2Spec = Fuel; %raw fuel fed to the system (calculates anode recirculation from this to reach S2C)
 Plant.Components.FC1.Steam2Carbon = Steam2Carbon;
 Plant.Components.FC1.method = 'Achenbach'; %Determines reforming reaction kinetics options: 'Achenbach' , 'Leinfelder' , 'Drescher'   
 Plant.Components.FC1.L_Cell= .09;  %Cell length in meters
@@ -199,26 +200,30 @@ Plant.Components.FC1.Specification = 'power density'; %options are 'cells', 'pow
 Plant.Components.FC1.SpecificationValue = 450; % power density specified in mW/cm^2, voltage specified in V/cell, current density specified in A/cm^2
 Plant.Components.FC1.deltaTStack = 70; %temperature difference from cathode inlet to cathode outlet
 Plant.Components.FC1.TpenAvg = 1023;% 750 C, average electrolyte operating temperature
-Plant.Components.FC1.FuelUtilization = Utilization; %fuel utilization (net hydrogen consumed/ maximum hydrogen produced with 100% Co and CH4 conversion
-Plant.Components.FC1.Flow1Pdrop = 1; %design anode pressure drop
-Plant.Components.FC1.Flow2Pdrop = 3; %Design cathode pressure drop
+Plant.Components.FC1.Utilization_Flow2 = Utilization; %fuel utilization (net hydrogen consumed/ maximum hydrogen produced with 100% Co and CH4 conversion
+Plant.Components.FC1.Flow1Pdrop = 6; %design pressure drop
+Plant.Components.FC1.Flow2Pdrop = 3; %Design  pressure drop
 Plant.Components.FC1.Map = 'SOFC_map'; %Radiative heat transfer view factors, imported from CAD
 switch Reformer
     case 'direct'
+        Plant.Components.FC1.AnPercEquilib = 1; %CH4 reforming reaches equilibrium at anode exit.
         Plant.Components.FC1.connections = {'Controller.Current';'Mix1.Outlet';'Mix2.Outlet';'Oxidizer.Pin';'Oxidizer.Pin';};
     case 'internal'
+        Plant.Components.FC1.AnPercEquilib = 1; %CH4 reforming reaches equilibrium at anode exit.
         Plant.Components.FC1.connections = {'Controller.Current';'Mix1.Outlet';'Mix2.Outlet';'Oxidizer.Pin';'Oxidizer.Pin';};
         Plant.Components.FC1.RefPerc = 0.8;% necessary for internal reformer, proportion of CH4 reforming in the reforming channels
         Plant.Components.FC1.RefSpacing = 1;% necessary for internal reformer. This is the # of active cells between reformer plates
     case 'external';
-        Plant.Components.FC1.connections = {'Controller.Current';'Reformer.Reformed';'Mix2.Outlet';'Oxidizer.Pin';'Oxidizer.Pin';};
+        Plant.Components.FC1.AnPercEquilib = 1; %CH4 reforming reaches equilibrium at anode exit.
+        Plant.Components.FC1.connections = {'Controller.Current';'Mix1.Outlet';'Reformer.Reformed';'Oxidizer.Pin';'Oxidizer.Pin';};
         Plant.Components.FC1.RefPerc = Plant.Components.Reformer.ReformTarget; % necessary for internal or external reformer. This is the percent towards equilibrium occurin in the reformer plaes
     case 'adiabatic'
-        Plant.Components.FC1.connections = {'Controller.Current';'Reformer.Reformed';'Mix2.Outlet';'Oxidizer.Pin';'Oxidizer.Pin';};
+        Plant.Components.FC1.AnPercEquilib = 1; %CH4 reforming reaches equilibrium at anode exit.
+        Plant.Components.FC1.connections = {'Controller.Current';'Mix1.Outlet';'Reformer.Reformed';'Oxidizer.Pin';'Oxidizer.Pin';};
     case 'pox'
 end
-Plant.Components.FC1.TagInf = {'Power';'Current';'Voltage';'PENavgT';'StackdeltaT';'H2utilization';'O2utilization';'TcathOut';'ASR';'O2utilization';}; %Tags to record at each step
-Plant.Components.FC1.TagFinal = {'Power';'Current';'Voltage';'PENavgT';'StackdeltaT';'H2utilization';'O2utilization';'TcathOut';'ASR';'O2utilization'}; %Tags to record at the final step
+Plant.Components.FC1.TagInf = {'Power';'Current';'Voltage';'PENavgT';'StackdeltaT';'H2utilization';'O2utilization';'T_flow1_out';'ASR';'O2utilization';}; %Tags to record at each step
+Plant.Components.FC1.TagFinal = {'Power';'Current';'Voltage';'PENavgT';'StackdeltaT';'H2utilization';'O2utilization';'T_flow1_out';'ASR';'O2utilization'}; %Tags to record at the final step
 
 % Controller %% order is heater bypass, blower power, anode recirculation
 Plant.Controls.Controller.type = 'ControlSOFCsystem';
@@ -226,18 +231,15 @@ Plant.Controls.Controller.name = 'Controller';
 Plant.Controls.Controller.Target = {'FC1.TpenAvg';'FC1.deltaTStack';'FC1.Steam2Carbon';SimSettings.NominalPower;};
 Plant.Controls.Controller.Fuel = Fuel;
 Plant.Controls.Controller.Cells = 'FC1.Cells';
-Plant.Controls.Controller.Utilization = 'FC1.FuelUtilization';
-Plant.Controls.Controller.AnodeRecirc = 'FC1.Recirc.Anode';
+Plant.Controls.Controller.Utilization = 'FC1.Utilization_Flow2';
+Plant.Controls.Controller.AnodeRecirc = 'FC1.Recirc.Flow2';
 Plant.Controls.Controller.HeaterBypass = 'bypassValve.PercOpen';
 Plant.Controls.Controller.Blower = 'Blower.NominalPower';
-% Plant.Controls.Controller.NominalPower = SimSettings.NominalPower;
-% Plant.Controls.Controller.InitConditions = {'bypassValve.PercOpen';'Blower.NominalPower';'FC1.Current';}; %heater bypass, blower power, FC current  [note: fuel flow and recirculaion are calculated and are not states]
-% Plant.Controls.Controller.Gain = [1e-1;1e-3;1e-1];
-% Plant.Controls.Controller.PropGain = [.75;4;1];
-Plant.Controls.Controller.Gain = [1e-1;1e-3;];
-Plant.Controls.Controller.PropGain = [.75;4;];
-Plant.Controls.Controller.TagInf = {'Bypass';'Blower';'Recirculation';'FuelFlow';'Current';'Utilization'};
-Plant.Controls.Controller.connections = {'';'';'';'PowerDemandLookup';'FC1.MeasureTflow2';'Mix2.Temperature';'FC1.MeasureVoltage';};
+Plant.Controls.Controller.Gain = [1e-4;2e-2;1e-3;2e-2]; %Cathode Inlet Temperature Target (to control avg temp), Heater bypass (to achieve inlet temp), RPM (to achieve flow resulting in correct deltaT), blower power to achieve RPM
+Plant.Controls.Controller.PropGain = [.5;2;.4;5];
+Plant.Controls.Controller.TagInf = {'Bypass';'Blower';'Recirculation';'FuelFlow';'Current';'Utilization';'TargetSpeed';'Taverage';'Tin';'TargetInletT';'deltaT';};
+Plant.Controls.Controller.connections = {'';'';'';'PowerDemandLookup';'FC1.MeasureTflow2';'Mix1.Temperature';'FC1.MeasureVoltage';'Blower.Speed';};
 
-Plant.Scope = {'FC1.PENavgT';'Blower.PR';'Mix2.Temperature';'Controller.Bypass';'Controller.Utilization';'FC1.StackdeltaT';'Controller.Blower';'Blower.MassFlow';'Blower.NRPM';}; %must be in TagInf of the corresponding block to work here
-Plant.Plot = [Plant.Scope;{'FC1.Voltage';'Controller.Current';'Oxidizer.Temperature';}];
+Plant.Scope = {'Controller.Bypass';'Controller.deltaT';'Controller.Taverage';'Blower.RPM';'Controller.Current';'Pstates';}; %must be in TagInf of the corresponding block to work here
+% Plant.Scope = {'Controller.Bypass';'Controller.deltaT';'Controller.Blower';'Blower.RPM';'Controller.TargetSpeed';'Controller.Taverage';'Controller.Tin';'Controller.TargetInletT';}; %must be in TagInf of the corresponding block to work here
+Plant.Plot = [Plant.Scope;{'FC1.PENavgT';'Blower.PR';'Mix2.Temperature';'FC1.Voltage';'Controller.Current';'Oxidizer.Temperature';'Controller.Utilization';'Blower.MassFlow';}];

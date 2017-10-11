@@ -35,9 +35,11 @@ if length(varargin)==1 %first initialization
         name = strcat('Inlet',num2str(i));
         block.(name) = [];
         block.InletPorts(end+1) = cellstr(name);
+        block.(name).Saturation = [0,inf];
     end
     block.InletPorts(end+1) = {'Pout'};
     block.Pout.IC = 101;
+    block.Pout.Saturation = [0,inf];
     block.Pout.Pstate = []; %identifies the state # of the pressure state if this block has one
     
     block.OutletPorts = {'Outlet';'Temperature';'Pin';};
@@ -53,6 +55,7 @@ if length(varargin)==1 %first initialization
 elseif length(varargin)==2%% Have inlets connected, re-initialize
     block = varargin{1};
     Inlet =varargin{2};
+    Inlet = checkSaturation(Inlet,block);
     n = block.inlets;     
     NetIn = {};
     for j = 1:1:length(block.spec)
@@ -118,12 +121,20 @@ else%running the model
     Inlet = varargin{3};
     block = varargin{4};
     string1 = varargin{5};
+    Inlet = checkSaturation(Inlet,block);
     Pin =Y(end);
     FlowOut = sum(max(0,Y(2:1+length(block.spec))));
-    scaleFlow = (block.Pfactor*(Pin-Inlet.Pout))/FlowOut;%total flow out    
+    if FlowOut ==0
+        scaleFlow = 1;
+    else
+        scaleFlow = (block.Pfactor*(Pin-Inlet.Pout))/FlowOut;%total flow out    
+    end
     ActualOut.T = Y(1);
     for i = 1:1:length(block.spec)
         ActualOut.(block.spec{i}) = max(0,Y(i+1)*scaleFlow);
+    end
+    if isfield(ActualOut,'O2') && ActualOut.O2<=0
+        disp('WTF')
     end
     if strcmp(string1,'Outlet')
         Out.Pin = Pin;
@@ -150,19 +161,26 @@ else%running the model
         end
         FlowIn = NetFlow(NetIn);
         FlowError = NetFlow(ActualOut) - FlowOut; 
-        %temperature
-        scaleFlow2 = NetFlow(NetIn)/FlowOut ;
-        Hout = enthalpy(ActualOut)*scaleFlow2/scaleFlow; %scale Hin and Hout to the same flow rate (no reactions so easy)
+        if FlowOut ==0
+            Hout = 0;
+            FlowOut = FlowIn;
+        else
+            scaleFlow2 = NetFlow(NetIn)/FlowOut ;
+            Hout = enthalpy(ActualOut)*scaleFlow2/scaleFlow; %scale Hin and Hout to the same flow rate (no reactions so easy)
+        end
         Cp = SpecHeat(ActualOut);
         dY(1) = (Hin-Hout)/(block.Vol*Cp*Pin).*Y(1)*block.Ru;
         %species
         for i = 1:1:length(block.spec)
-    %         dY(1+i) = (NetIn.(block.spec{i})-Y(i+1)).*Y(1)*block.Ru/(block.Vol*Pin);%change in stored mass of each species
-            dY(1+i) = ((NetIn.(block.spec{i})/FlowIn-Y(i+1)/FlowOut)*FlowOut + FlowError*max(0,Y(i+1))/FlowOut)/(block.Vol*Pin).*Y(1)*block.Ru;%change in stored mass of each species
+            dY(1+i) = (NetIn.(block.spec{i})-Y(i+1)).*Y(1)*block.Ru/(block.Vol*Pin);%change in stored mass of each species
+%             dY(1+i) = ((NetIn.(block.spec{i})/FlowIn-Y(i+1)/FlowOut)*FlowOut + FlowError*Y(i+1)/FlowOut)/(block.Vol*Pin).*Y(1)*block.Ru;%change in stored mass of each species
         end
         %pressure
         dY(end) = (FlowIn - NetFlow(ActualOut))*block.Ru*Y(1)/(block.Vol);
         Out = dY;
+        if any(isnan(dY))
+            disp('WTF')
+        end
     end
 end
 end%Ends function MixingVolume

@@ -34,7 +34,7 @@ for net = 1:1:length(networkNames)
             end
         end
         for j = 1:1:length(equip)
-            if isfield(Plant.Generator(equip(j)).QPform,'Stor') && any(strcmp(Plant.Generator(equip(j)).QPform.states,'W'))%storage with a buffer state
+            if isfield(Plant.Generator(equip(j)).QPform,'Stor') && any(strcmp(Plant.Generator(equip(j)).QPform.states,'U'))%storage with a buffer state
                 if any(strcmp('W',out))
                     %hydro
                     dischargeCapacity = (Plant.Generator(equip(j)).VariableStruct.MaxGenFlow + Plant.Generator(equip(j)).VariableStruct.MaxSpillFlow)/12.1; %flow rate in 1000 ft^3 converted to 1000 acre ft (1000 acre-ft = 12.1 x 1000 ft^3/s * 1 hr)

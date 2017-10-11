@@ -1,7 +1,7 @@
-%% Build agregate state space model:
+%% Build aggregate state space model:
 function agregateSSmodel(SSi)
-%SSmpc: the agregated state-space model seen by the MPC, the time may be scaled by both Tmpc and scaletime.
-%GenSSindex: A matrix used to relate the primary and secondary states of each generator to their index in the states of the agregated state space model SSmpc.
+%SSmpc: the aggregated state-space model seen by the MPC, the time may be scaled by both Tmpc and scaletime.
+%GenSSindex: A matrix used to relate the primary and secondary states of each generator to their index in the states of the aggregated state space model SSmpc.
 %GendX: The derivative of the generator state, assume steady initial condition and GendX=0. Need to keep track of this for MPC
 global Plant GenSSindex %SSmpc GendX
 nG = length(Plant.Generator);

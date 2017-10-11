@@ -34,7 +34,7 @@ if k < length(c)%if index is equal or greater than c, then there is no convex po
         QP.lb = [];
         QP.ub =[];
         QP.solver = 'quadprog';
-        [A, cost,Feasible] = callQPsolver(QP);
+        [A, cost,Feasible] = callQPsolver(QP,[],[]);
         if Feasible ==1
             costTerms.Convex(2:3) = A;
         else
@@ -115,7 +115,7 @@ else
     QP.lb = [];
     QP.ub = [];
     QP.solver = 'quadprog';
-    [A, cost,Feasible] = callQPsolver(QP);
+    [A, cost,Feasible] = callQPsolver(QP,[],[]);
     if Feasible==1
         coef(1) = A(1);
         coef(4) = A(2);
@@ -150,7 +150,7 @@ else %quadratic segment
         QP.lb = [];
         QP.ub =[];
         QP.solver = 'quadprog';
-        [A,cost, Feasible] = callQPsolver(QP);
+        [A,cost, Feasible] = callQPsolver(QP,[],[]);
         if Feasible==1
             coef(2:3) = A;
         end
@@ -174,7 +174,7 @@ fit = fit1 + sum((coef(2).*x_i + coef(3).*x_i.^2 - y_i).^2);
 % QP.lb = [];
 % QP.ub = [];
 % QP.solver = 'quadprog';
-% [coef, cost,Feasible] = callQPsolver(QP);
+% [coef, cost,Feasible] = callQPsolver(QP,[],[]);
 % if Feasible==1
 %     fit = sum((coef(1)*Xa + coef(2)*Xb + coef(3)*Xb.^2 + coef(4) - c).^2);
 % else fit = inf;
@@ -191,7 +191,7 @@ fit = fit1 + sum((coef(2).*x_i + coef(3).*x_i.^2 - y_i).^2);
 % QP.lb = [];
 % QP.ub = [];
 % QP.solver = 'quadprog';
-% [A, cost,Feasible] = callQPsolver(QP);
+% [A, cost,Feasible] = callQPsolver(QP,[],[]);
 % coef = [coef(1), A];
 % if Feasible==1
 %     fit = sum((coef(1)*min(x,I) + coef(2)*max(x-I) + coef(3)*X.^2 + coef(4) - c).^2);

@@ -84,7 +84,8 @@ if isfield(Profile,'exteriorlights_solarcontroled')
             [Sunrise,Sunset,~,~] = SolarCalc(Location.Longitude,Location.Latitude,Location.TimeZone,floor(Date(DateIndex{day}(1))));
         elseif isfield(Build,'Longitude') %moving location into node structure of network
             [Sunrise,Sunset,~,~] = SolarCalc(Build.Longitude,Build.Latitude,Build.TimeZone,floor(Date(DateIndex{day}(1))));
-        else [Sunrise,Sunset,~,~] = SolarCalc(-105,40,-6,floor(Date(DateIndex{day}(1))));
+        else
+            [Sunrise,Sunset,~,~] = SolarCalc(-105,40,-6,floor(Date(DateIndex{day}(1))));
         end
         h_sr = 1;
         while HoD(h_sr)<(Sunrise*24+.125) && h_sr<length(HoD)

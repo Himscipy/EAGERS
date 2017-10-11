@@ -13,10 +13,15 @@ if length(varargin)==1 % first initialization
     %%
     block.InletPorts = {'Flow','Tset','Damper','Tamb','ambHumidity'};
     block.Flow.IC = 1;
+    block.Flow.Saturation = [0,inf];
     block.Tset.IC = {12.8,12.8};
+    block.Tset.Saturation = [0,inf];
     block.Damper.IC = .75;
+    block.Damper.Saturation = [0,1];
     block.Tamb.IC = 25;
+    block.Tamb.Saturation = [-50,50];
     block.ambHumidity.IC = 0.01;
+    block.ambHumidity.Saturation = [0,.1];
     
     block.OutletPorts = {'Temperature';'Humidity';'Mode';};
     block.Temperature.IC = 22.2;
@@ -28,6 +33,8 @@ if length(varargin)==1 % first initialization
 elseif length(varargin)==2 %% Have inlets connected, re-initialize
     block = varargin{1};
     Inlet = varargin{2};
+    
+    Inlet = checkSaturation(Inlet,block);
     [HeatedAir, IntGains, Occupancy] = findGains_andInletAir(Inlet,block,0,block.Scale);
     Hin = (MassFlow(HeatedAir) - 18*HeatedAir.H2O)*enthalpyAir(HeatedAir); %mass flow of dry air* enthalpy of dry air
     OutFlow = HeatedAir;
@@ -57,6 +64,8 @@ else%running the model
     Inlet = varargin{3};
     block = varargin{4};
     string1 = varargin{5};
+    
+    Inlet = checkSaturation(Inlet,block);
     [HeatedAir, IntGains, Occupancy] = findGains_andInletAir(Inlet,block,t,Y);
     if strcmp(string1,'Outlet')
         Out.Humidity = Y(2);
