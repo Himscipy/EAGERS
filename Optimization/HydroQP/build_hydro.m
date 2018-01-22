@@ -5,9 +5,8 @@ Plant.Name = 'ColumbiaRiverDams';
 
 %%rows 1->366 (hourly): October 2nd, 2015 -> October 1st, 2016; 
 Plant.Data.Timestamp = linspace(datenum([2015 10 2 1 0 0]),datenum([2016 10 2 0 0 0]),8784);
-Plant.Data.Temperature = 20*ones(length(Plant.Data.Timestamp),1);
-Plant.Data.Holidays = [];
-Plant.Data.HistProf = [];
+Plant.Data.Weather.Tdb = 20*ones(length(Plant.Data.Timestamp),1);
+
 %% Columns of SourceSink, SpillFlow, InFlow and Outflow must correspond to the node in the order of NodeNames
 %%columns 1->18 (kcfs or KW): Grand Coulee, Chief Joseph, Wells, Rocky Ridge, Rock Island, Wanapum, PriestRiver, McNary, John Day, The Dalles, Bonneville, Brownlee, Oxbow, Hells Canyon, Lower Granite, Little Goose, Lower Monumental, Ice Harbor;
 %SourceSink = Mass balance; Sinks and Sources in river segments; Negative values = sinks; Positive values = sources;

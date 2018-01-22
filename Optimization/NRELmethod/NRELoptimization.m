@@ -12,7 +12,7 @@ N_schedule = Plant.optimoptions.Horizon; % assumes hourly scheduling
 % Forecast.Demand.H = 10*ones(nS,1); % incidental heating load in kW
 % Forecast.Demand.H(1:nS/4) = 5;
 % Forecast.Demand.H(nS*3/4:end) = 5;
-
+Forecast.Demand.H = Forecast.Demand.H*2;
 
 % T_high = 22.78; % temperature bounds
 % T_low = 21.67;
@@ -105,7 +105,7 @@ mpi0 = mpii;
 
 % cvx_precision low
 cvx_begin
-cvx_solver_settings( 'dumpfile', 'test' ) 
+% cvx_solver_settings( 'dumpfile', 'test' ) 
 cvx_solver_settings( 'NumericFocus', '3' ) 
 
     variables x(6*nS) u(4*N_schedule) %R_as(N_schedule)

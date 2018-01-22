@@ -17,7 +17,8 @@ if ~isempty(varargin)
 
     if length(varargin)>1
         user = varargin{2};
-    else user = 'Commercial';
+    else
+        user = 'Commercial';
     end
     if length(varargin)>2
         natGas = varargin{3};
@@ -25,7 +26,8 @@ if ~isempty(varargin)
     if length(varargin)>3
         scale = varargin{4};
     end
-else user = 'Commercial';
+else
+    user = 'Commercial';
     state = 'USavg';
     natGas =[];
     scale =1;
@@ -36,7 +38,7 @@ Inflation = (1+Econ.Inflation/100);
 Years = 2014:1:2033;
 inflationPriceFactor=(Inflation.^(Years-startYear));
 
-tmx = [ones(8760,1)*[startYear 1 1]  [0:8759]' ones(8760,1)*[0 0]];
+tmx = [ones(8760,1)*[startYear 1 1]  (0:8759)' ones(8760,1)*[0 0]];
 date = datenum(tmx);
 month = datevec(date);
 month = month(:,2);
@@ -172,7 +174,8 @@ for i = 1:1:length(Years)
 %     if mod(i,Econ.LifeYrs)<1
     if mod(i,lifespan)<1
         StackReplace(i) = Econ.StackReplaceCost*Dispatch.SysSize;
-    else StackReplace(i) = 0;
+    else
+        StackReplace(i) = 0;
     end
 end
 
@@ -190,9 +193,11 @@ if Econ.CurveFit ==1
         ChillCost2 = Dispatch.ChillerSize(2)*(-35.469*log(Dispatch.ChillerSize(2))+431.41);
     elseif Dispatch.ChillerSize(2)>0
         ChillCost2 = Dispatch.ChillerSize(2)*(-81.552*log(Dispatch.ChillerSize(2))+778.95);
-    else ChillCost2 = 0;
+    else
+        ChillCost2 = 0;
     end
-else ChillCost2 = Dispatch.ChillerSize(2)*Econ.AbsorbChill/3.517; %convert ton to kW
+else
+    ChillCost2 = Dispatch.ChillerSize(2)*Econ.AbsorbChill/3.517; %convert ton to kW
 end
 
 %%Storage costs
@@ -232,7 +237,8 @@ if sum(AnnualSavings)>0
         end
         if i==1
             Payback = SystemCost/DCF(i);
-        else Payback = (i-1)+(SystemCost-CumNPV(i-1))/DCF(i);
+        else
+            Payback = (i-1)+(SystemCost-CumNPV(i-1))/DCF(i);
         end
     end
 else

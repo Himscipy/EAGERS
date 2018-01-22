@@ -1,9 +1,9 @@
-function plotDispatch(handles,ForecastTime,Forecast,HistoryTime,History)
+function plotDispatch(handles,ForecastTime,Solution,HistoryTime,History)
 %% plot dispatch into GUI, with historical operation
-global Plant
+global Plant CurrentState
 if isfield(handles,'LegendDeleteProxy')%2013 matlab
-    delete(handles.LegendColorbarLayout)
-    delete(handles.LegendDeleteProxy)
+%     delete(handles.LegendColorbarLayout)
+%     delete(handles.LegendDeleteProxy)
 elseif isfield(handles,'legend')%2015 matlab
     delete(handles.legend)
 end
@@ -27,11 +27,11 @@ end
 %% Collate history and future data
 if isempty(History)
     backSteps = 0;
-    Data = Forecast;
+    Data = Solution.Dispatch;
     Time = ForecastTime*24;
 else
     backSteps = length(History(:,1));
-    Data = [History;Forecast];
+    Data = [History;Solution.Dispatch];
     Time = [HistoryTime;ForecastTime]*24;
 end
 D = datevec(Time(1)/24);
@@ -74,18 +74,11 @@ end
 %% convert the saved SOC to power
 StoragePower = 0*Data;
 StorageState = 0*Data;
-if isfield(Plant.subNet,'Hydro')
-    if isempty(History)
-        StorageState = calculateHydroSOC(Forecast,ForecastTime);
-    else
-        currentTime = [HistoryTime(end,1);ForecastTime];
-        currentData = [Data(length(History(:,1)):end,:)];
-        StorageState = calculateHydroSOC(currentData,currentTime);
-    end
-end
 for i = 1:1:nG
     if strcmp(Plant.Generator(i).Type,'Hydro Storage')
         StoragePower(:,i) =  Data(:,i);
+        StorageState(1,i) = CurrentState.Hydro(1,i);
+        StorageState(2:end,i) = Solution.hydroSOC(:,i);
     elseif ismember(Plant.Generator(i).Type,{'Electric Storage';'Thermal Storage';})
         StorageState(:,i) = Data(:,i);
         if isfield(Plant.Generator(i).VariableStruct,'MaxDOD')
@@ -133,7 +126,7 @@ while isfield(handles,strcat('ResultPlot',num2str(nPlot+1)))
             ylab = 'Withdrawls (1000cfs)';
             for i = 1:1:length(Plant.Generator)
                 if strcmp(Plant.Generator(i).Type,'Hydro Storage')%% plot the downriver flow
-                    Data(:,i) = Data(:,Plant.Generator(i).QPform.DownRiverSegment+nG); %Outflow is after Power Produced
+                    Data(2:end,i) = Solution.LineFlows(:,Plant.Generator(i).QPform.DownRiverSegment); %Outflow is after Power Produced
                 end
             end
         elseif strcmp(S,'Steam')
@@ -186,7 +179,7 @@ while isfield(handles,strcat('ResultPlot',num2str(nPlot+1)))
         if ~isempty(Data2)
             dataPlot(h,LINE,Data2,hours,dt,s1,name,Names,colorsPlot,tSize)
             if ~isempty(stor) && ~LINE
-                addStorage2Plot(h,h2,StorageState(:,stor),hours,s1,colorsPlot,storNames,Names,tSize,handles.(strcat('ResultName',num2str(nPlot))))
+                addStorage2Plot(h,h2,StorageState(:,stor),hours(end-length(StorageState(:,1))+1:end,:),s1,colorsPlot,storNames,Names,tSize,handles.(strcat('ResultName',num2str(nPlot))))
             else
                 set(h2,'xtick',[],'xticklabel',[],'YTick',[],'YTickLabel',[])
                 ylabel(h2,[]);
@@ -203,8 +196,10 @@ while isfield(handles,strcat('ResultPlot',num2str(nPlot+1)))
         end
     end
 end
-A = {ForecastTime,Forecast,HistoryTime,History};
-set(handles.ResultPlot1,'UserData',A);
+Solution.ForecastTime = ForecastTime;
+Solution.HistoryTime = HistoryTime;
+Solution.History = History;
+set(handles.ResultPlot1,'UserData',Solution);
 
 function [name,stor,Data2,storNames] = sortForPlot(S,Data)
 global Plant

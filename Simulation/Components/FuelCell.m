@@ -319,9 +319,6 @@ else%running the model
     block = varargin{4};
     string1 = varargin{5};
     Inlet = checkSaturation(Inlet,block);
-    if Inlet.Flow1.O2<=0
-        disp('WTF')
-    end
     %% add species that may not be in inlet
     inFields = fieldnames(Inlet.Flow1);
     for i = 1:1:length(block.Spec1)
@@ -463,9 +460,6 @@ else%running the model
     if strcmp(string1,'Outlet')
         %% Outlet Ports
         Out.Flow1Out = Flow1Out;
-        if Out.Flow1Out.O2<=0
-            disp('WTF')
-        end
         Out.Flow2Out  = Flow2Out;
         Out.Flow1Pin = P_flow1;
         Out.Flow2Pin = P_flow2;
@@ -642,9 +636,6 @@ else%running the model
         Nflow2 = block.Pfactor2*max(0.1,(P_flow2-Inlet.Flow2Pout));%total fuel/steam flow out
         dY(n+2) = (NetFlow(Inlet.Flow2)-Nflow2)*block.Ru*Inlet.Flow2.T/block.tC(n+2);%working with total flow rates so must multiply by nodes & cells
         Out = dY;
-        if any(isnan(dY))
-            disp('WTF')
-        end
     end
 end
 end %Ends function FuelCell
@@ -853,9 +844,12 @@ end
 for i = 1:1:length(block.Spec2)
     X = Flow2.Outlet.(block.Spec2{i})./NetFlow(Flow2.Outlet);%concentration
     block.tC(n+1:n+block.nodes) = (block.Vol_flow(2)*block.Flow2_Pinit)./(block.T.Flow2*block.Ru); %fuel/steam
-    if any(X<.01) %concentration less than 1%
-        block.IC(n+1:n+block.nodes) = X;
+    if all(X==0)
+        block.IC(n+1:n+block.nodes) = 0;
         block.Scale(n+1:n+block.nodes) = NetFlow(Flow2.Outlet); %anode flow
+    elseif any(X<.01) %concentration less than 1%
+        block.IC(n+1:n+block.nodes) = Flow2.Outlet.(block.Spec2{i})/max(Flow2.Outlet.(block.Spec2{i}));
+        block.Scale(n+1:n+block.nodes) = max(Flow2.Outlet.(block.Spec2{i})); %max flow of this species (inlet or outlet probably)
     else
         block.Scale(n+1:n+block.nodes) = Flow2.Outlet.(block.Spec2{i}); %individual species flow
     end   

@@ -1,11 +1,11 @@
 function errors = Compare2EplusCompHand(building, weather, date, varargin)
 %COMPARE2EPLUSCOMPHAND Compare EAGERS and EnergyPlus results using
 %ComparisonHandler object.
-%   errors = Compare2EplusCompHand(building, weather, date, flags)
+%   errors = Compare2EplusCompHand(building, weather, date[, flags, args])
 %
 %   FLAG OPTIONS:
-%   'compPlot'  Comparative plot. Info for such plotting should be
-%               immediately following 'compPlot' and should be a cell array
+%   'comp'      Comparative plot. Info for such plotting should be
+%               immediately following 'comp' and should be a cell array
 %               containing name of variable in building.VariableStruct to
 %               be studied, list of values to study, and optionally a cell
 %               array containing the names of plots to keep (default: keep
@@ -18,7 +18,10 @@ function errors = Compare2EplusCompHand(building, weather, date, varargin)
 %               plotsToKeep =   {'Heating', 'Cooling'};
 %               compInfo = {compVar, compValues, plotsToKeep};
 %               errors = Compare2EplusCompHand(building, weather, date, ...
-%               'compPlot', compInfo);
+%               'comp', compInfo);
+%
+%   'stack'     Stacked bar plot. Each bar is represents the span of one
+%               timestep and is split up by demand category.
 %
 %   See also COMPARISONHANDLER
 

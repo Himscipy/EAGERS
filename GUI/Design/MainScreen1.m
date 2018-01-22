@@ -22,7 +22,7 @@ function varargout = MainScreen1(varargin)
 
 % Edit the above text to modify the response to help MainScreen1
 
-% Last Modified by GUIDE v2.5 20-Jul-2017 08:04:33
+% Last Modified by GUIDE v2.5 22-Dec-2017 17:29:25
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -60,7 +60,8 @@ guidata(hObject, handles);
 
 % UIWAIT makes MainScreen1 wait for user response (see UIRESUME)
 % uiwait(handles.figure1);
-global Plant Model_dir SYSINDEX GENINDEX testSystems 
+global Plant Model_dir SYSINDEX GENINDEX testSystems mainFig
+mainFig = gcf;
 movegui(gcf,'center');
 set(gcf,'Name','Energy Planning Tool 2017.0.1')
 Plant.optimoptions.method = 'Planning';
@@ -154,19 +155,6 @@ else
     toggleHistorical_Callback(hObject, eventdata, handles)
 end
 
-set(handles.sequential, 'value', testSystems(SYSINDEX).optimoptions.sequential);
-set(handles.simultaneous, 'value', ~testSystems(SYSINDEX).optimoptions.sequential);
-set(handles.excessHeat, 'value', testSystems(SYSINDEX).optimoptions.excessHeat);
-
-set(handles.DesignDay,'value', 1);
-set(handles.NoMixedInteger, 'value', ~testSystems(SYSINDEX).optimoptions.MixedInteger);
-set(handles.MixedInteger, 'value', testSystems(SYSINDEX).optimoptions.MixedInteger);
-
-set(handles.noSpinReserve, 'value', ~testSystems(SYSINDEX).optimoptions.SpinReserve);
-set(handles.SpinReserve, 'value', testSystems(SYSINDEX).optimoptions.SpinReserve);
-set(handles.SpinReservePerc, 'string', testSystems(SYSINDEX).optimoptions.SpinReservePerc);
-set(handles.StorageBuffer, 'string', testSystems(SYSINDEX).optimoptions.Buffer);
-
 n = length(testSystems(SYSINDEX).Costs.Equipment);
 Costs = cell(n,6);
 for i = 1:1:n
@@ -207,6 +195,17 @@ else
     set(handles.sliderDate2,'Min',0,'Max',days,'Value',0,'SliderStep',[1/days,1/days])
 end
 insertMockups(handles)
+
+function insertMockups(handles)
+global Model_dir
+handles.NetworkSetup = axes('Units','normalized',...
+        'Position', [0,.15,1,.7],...
+        'Tag', 'NetworkSetup',...
+        'Parent', handles.uipanelMain4,...
+        'Visible','off');
+[x,map] = imread(fullfile(Model_dir,'GUI','Graphics','NetworkSetupMockup.png'));
+image(x,'Parent',handles.NetworkSetup);
+set(handles.NetworkSetup,'xtick',[],'xticklabel',[],'ytick',[],'yticklabel',[],'box','off')
 
 % --- Outputs from this function are returned to the command line.
 function varargout = MainScreen1_OutputFcn(hObject, eventdata, handles) 
@@ -498,13 +497,54 @@ set(handles.(strcat('MainTab',n)),'FontWeight','bold','ForegroundColor',[0,0,0])
 % SaveBuilding visibility
 set(handles.(strcat('uipanelMain',m)),'Visible','off')
 set(handles.(strcat('uipanelMain',n)),'Visible','on')
-if strcmp(n,'2')
-    popupmenu_Callback(handles.popupmenuDemand, eventdata, handles);
-elseif strcmp(n,'1')
+
+if strcmp(n,'1')
     set(handles.popupmenuAxes,'Value',1);
     popupmenu_Callback(handles.popupmenuAxes, eventdata, handles)
+elseif strcmp(n,'2')
+    popupmenu_Callback(handles.popupmenuDemand, eventdata, handles);
+elseif strcmp(n,'5')
+    loadSettingsTab(handles)
 end
 
+function loadSettingsTab(handles)
+global SYSINDEX testSystems
+set(handles.excessHeat, 'value', testSystems(SYSINDEX).optimoptions.excessHeat);
+set(handles.excessCool, 'value', testSystems(SYSINDEX).optimoptions.excessCool);
+
+set(handles.DesignDay,'value', 1);
+set(handles.NoMixedInteger, 'value', ~testSystems(SYSINDEX).optimoptions.MixedInteger);
+set(handles.MixedInteger, 'value', testSystems(SYSINDEX).optimoptions.MixedInteger);
+
+set(handles.SpinReserve, 'value', testSystems(SYSINDEX).optimoptions.SpinReserve);
+if testSystems(SYSINDEX).optimoptions.SpinReserve
+    set(handles.SpinReservePerc, 'Visible','on','string', testSystems(SYSINDEX).optimoptions.SpinReservePerc);
+else set(handles.SpinReservePerc, 'Visible','off');
+end
+
+nG = length(testSystems(SYSINDEX).Generator);
+str = {};
+stor = [];
+for i = 1:1:nG
+    if ismember(testSystems(SYSINDEX).Generator(i).Type,{'Electric Storage';'Thermal Storage'; 'Hydro Storage';})
+        str{end+1} = testSystems(SYSINDEX).Generator(i).Name;
+        stor(end+1) = i;
+        if ~isfield(testSystems(SYSINDEX).Generator(i).VariableStruct,'Buffer')
+            testSystems(SYSINDEX).Generator(i).VariableStruct.Buffer = 20;
+        end
+    end
+end
+if ~isempty(str)
+    set(handles.StorageBuff, 'Visible', 'on','UserData',stor);
+    set(handles.editBuffer, 'Visible', 'on');
+    set(handles.textBuffer, 'Visible', 'on');
+    set(handles.StorageBuff,'string',str,'value',1);
+    set(handles.editBuffer, 'string', testSystems(SYSINDEX).Generator(stor(1)).VariableStruct.Buffer);
+else
+    set(handles.StorageBuff, 'Visible', 'off');
+    set(handles.editBuffer, 'Visible', 'off');
+    set(handles.textBuffer, 'Visible', 'off');
+end
 
 %% Tab 1 functions
 
@@ -560,7 +600,8 @@ end
 
 % --- Executes on button press in pushbuttonEDC.
 function pushbuttonEDC_Callback(hObject, eventdata, handles)
-global testSystems SYSINDEX Plant
+global testSystems SYSINDEX Plant mainFig
+mainFig = [];  
 Plant = testSystems(SYSINDEX);
 close
 DISPATCH
@@ -569,8 +610,10 @@ function popupmenuAxes_Callback(hObject, eventdata, handles)
 popupmenu_Callback(hObject, eventdata, handles)
 
 function popupmenu_Callback(hObject, eventdata, handles)
-global testSystems SYSINDEX Plant RealTimeData TestData
-menu = char(get(hObject,'Tag'));
+global testSystems SYSINDEX Plant TestData DispatchWaitbar Virtual RealTime
+Virtual = 1;
+RealTime = 0;
+menu = char(get(hObject,'Tag')); 
 list = get(handles.(menu),'String');
 item = list{get(handles.(menu),'Value')};
 if strcmp(item,'Monthly Costs')
@@ -605,67 +648,46 @@ if strcmp(item,'Monthly Costs')
                 %% need to fix logical statements for when data is not 1 year
                 if isempty(testSystems(i_ts).Design) || length(testSystems(i_ts).Design.Timestamp)~=(fullyear*24/testSystems(i_ts).optimoptions.Resolution) || any(testSystems(i_ts).Design.Timestamp(SiTest+1)==0) %at least some design days have not been run
                     repeat = true;
-                else repeat = false;
+                else
+                    repeat = false;
                 end
             else
                 SiTest = 1;
                 interval = fullyear;
                 if isempty(testSystems(i_ts).Design) || length(testSystems(i_ts).Design.Timestamp)~=fullyear*24/testSystems(i_ts).optimoptions.Resolution || any(testSystems(i_ts).Design.Timestamp==0) %at least some points have not been run
                     repeat = true;
-                else repeat = false;
+                else
+                    repeat = false;
                 end
             end
             if  repeat
                 Plant = testSystems(i_ts);
                 TestData = [];
-                if ~isempty(Plant.Data)
-                    TestData = Plant.Data;
-                    Xi = nnz(Plant.Data.Timestamp<=Plant.Data.Timestamp(1));
-                    Xf = nnz(Plant.Data.Timestamp<=Plant.Data.Timestamp(1)+365);
-                    RealTimeData = interpolateData(Plant.optimoptions.Resolution*3600,Xi,Xf,0.00);%create test data at correct frequency
+                if length(SiTest)==1
+                    STR = 'Optimizing Dispatch Throughout Entire Year';
+                else
+                    STR = 'Optimizing Design Day Dispatch';
                 end
-                if ~isfield(TestData,'Timestamp')
-                    nS = 365*24/Plant.optimoptions.Resolution+1;
-                    TestData.Timestamp = linspace(datenum([2017,1,1]),datenum([2018,1,1]),nS)';
-                end
-                if ~isfield(TestData,'Temperature') && ~isempty(Plant.Weather)
-                    D = datvec(TestData.Timestamp(1));
-                    SoY = datenum([D(1),1,1]);
-                    TestData.Temperature = interp1((0:1:8760)',[Plant.Weather.Tdb(1);Plant.Weather.Tdb],mod(24*(TestData.Timestamp-SoY),8760));
-                end
-                if ~isempty(Plant.Building)
-                    %% add building data to extra columns in test data, or do nothing here?
-                    if ~isfield(TestData,'Demand')
-                        nS = length(TestData.Timestamp);
-                        TestData.Demand.E = zeros(nS,1);
-                        TestData.Demand.C = zeros(nS,1);
-                        TestData.Demand.H = zeros(nS,1);
+                DispatchWaitbar=waitbar(0,STR,'Visible','on');
+                if SiTest == 1
+                    RunSimulation(TestData.Timestamp(1),[]);
+                else
+                    Plant.optimoptions.Interval = 1;
+                    preAllocateSpace('Design')
+                    for j = 1:1:length(SiTest)
+                        Date = TestData.Timestamp(1) + (SiTest(j)-1)*Plant.optimoptions.Resolution/24;
+                        ForecastTime = Date+[0;buildTimeVector(Plant.optimoptions)/24];%linspace(DateSim,DateEnd)';would need to re-do optimization matrices for this time vector
+                        Solution = SingleOptimization(ForecastTime,[]);
+                        if isempty(Plant.Building)
+                            Data = GetCurrentData(ForecastTime);
+                        else
+                            Data = updateForecast(ForecastTime,[]);
+                        end
+                        Forecast = updateForecast(ForecastTime(2:end),Data);%% function that creates demand vector with time intervals coresponding to those selected
+                        StepDispatchForward(SiTest(j),ForecastTime,Forecast,Solution.Dispatch);
                     end
-                    for i = 1:1:length(Plant.Building)
-                        %use the network structure to find the location of the building
-                        Location = [];
-                        [Equipment,InteriorLighting,ExteriorLighting,Cooling,Heating,FanPower,OtherLoads] = BuildingProfile(Plant.Building(i),Plant.Weather,TestData.Timestamp,Location);
-                        % Compare2Eplus(Plant.Building(i),Plant.Weather,TestData.Timestamp);
-                        %% need conditions of if there are chillers and heaters only for electric
-                        Electric = Equipment + InteriorLighting + ExteriorLighting + FanPower + Cooling/Plant.Building(i).VariableStruct.COP_C + Heating/Plant.Building(i).VariableStruct.COP_H + OtherLoads;
-                        
-                        TestData.Demand.E(:,end+1) = Electric;
-                        TestData.Demand.C(:,end+1) = Cooling;
-                        TestData.Demand.H(:,end+1) = Heating;
-                        TestData.Holidays = [];
-                    end
-                    RealTimeData = TestData;
                 end
-                Plant.Design.Temperature = RealTimeData.Temperature;
-                Plant.Design.Timestamp = zeros(length(RealTimeData.Temperature),1);
-                Plant.Design.Demand = RealTimeData.Demand;
-                if ~isfield(Plant,'subNet') || isempty(Plant.subNet)
-                    initializeOptimization%Load generators, build QP matrices
-                end
-                if ~isfield(Plant.Design,'GeneratorState') || length(Plant.Design.GeneratorState(:,1))~=length(Plant.Design.Timestamp)
-                    Plant.Design.GeneratorState = zeros(length(Plant.Design.Timestamp),length(Plant.OneStep.organize));
-                end
-                RunPlanning(SiTest,interval);%specify starting indices Si, and duration of test in days
+                close(DispatchWaitbar)
                 testSystems(i_ts) = Plant;
                 [testSystems(i_ts).Costs.Design,testSystems(i_ts).Costs.NPC]  = DesignCosts(i_ts);
             end
@@ -691,58 +713,6 @@ else
     end
 end
 
-function RunPlanning(SiTest,interval)
-global Plant Virtual RealTime DispatchWaitbar DateSim Last24hour TestData
-%Virtual: Running a simulation only, set to zero when the end of the test data set is reached
-%DateSim: Current time in the simulation.
-%NumSteps: the number of dispatch optimiztions that will occur during the entire simulation
-%CurrentState: Current state of all generators (kW) & storage (kWh) 
-%Si: Counter for dispatch loop
-%Last24hour: recorded data for the last 24 hours
-%CurrentState: Current state of all generators (kW) & storage (kWh) 
-%OnOff: the desired generator state from the controller (may differ from actual on/off because it leaves generators on as they ramp down to min power, then shuts them off)
-Virtual = 1;
-RealTime = 0;
-
-Plant.optimoptions.Interval = interval;
-NumOptim = ceil(Plant.optimoptions.Interval*24/Plant.optimoptions.Horizon);
-timers = zeros(NumOptim*length(SiTest),3); % To record times set to zeros(1,3), to not record set to [];
-
-if length(SiTest)==1
-    STR = 'Optimizing Dispatch Throughout Entire Year';
-else
-    STR = 'Optimizing Design Day Dispatch';
-end
-DispatchWaitbar=waitbar(0,STR,'Visible','on');
-Time = buildTimeVector(Plant.optimoptions);%% set up vector of time interval
-for j = 1:1:length(SiTest)
-    Si=SiTest(j); %counter for # of times dispatch loop has run
-    if isempty(Plant.Design) || Plant.Design.Timestamp(Si+1)==0
-        DateSim = TestData.Timestamp(1) + (Si-1)*Plant.optimoptions.Resolution/24;
-        TimeYesterday = DateSim-1+((0:round(24/Plant.optimoptions.Resolution)-1)'.*(Plant.optimoptions.Resolution/24));
-        if TestData.Timestamp(1)<(DateSim-1) && TestData.Timestamp(end)>DateSim
-            Last24hour = GetCurrentData(TimeYesterday);
-        else %need to have this in terms of the first timestep
-            Last24hour = GetCurrentData(TimeYesterday+1);
-            Last24hour.Timestamp = TimeYesterday;
-        end
-        Plant.Design.GeneratorState(Si,:) = automaticInitialCondition(GetCurrentData(DateSim));
-        LastDispatch = [];
-        for t = 1:1:NumOptim
-            Date = DateSim+[0;Time/24];
-            Data = GetCurrentData(DateSim);
-            Forecast = updateForecast(Date(2:end),Data);%% function that creates demand vector with time intervals coresponding to those selected
-            [LastDispatch,timers((j-1)*NumOptim+t,:)] = DispatchLoop(Date,Forecast,LastDispatch);
-        %     disp(strcat('FistDisp:',num2str(timers(Si,1))));
-        %     disp(strcat('StebByStep:',num2str(timers(Si,2))));
-        %     disp(strcat('FinalDisp:',num2str(timers(Si,3))));
-            Si = StepDispatchForward(Si,Date,Data,Forecast,LastDispatch);
-            waitbar(((j-1)*NumOptim+t)/(NumOptim*length(SiTest)),DispatchWaitbar,STR);
-        end
-        
-    end
-end
-close(DispatchWaitbar)
 
 function PlotCosts(handles)
 global testSystems 
@@ -1394,14 +1364,19 @@ switch str
         isType = strcmp('Thermal Storage',type).*strcmp('Cooling',source);
     case 'Battery'
         isType = strcmp('Electric Storage',type);
-    case 'Heating Demands'
-        GENINDEX = -1;
-    case 'Hot Water Demands'
-        GENINDEX = -2;
-    case 'Cooling Demands'
-        GENINDEX = -3;
-    case 'AC / DC Conversion'
-        GENINDEX = -4;
+    case 'Chiller'
+        isType = strcmp('Chiller',type);
+    case 'Water Heater'
+        isType = strcmp('Boiler',type);
+%     Following buttons don't work until we decided what they display
+%     case 'Heating Demands'
+%         GENINDEX = -1;
+%     case 'Hot Water Demands'
+%         GENINDEX = -2;
+%     case 'Cooling Demands'
+%         GENINDEX = -3;
+%     case 'AC / DC Conversion'
+%         GENINDEX = -4;
 end
 isType = nonzeros(linspace(1,nG,nG)'.*isType);
 
@@ -1440,6 +1415,14 @@ set(handles.Library,'Visible','off');
 function CompName_Callback(hObject, eventdata, handles)
 global testSystems SYSINDEX GENINDEX
 testSystems(SYSINDEX).Generator(GENINDEX).Name = get(hObject,'String');
+old = char(testSystems(SYSINDEX).Network.Equipment(GENINDEX));
+first = strfind(old,'.');
+old = old(1:first);
+new = cellstr(strcat(old,get(hObject,'String')));
+testSystems(SYSINDEX).Network.Equipment(GENINDEX) = new;
+
+
+
 
 
 function CompName_CreateFcn(hObject, eventdata, handles)
@@ -1454,10 +1437,11 @@ if strcmp(Gen.Type,'Utility')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.SumRates(1,1) = str2double(get(hObject,'String'));
 elseif strcmp(Gen.Type,'CHP Generator') || strcmp(Gen.Type,'Electric Generator')
     testSystems(SYSINDEX).Generator(GENINDEX).Size = str2double(get(hObject,'String'));
-    testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.UB = str2double(get(hObject,'String'));
 elseif strcmp(Gen.Type,'Solar')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.Size = str2double(get(hObject,'String'));
 elseif strcmp(Gen.Type,'Electric Storage')
+    testSystems(SYSINDEX).Generator(GENINDEX).Size = str2double(get(hObject,'String'));
+elseif strcmp(Gen.Type,'Thermal Storage')
     testSystems(SYSINDEX).Generator(GENINDEX).Size = str2double(get(hObject,'String'));
 end
 
@@ -1468,11 +1452,16 @@ Gen = testSystems(SYSINDEX).Generator(GENINDEX);
 if strcmp(Gen.Type,'Utility')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.SumRates(1,2) = str2double(get(hObject,'String'));
 elseif strcmp(Gen.Type,'CHP Generator') || strcmp(Gen.Type,'Electric Generator')
-    testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.LB = str2double(get(hObject,'String'));
+    newend = testSystems(SYSINDEX).Generator(GENINDEX).Size/str2double(get(hObject,'String'));
+    l = length(testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.Startup.Electricity);
+    begin = testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.Startup.Electricity(1);
+    testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.Startup.Electricity = linspace(begin,newend,l);
 elseif strcmp(Gen.Type,'Solar')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.Sizem2 = str2double(get(hObject,'String'));
 elseif strcmp(Gen.Type,'Electric Storage')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.Voltage = str2double(get(hObject,'String'));
+elseif strcmp(Gen.Type,'Thermal Storage')
+    testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.SizeLiter = str2double(get(hObject,'String'));
 end
 
 function compText3_Callback(hObject, eventdata, handles)
@@ -1480,10 +1469,18 @@ global testSystems SYSINDEX GENINDEX
 Gen = testSystems(SYSINDEX).Generator(GENINDEX);
 if strcmp(Gen.Type,'Utility')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.SumRates(2,1) = str2double(get(hObject,'String'));
+elseif strcmp(Gen.Type,'CHP Generator') || strcmp(Gen.Type,'Electric Generator')
+    if isfield(Gen.VariableStruct,'dX_dt')
+        testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.dX_dt = str2double(get(hObject,'String'));
+    else
+        hObject.String='--';
+    end
 elseif strcmp(Gen.Type,'Solar')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.Eff = str2double(get(hObject,'String'));
 elseif strcmp(Gen.Type,'Electric Storage')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.MaxDOD = str2double(get(hObject,'String'));
+elseif strcmp(Gen.Type,'Thermal Storage')
+    testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.Tcold = str2double(get(hObject,'String'));
 end
 
 function compText4_Callback(hObject, eventdata, handles)
@@ -1491,10 +1488,14 @@ global testSystems SYSINDEX GENINDEX
 Gen = testSystems(SYSINDEX).Generator(GENINDEX);
 if strcmp(Gen.Type,'Utility')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.SumRates(2,2) = str2double(get(hObject,'String'));
+elseif strcmp(Gen.Type,'CHP Generator') || strcmp(Gen.Type,'Electric Generator')
+    testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.StartCost = str2double(get(hObject,'String'));
 elseif strcmp(Gen.Type,'Solar')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.Azimuth = str2double(get(hObject,'String'));
 elseif strcmp(Gen.Type,'Electric Storage')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.ChargeResist = str2double(get(hObject,'String'));
+elseif strcmp(Gen.Type,'Thermal Storage')
+    testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.Thot = str2double(get(hObject,'String'));
 end
 
 function compText5_Callback(hObject, eventdata, handles)
@@ -1506,6 +1507,8 @@ elseif strcmp(Gen.Type,'Solar')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.Tilt = str2double(get(hObject,'String'));
 elseif strcmp(Gen.Type,'Electric Storage')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.DischResist = str2double(get(hObject,'String'));
+elseif strcmp(Gen.Type,'Thermal Storage')
+    testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.dX_dt = str2double(get(hObject,'String'));
 end
 
 
@@ -1516,6 +1519,8 @@ if strcmp(Gen.Type,'Utility')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.SumRates(3,2) = str2double(get(hObject,'String'));
 elseif strcmp(Gen.Type,'Electric Storage')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.PeakCharge = str2double(get(hObject,'String'));
+elseif strcmp(Gen.Type,'Thermal Storage')
+    testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.ChargeEff = str2double(get(hObject,'String'));
 end
 
 function compText7_Callback(hObject, eventdata, handles)
@@ -1523,6 +1528,8 @@ global testSystems SYSINDEX GENINDEX
 Gen = testSystems(SYSINDEX).Generator(GENINDEX);
 if strcmp(Gen.Type,'Electric Storage')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.PeakDisch = str2double(get(hObject,'String'));
+elseif strcmp(Gen.Type,'Thermal Storage')
+    testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.DischargeEff = str2double(get(hObject,'String'));
 end
 
 function compText8_Callback(hObject, eventdata, handles)
@@ -1530,319 +1537,48 @@ global testSystems SYSINDEX GENINDEX
 Gen = testSystems(SYSINDEX).Generator(GENINDEX);
 if strcmp(Gen.Type,'Electric Storage')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.SelfDischarge = str2double(get(hObject,'String'))/(31*24*100);
+elseif strcmp(Gen.Type,'Thermal Storage')
+    testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.SelfDischarge = str2double(get(hObject,'String'));
+end
+
+function compText9_Callback(hObject, eventdata, handles)
+global testSystems SYSINDEX GENINDEX
+Gen = testSystems(SYSINDEX).Generator(GENINDEX);
+if strcmp(Gen.Type,'Thermal Storage')
+    testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.FillRate = str2double(get(hObject,'String'));
+end
+
+function compText10_Callback(hObject, eventdata, handles)
+global testSystems SYSINDEX GENINDEX
+Gen = testSystems(SYSINDEX).Generator(GENINDEX);
+if strcmp(Gen.Type,'Thermal Storage')
+    testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.DischRate = str2double(get(hObject,'String'));
 end
 
 function uitableEffCurve_CellEditCallback(hObject, eventdata, handles)
 global testSystems SYSINDEX GENINDEX
 Outputs = fieldnames(testSystems(SYSINDEX).Generator(GENINDEX).Output);
+handlesC=get(handles.uipanelGenSpec,'Children');
 nOutput = eventdata.Indices;
 newValue = eventdata.NewData;
-testSystems(SYSINDEX).Generator(GENINDEX).Output.(Outputs{nOutput(2)})(nOutput(1)) = newValue;
-
-function AddSystem(hObject, eventdata,handles)
-%AddSystem(hObject,handles)
-%Adds a generator or storage system to the plant.
-global testSystems SYSINDEX Model_dir GENINDEX
-nG = length(testSystems(SYSINDEX).Generator);
-GENINDEX = nG+1;
-emptyStr = '[None]';
-files=dir(fullfile(Model_dir,'System Library',get(hObject,'Tag'),'*.mat'));
-list=strrep({files.name},'.mat','');
-if isempty(list)
-    list{1} = emptyStr;
-end
-[s,OK] = listdlg('PromptString','Select Model', ...
-    'SelectionMode','single', ...
-    'ListString',list);
-if OK && ~strcmp(list{s},emptyStr)
-    componentName = list{s};
-    load(fullfile(Model_dir,'System Library',get(hObject,'Tag'), ...
-        strcat(componentName,'.mat')));
-    if strcmp(component.Type,'Utility')
-        testSystems(SYSINDEX).Generator(GENINDEX) = struct( ...
-            'Type',component.Type, ...
-            'Name','Elec Utility1', ...
-            'Source','Electricity', ...
-            'Output',struct('Capacity',[], ...
-                'Electricity',[], ...
-                'Heat',[], ...
-                'Steam',[], ...
-                'Cooling',[]), ...
-            'Size',1, ...
-            'Enabled',1, ...
-            'VariableStruct',rmfield(component, {'Type','Source'}));
-    else
-        if isfield(testSystems(SYSINDEX).Generator(1),'QPform')
-            component.QPform = [];
+if length(Outputs) == 5
+    for i= 1:length(handlesC)
+        if strcmp(get(handlesC(i),'Tag'),'checkboxSeasonal')
+            if get(handlesC(i),'Value') == 1
+                type = get(handlesC(i-1),'Value');
+                if type == 1
+                    testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.SumRateTable(nOutput(1),nOutput(2)) = newValue; 
+                else
+                    testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.WinRateTable(nOutput(1),nOutput(2)) = newValue;
+                end
+            else
+                testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.SumRateTable(nOutput(1),nOutput(2)) = newValue;
+            end
         end
-        testSystems(SYSINDEX).Generator(GENINDEX) = component;
     end
-    testSystems(SYSINDEX).Network(1).Equipment(end+1) = {strcat( ...
-    testSystems(SYSINDEX).Generator(GENINDEX).Type,'.',testSystems(SYSINDEX).Generator(GENINDEX).Name)};
-    EditSystem(handles)
-    emptyQPmatrices
-end
-updateSystemRep(hObject,[], handles)
-
-
-% --- Executes on button press in pushbuttonRemove.
-function pushbuttonRemove_Callback(hObject, eventdata, handles)
-global testSystems SYSINDEX GENINDEX 
-if GENINDEX > 0
-    str = strcat(testSystems(SYSINDEX).Generator(GENINDEX).Type,'.',testSystems(SYSINDEX).Generator(GENINDEX).Name);
-    for n = 1:1:length(testSystems(SYSINDEX).Network)
-        testSystems(SYSINDEX).Network(n).Equipment = testSystems(SYSINDEX).Network(n).Equipment(~strcmp(str,testSystems(SYSINDEX).Network(n).Equipment));
-    end
-    testSystems(SYSINDEX).Generator = testSystems(SYSINDEX).Generator([1:GENINDEX-1,GENINDEX+1:length(testSystems(SYSINDEX).Generator)]);
-    GENINDEX = 0;
-    updateSystemRep(hObject, eventdata, handles)
-    EditSystem(handles)
-    emptyQPmatrices
-end
-
-% --- Executes on selection savebuilding in CompFuel.
-function CompFuel_Callback(hObject, eventdata, handles)
-global testSystems SYSINDEX GENINDEX
-fuels = get(hObject,'String');
-testSystems(SYSINDEX).Generator(GENINDEX).Source = fuels{get(hObject,'Value')};
-
-% --- Executes during object creation, after setting all properties.
-function CompFuel_CreateFcn(hObject, eventdata, handles)
-if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
-    set(hObject,'BackgroundColor','white');
-end
-
-%% Tab 5 functions
-function AggressiveOpt_Callback(hObject, eventdata, handles)
-if get(handles.AggressiveOpt,'Value')
-    set(handles.MedAncilOpt,'Value',0)
-    set(handles.RobustAncilOpt,'Value',0)
-end
-
-function MedAncilOpt_Callback(hObject, eventdata, handles)
-if get(handles.MedAncilOpt,'Value')
-    set(handles.AggressiveOpt,'Value',0)
-    set(handles.RobustAncilOpt,'Value',0)
-end
-
-function RobustAncilOpt_Callback(hObject, eventdata, handles)
-if get(handles.RobustAncilOpt,'Value')
-    set(handles.AggressiveOpt,'Value',0)
-    set(handles.MedAncilOpt,'Value',0)
-end
-
-function AutoAncilOpt_Callback(hObject, eventdata, handles)
-if get(handles.AutoAncilOpt,'Value')
-    set(handles.ManualAncilOpt,'Value',0)
 else
-    set(handles.ManualAncilOpt,'Value',1)
+    testSystems(SYSINDEX).Generator(GENINDEX).Output.(Outputs{nOutput(2)})(nOutput(1)) = newValue;
 end
-
-function ManualAncilOpt_Callback(hObject, eventdata, handles)
-if get(handles.ManualAncilOpt,'Value')
-    set(handles.AutoAncilOpt,'Value',0)
-else
-    set(handles.AutoAncilOpt,'Value',1)
-end
-
-function uipanelOptimizationOptions_SelectionChangeFcn(hObject, eventdata, handles)
-global testSystems SYSINDEX
-switch get(eventdata.NewValue,'Tag')
-    case 'IdealDispatch'
-        %Old DG-BEAT method
-    case 'NoMixedInteger'
-        testSystems(SYSINDEX).optimoptions.MixedInteger = false;
-        testSystems(SYSINDEX).optimoptions.method = 'Planning';
-    case 'MixedInteger'
-        testSystems(SYSINDEX).optimoptions.MixedInteger = true;
-        testSystems(SYSINDEX).optimoptions.method = 'Planning';
-    case 'NREL'
-        testSystems(SYSINDEX).optimoptions.method = 'NREL';
-end
-
-function SpinningReserve_SelectionChangeFcn(hObject, eventdata, handles)
-global testSystems SYSINDEX
-switch get(eventdata.NewValue,'Tag')
-    case 'noSpinReserve'
-        testSystems(SYSINDEX).optimoptions.SpinReserve = false;
-    case 'SpinReserve'
-        testSystems(SYSINDEX).optimoptions.SpinReserve = true;
-        testSystems(SYSINDEX).optimoptions.SpinReservePerc = str2double(get(handles.SpinReservePerc, 'String'));
-end
-
-
-function SpinReservePerc_Callback(hObject, eventdata, handles)
-global testSystems SYSINDEX
-testSystems(SYSINDEX).optimoptions.SpinReservePerc = str2double(get(handles.SpinReservePerc, 'String'));
-
-function SpinReservePerc_CreateFcn(hObject, eventdata, handles)
-if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
-    set(hObject,'BackgroundColor','white');
-end
-
-
-function Resolution_Callback(hObject, eventdata, handles)
-global testSystems SYSINDEX
-testSystems(SYSINDEX).optimoptions.Resolution = str2double(get(handles.Resolution, 'String'));
-
-function Resolution_CreateFcn(hObject, eventdata, handles)
-if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
-    set(hObject,'BackgroundColor','white');
-end
-
-
-function Horizon_Callback(hObject, eventdata, handles)
-global testSystems SYSINDEX
-testSystems(SYSINDEX).optimoptions.Horizon = str2double(get(handles.Horizon, 'String'));
-
-function Horizon_CreateFcn(hObject, eventdata, handles)
-if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
-    set(hObject,'BackgroundColor','white');
-end
-
-function StorageBuffer_Callback(hObject, eventdata, handles)
-global testSystems SYSINDEX
-testSystems(SYSINDEX).optimoptions.Buffer = str2double(get(handles.editBuffer, 'String'));
-
-function StorageBuffer_CreateFcn(hObject, eventdata, handles)
-if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
-    set(hObject,'BackgroundColor','white');
-end
-
-% --- Executes on key press with focus on CarbonTax and none of its controls.
-function CarbonTax_KeyPressFcn(hObject, eventdata, handles)
-
-
-
-function excessHeat_Callback(hObject, eventdata, handles)
-global testSystems SYSINDEX
-testSystems(SYSINDEX).optimoptions.excessHeat = get(hObject, 'Value');
-
-function DesignDay_Callback(hObject, eventdata, handles)
-
-function PlotHistogram(h,Data,Xlab)
-N = length(Data);
-dSort = sort(Data);
-Xi = max(1,floor(0.01*N));
-Xf = ceil(0.99*N);
-range = dSort(Xf)-dSort(Xi);
-OoM = log10(range);
-if (OoM-floor(OoM))==0 %count in increments of 1, 10, 100 or 1000 etc
-    Xspace = 10^(OoM-1);
-elseif (OoM-floor(OoM))> 0.6990 %count in increments of 1, 10, 100 or 1000 etc
-    Xspace = 10^floor(OoM);
-elseif (OoM-floor(OoM))> 0.30103 %count in increments of 5, 50, 500 or 5000 etc
-    Xspace = .5*10^floor(OoM);
-else  %count in increments of 2, 20, 200 or 2000 etc
-    Xspace = .2*10^floor(OoM);
-end
-hist = [];
-label = {};
-Xi = ceil(dSort(Xi)/Xspace)*Xspace;
-hist(end+1) = nnz(dSort<=Xi);
-label(end+1) = {strcat('<',num2str(Xi))};
-while Xi<dSort(Xf)
-    Xi = Xi + Xspace;
-    hist(end+1) = (nnz(dSort<=Xi) - sum(hist(1:end)));
-    label(end+1) = {strcat(num2str(Xi-Xspace),'--',num2str(Xi))};
-end
-hist = hist/N*100;
-cla(h)
-bar(h,hist)
-ylabel(h,'Percent of Time Within Range')
-% set(h,'XTickLabel', label)
-set(h,'XTickLabel','')
-xlim(h,[0.5,length(hist)+.5]);
-% ax = axis;    % Current axis limits
-% axis(axis);    % Set the axis limit modes (e.g. XLimMode) to manual
-pos = get(h,'position');
-t = text(0,0,Xlab);
-set(t,'Parent',h,'Units','characters','HorizontalAlignment','center','Position',[pos(3)/2,-6,0]);
-% Place the text labels
-for i = 1:length(hist)
-    t = text(0,0,label{i});
-    xpos = i*pos(3)/length(hist)- 0.5*pos(3)/length(hist);
-    set(t,'Parent',h,'Units','characters','HorizontalAlignment','right','VerticalAlignment','top','Rotation',45,'Position',[xpos,0,0]);
-end
-
-function PlotData(h,TimeVec,Y,Ylab,color)
-D = datevec(TimeVec(1));
-days = max(1,round(TimeVec(end)-TimeVec(1)));
-dNum = TimeVec(1);
-monthvec = [0 31 59 90 120 151 181 212 243 273 304 334 365];
-leapyear = mod((D(1)-2004),4)==0;%if it is a leap year it will have a remainder of 0
-if leapyear
-    monthvec(3:end) = monthvec(3:end)+1;
-end
-if days>sum(monthvec) %if you are plotting multiple years make the ticks in years
-    E = datevec(TimeVec(end));
-    plotAxis = dNum+linspace(0,round(TimeVec(end)-TimeVec(1)),E(1)-D(1)+1);
-elseif days==sum(monthvec) %if you are plotting a year, make the ticks in months
-    plotAxis = dNum+[monthvec(D(2):end),monthvec(12)+monthvec(1:D(2))]-monthvec(D(2))-D(3);%make sure to add the right number of days given the month and day of the year.
-elseif days > 31
-    [y,m1,~] = datevec(TimeVec(1));
-    [~,m2,~] = datevec(TimeVec(end));
-    M=0;
-    for i=1:1:(m2-m1)
-        d = datenum([y,m1+i,1])-datenum([y,m1+i-1,1]);%days in month
-        M(end+1) = M(end) + d;
-    end
-    plotAxis = dNum+M;
-elseif days>1
-    plotAxis = dNum+linspace(0,days,days+1);
-else
-    hours = floor(24*(TimeVec(end)-TimeVec(1)));
-    plotAxis = dNum+linspace(0,hours/24,floor(hours/3)+1);  
-end
-
-[m,n] = size(Y);
-hold(h,'off')
-for i = 1:1:n
-    if i ==2
-        hold(h,'on')
-    end
-    plot(h,TimeVec,Y(:,i),color{i});
-end
-ylabel(h,Ylab)
-xlim(h,[TimeVec(1) TimeVec(end)])
-set(h,'xtick',plotAxis)
-monthLabel = ['January  '; 'February '; 'March    '; 'April    '; 'May      '; 'June     '; 'July     '; 'August   '; 'September'; 'October  ';'November ' ;'December ';];
-if days>366
-    datetick(h,'x','yyyy','keeplimits')
-    xlabel(h,'Year') 
-elseif days==365|| days==366
-    datetick(h,'x','mmmdd','keeplimits')
-    xlabel(h,num2str(D(1)))
-elseif days>=28 && days<=31
-    datetick(h,'x','dd','keeplimits')
-    xlabel(h,strcat(monthLabel(D(2),:),'  ',num2str(D(1))))
-elseif days==7
-    datetick(h,'x','dd','keeplimits')
-    xlabel(h,strcat(monthLabel(D(2),:),'  ',num2str(D(1))))
-elseif days ==1
-    datetick(h,'x','HH','keeplimits','keepticks')
-    xlabel(h,strcat(['Hours of ', monthLabel(D(2),:), num2str(D(3))]))
-end
-
-function emptyQPmatrices
-%something changed in the specifications, any previously calculated
-%matrices or results do not apply
-global testSystems SYSINDEX
-A = {'subNet';'OpMatA';'OpMatB';'OneStep';'Online';'Dispatch';'Predicted';'RunData';'Baseline'};
-for i = 1:1:length(A)
-    testSystems(SYSINDEX).(A{i}) = [];
-end
-
-function insertMockups(handles)
-global Model_dir
-handles.NetworkSetup = axes('Units','normalized',...
-        'Position', [0,.15,1,.7],...
-        'Tag', 'NetworkSetup',...
-        'Parent', handles.uipanelMain4,...
-        'Visible','off');
-[x,map] = imread(fullfile(Model_dir,'GUI','Graphics','NetworkSetupMockup.png'));
-image(x,'Parent',handles.NetworkSetup);
-set(handles.NetworkSetup,'xtick',[],'xticklabel',[],'ytick',[],'yticklabel',[],'box','off')
 
 function checkboxSeasonal_Callback(hObject, eventdata, handles)
 handlesc =get(handles.uipanelGenSpec,'Children');
@@ -2097,8 +1833,6 @@ for i =1:length(handlesc)
 end
 if strcmp(get(hObject,'String'),'Natural Gas')
     testSystems(SYSINDEX).Generator(GENINDEX).Source = 'NG';
-elseif strcmp(get(hObject,'String'),'Bio-Fuel')
-    testSystems(SYSINDEX).Generator(GENINDEX).Source = 'Biofuel';
 else
     testSystems(SYSINDEX).Generator(GENINDEX).Source = get(hObject,'String');
 end
@@ -2159,4 +1893,206 @@ function uitableBat_CellEditCallback(hObject,eventdata,handles)
 global GENINDEX SYSINDEX testSystems
 testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.VoltCurve = get(hObject,'Data');
 
+function AddSystem(hObject, eventdata,handles)
+%AddSystem(hObject,handles)
+%Adds a generator or storage system to the plant.
+global testSystems SYSINDEX Model_dir GENINDEX
+nG = length(testSystems(SYSINDEX).Generator);
+GENINDEX = nG+1;
+emptyStr = '[None]';
+files=dir(fullfile(Model_dir,'System Library',get(hObject,'Tag'),'*.mat'));
+list=strrep({files.name},'.mat','');
+if isempty(list)
+    list{1} = emptyStr;
+end
+[s,OK] = listdlg('PromptString','Select Model', ...
+    'SelectionMode','single', ...
+    'ListString',list);
+if OK && ~strcmp(list{s},emptyStr)
+    componentName = list{s};
+    load(fullfile(Model_dir,'System Library',get(hObject,'Tag'), ...
+        strcat(componentName,'.mat')));
+    if strcmp(component.Type,'Utility')
+        testSystems(SYSINDEX).Generator(GENINDEX) = struct( ...
+            'Type',component.Type, ...
+            'Name','Elec Utility1', ...
+            'Source','Electricity', ...
+            'Output',struct('Capacity',[], ...
+                'Electricity',[], ...
+                'Heat',[], ...
+                'Steam',[], ...
+                'Cooling',[]), ...
+            'Size',1, ...
+            'Enabled',1, ...
+            'VariableStruct',rmfield(component, {'Type','Source'}));
+    else
+        if isfield(testSystems(SYSINDEX).Generator(1),'QPform')
+            component.QPform = [];
+        end
+        testSystems(SYSINDEX).Generator(GENINDEX) = component;
+    end
+    testSystems(SYSINDEX).Network(1).Equipment(end+1) = {strcat( ...
+    testSystems(SYSINDEX).Generator(GENINDEX).Type,'.',testSystems(SYSINDEX).Generator(GENINDEX).Name)};
+    EditSystem(handles)
+    emptyQPmatrices
+end
+updateSystemRep(hObject,[], handles)
+
+% --- Executes on button press in pushbuttonRemove.
+function pushbuttonRemove_Callback(hObject, eventdata, handles)
+global testSystems SYSINDEX GENINDEX 
+if GENINDEX > 0
+    str = strcat(testSystems(SYSINDEX).Generator(GENINDEX).Type,'.',testSystems(SYSINDEX).Generator(GENINDEX).Name);
+    for n = 1:1:length(testSystems(SYSINDEX).Network)
+        testSystems(SYSINDEX).Network(n).Equipment = testSystems(SYSINDEX).Network(n).Equipment(~strcmp(str,testSystems(SYSINDEX).Network(n).Equipment));
+    end
+    testSystems(SYSINDEX).Generator = testSystems(SYSINDEX).Generator([1:GENINDEX-1,GENINDEX+1:length(testSystems(SYSINDEX).Generator)]);
+    GENINDEX = 0;
+    updateSystemRep(hObject, eventdata, handles)
+    EditSystem(handles)
+    emptyQPmatrices
+end
+
+function emptyQPmatrices
+%something changed in the specifications, any previously calculated
+%matrices or results do not apply
+global testSystems SYSINDEX
+A = {'subNet';'OpMatA';'OpMatB';'OneStep';'Online';'Dispatch';'Predicted';'RunData';'Baseline'};
+for i = 1:1:length(A)
+    testSystems(SYSINDEX).(A{i}) = [];
+end
+
+% --- Executes on selection savebuilding in CompFuel.
+function CompFuel_Callback(hObject, eventdata, handles)
+global testSystems SYSINDEX GENINDEX
+fuels = get(hObject,'String');
+testSystems(SYSINDEX).Generator(GENINDEX).Source = fuels{get(hObject,'Value')};
+
+% --- Executes during object creation, after setting all properties.
+function CompFuel_CreateFcn(hObject, eventdata, handles)
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+%% Tab 5 functions
+function AggressiveOpt_Callback(hObject, eventdata, handles)
+if get(handles.AggressiveOpt,'Value')
+    set(handles.MedAncilOpt,'Value',0)
+    set(handles.RobustAncilOpt,'Value',0)
+end
+
+function MedAncilOpt_Callback(hObject, eventdata, handles)
+if get(handles.MedAncilOpt,'Value')
+    set(handles.AggressiveOpt,'Value',0)
+    set(handles.RobustAncilOpt,'Value',0)
+end
+
+function RobustAncilOpt_Callback(hObject, eventdata, handles)
+if get(handles.RobustAncilOpt,'Value')
+    set(handles.AggressiveOpt,'Value',0)
+    set(handles.MedAncilOpt,'Value',0)
+end
+
+function AutoAncilOpt_Callback(hObject, eventdata, handles)
+if get(handles.AutoAncilOpt,'Value')
+    set(handles.ManualAncilOpt,'Value',0)
+else
+    set(handles.ManualAncilOpt,'Value',1)
+end
+
+function ManualAncilOpt_Callback(hObject, eventdata, handles)
+if get(handles.ManualAncilOpt,'Value')
+    set(handles.AutoAncilOpt,'Value',0)
+else
+    set(handles.AutoAncilOpt,'Value',1)
+end
+
+function uipanelOptimizationOptions_SelectionChangeFcn(hObject, eventdata, handles)
+global testSystems SYSINDEX
+switch get(eventdata.NewValue,'Tag')
+    case 'NoMixedInteger'
+        testSystems(SYSINDEX).optimoptions.MixedInteger = false;
+        testSystems(SYSINDEX).optimoptions.method = 'Planning';
+    case 'MixedInteger'
+        testSystems(SYSINDEX).optimoptions.MixedInteger = true;
+        testSystems(SYSINDEX).optimoptions.method = 'Planning';
+end
+
+function Horizon_Callback(hObject, eventdata, handles)
+global testSystems SYSINDEX
+testSystems(SYSINDEX).optimoptions.Horizon = str2double(get(handles.Horizon, 'String'));
+
+function Horizon_CreateFcn(hObject, eventdata, handles)
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+
+function Resolution_Callback(hObject, eventdata, handles)
+global testSystems SYSINDEX
+testSystems(SYSINDEX).optimoptions.Resolution = str2double(get(handles.Resolution, 'String'));
+
+function Resolution_CreateFcn(hObject, eventdata, handles)
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+% --- Executes on key press with focus on CarbonTax and none of its controls.
+function CarbonTax_KeyPressFcn(hObject, eventdata, handles)
+
+
+function DesignDay_Callback(hObject, eventdata, handles)
+
+
+function StorageBuff_Callback(hObject, eventdata, handles)
+global testSystems SYSINDEX
+val = get(handles.StorageBuff,'Value');
+stor = get(handles.StorageBuff,'UserData');
+set(handles.editBuffer,'String',num2str(testSystems(SYSINDEX).Generator(stor(val)).VariableStruct.Buffer));
+
+function StorageBuff_CreateFcn(hObject, eventdata, handles)
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+function editBuffer_Callback(hObject, eventdata, handles)
+global testSystems SYSINDEX
+val = get(handles.StorageBuff,'Value');
+stor = get(handles.StorageBuff,'UserData');
+testSystems(SYSINDEX).Generator(stor(val)).VariableStruct.Buffer = str2double(get(handles.editBuffer, 'String'));
+
+function editBuffer_CreateFcn(hObject, eventdata, handles)
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+
+function excessHeat_Callback(hObject, eventdata, handles)
+global testSystems SYSINDEX
+testSystems(SYSINDEX).optimoptions.excessHeat = get(hObject, 'Value');
+
+function excessCool_Callback(hObject, eventdata, handles)
+global testSystems SYSINDEX
+testSystems(SYSINDEX).optimoptions.excessCool = get(hObject, 'Value');
+
+
+% --- Executes on button press in SpinReserve.
+function SpinReserve_Callback(hObject, eventdata, handles)
+global testSystems SYSINDEX
+if get(hObject,'Value')
+    testSystems(SYSINDEX).optimoptions.SpinReserve = true;
+    set(handles.SpinReservePerc,'Visible','on')
+else
+    testSystems(SYSINDEX).optimoptions.SpinReserve = false;
+    set(handles.SpinReservePerc,'Visible','off')
+end
+
+function SpinReservePerc_Callback(hObject, eventdata, handles)
+global testSystems SYSINDEX
+testSystems(SYSINDEX).optimoptions.SpinReservePerc = str2double(get(handles.SpinReservePerc, 'String'));
+
+function SpinReservePerc_CreateFcn(hObject, eventdata, handles)
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
 

@@ -103,9 +103,10 @@ if J3 ~=4
         controls = fieldnames(LinMod.Controls);
         Outlet = LinMod.NominalOutlet; SimSettings = LinMod.NominalSettings; Tags = LinMod.NominalTags;
     end
-    A = (inputdlg('Test Duration (s)','Specify length of the transient simulation',1,{num2str(24*3600)}));
-    SimSettings.RunTime = eval(A{1});
-    
+    A = (inputdlg({'Test Duration (hr)';'Maximum Step Size (hr)'},'Specify length of the transient simulation in hours',1,{'24';'.25';}));
+    SimSettings.RunTime = eval(A{1})*3600;
+    options = odeset('MaxStep',eval(A{2})*3600);
+    t_Steps = [0,SimSettings.RunTime];
     for i = 1:1:length(controls)
         if ~isempty(modelParam)
             Cont = modelParam.Controls.(controls{i});
@@ -120,8 +121,10 @@ if J3 ~=4
                 for k = 1:1:length(globvar)
                     SimSettings.(globvar{k}) = eval(A{k});
                 end
+                t_Steps = [t_Steps SimSettings.(globvar{1})*3600];
             end
         end
+        SimSettings.t_Steps = sort(unique(t_Steps));
         %% modify control terms
         nC = length(Cont.Gain);
         Prompt = {};
@@ -150,7 +153,7 @@ end
 if J3 ==1 || J3 == 3
     WaitBar.Show = 1; 
     IterCount = 1; TagInf =[]; TagFinal =[];  WaitBar.Text = 'Running non-linear model with transient';WaitBar.Handle =waitbar(0,WaitBar.Text);
-    tic; [T, Y] = ode15s(@RunBlocks, [0, SimSettings.RunTime], modelParam.IC); disp(strcat('Time to run model:',num2str(toc),' seconds'));close(WaitBar.Handle);
+    tic; [T, Y] = ode15s(@RunBlocks, [0, SimSettings.RunTime], modelParam.IC,options); disp(strcat('Time to run model:',num2str(toc),' seconds'));close(WaitBar.Handle);
     PlotSimulation(T,Y,1,0,1)% Plot the tags and scopes in Plant.Plot. The first option (after Y) is to plot any fuel cell or electrolyzer temperature profiles, the second option is to mave a video of the transient, the third is to plot compressor turbine and blower maps
 end
 
@@ -159,7 +162,7 @@ if J3 ==2 || J3 ==3
     % need to find better initial condition (won't always start at nominal power)
     IC =  [LinMod.Model{1}.X0;LinMod.Model{1}.UX0];
     IterCount = 1; TagInf =[]; TagFinal =[]; WaitBar.Show = 1; WaitBar.Text = 'Running linear model with transient';WaitBar.Handle =waitbar(0,WaitBar.Text);
-    tic; [T, Y] = ode15s(@RunLinSystem, [0, SimSettings.RunTime], IC); disp(strcat('Time to run model:',num2str(toc),' seconds'));close(WaitBar.Handle);
+    tic; [T, Y] = ode15s(@RunLinSystem, [0, SimSettings.RunTime], IC,options); disp(strcat('Time to run model:',num2str(toc),' seconds'));close(WaitBar.Handle);
     if J3 == 2
         PlotSimulation(T,Y,1,0,1)
     else

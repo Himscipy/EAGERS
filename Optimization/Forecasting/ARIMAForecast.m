@@ -17,4 +17,3 @@ for s = 1:1:length(S) %repeat for electric, cooling, heating, and steam as neces
     inter = interp1(Date2,r,Date);
     Forecast.Demand.(S{s}) = inter;
 end
-Forecast.Temperature = Tforecast(2:end);%exclude forecast for current time

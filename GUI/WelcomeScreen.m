@@ -60,7 +60,11 @@ guidata(hObject, handles);
 
 % UIWAIT makes WelcomeScreen wait for user response (see UIRESUME)
 % uiwait(handles.figure1);
-global Model_dir testSystems
+global Model_dir testSystems mainFig
+if ishandle(mainFig)
+    close(mainFig)
+end
+mainFig = gcf;
 testSystems =[];
 handles.output = hObject;
 guidata(hObject, handles);
@@ -74,7 +78,7 @@ files = dir(fullfile(Model_dir, 'Model Library','*.mat'));
 list=strrep({files.name},'.mat','');
 set(handles.popupmenuSTRIDES,'string',list,'value',1)
 
-set(gcf,'Name','EAGERS 2017.0.2')
+set(gcf,'Name','EAGERS 2017.12.11')
 
 
 % --- Outputs from this function are returned to the command line.
@@ -93,20 +97,26 @@ function pushbuttonDesign_Callback(hObject, eventdata, handles)
 % hObject    handle to pushbuttonDesign (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
-global Model_dir Plant 
+global Model_dir Plant mainFig
 % Load file that was selected from the popupmenu
 projList = get(handles.ProjectList,'String');
 projName = projList{get(handles.ProjectList,'Value')};
 load(fullfile(Model_dir,'Projects',projName));
-allFieldNames = {'Name';'Data';'Generator';'Building';'Weather';'Network';'Costs';'optimoptions';'subNet';'OpMatA';'OpMatB';'OneStep';'Online';'Design';'Dispatch';'Predicted';'RunData';'Baseline'};
-fNames = fieldnames(Plant);
-for i = 1:1:length(allFieldNames)
-    if ~any(strcmp(allFieldNames{i},fNames))
-        Plant.(allFieldNames{i}) = [];
+if ~strcmp(Plant.optimoptions.solver,'NREL')
+    allFieldNames = {'Name';'Data';'Generator';'Building';'Weather';'Network';'Costs';'optimoptions';'subNet';'OpMatA';'OpMatB';'OneStep';'Online';'Design';'Dispatch';'Predicted';'RunData';'Baseline'};
+    fNames = fieldnames(Plant);
+    for i = 1:1:length(allFieldNames)
+        if ~any(strcmp(allFieldNames{i},fNames))
+            Plant.(allFieldNames{i}) = [];
+        end
+    end
+    if isempty(Plant.Weather)
+        load(fullfile(Model_dir,'System Library','Weather','4A.mat'))
+        Plant.Weather = weather;
     end
 end
+mainFig = [];
 close
-%run(fullfile(Model_dir,'GUI','Design','MainScreen1.m'))
 MainScreen1
 
 % --- Executes on button press in pushbuttonSTRIDES.
@@ -118,6 +128,8 @@ function pushbuttonSTRIDES_Callback(hObject, eventdata, handles)
 
 % projList = get(handles.popupmenuSTRIDES,'String');
 % projName = projList{get(handles.popupmenuSTRIDES,'Value')};
+global mainFig
+mainFig = [];
 close
 STRIDES
 
@@ -126,36 +138,45 @@ function pushbuttonDGBEAT_Callback(hObject, eventdata, handles)
 % hObject    handle to pushbuttonDGBEAT (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
-global Model_dir
+global Model_dir mainFig
 addpath(fullfile(Model_dir,'GUI','Design','OLD_DG_BEAT'));
+mainFig = [];
 close
 DG_BEAT
 
 % --- Executes on button press in Open.
 function Open_Callback(hObject, eventdata, handles)
-global Model_dir Plant 
+global Model_dir Plant mainFig
 list=get(handles.ProjectList,'string');
 plantSel = list{get(handles.ProjectList,'value')};
 load(fullfile(Model_dir,'Projects',plantSel))
-allFieldNames = {'Name';'Data';'Generator';'Building';'Weather';'Network';'Costs';'optimoptions';'subNet';'OpMatA';'OpMatB';'OneStep';'Online';'Design';'Dispatch';'Predicted';'RunData';'Baseline'};
-fNames = fieldnames(Plant);
-for i = 1:1:length(allFieldNames)
-    if ~any(strcmp(allFieldNames{i},fNames))
-        Plant.(allFieldNames{i}) = [];
+if ~strcmp(Plant.optimoptions.solver,'NREL')
+    allFieldNames = {'Name';'Data';'Generator';'Building';'Weather';'Network';'Costs';'optimoptions';'subNet';'OpMatA';'OpMatB';'OneStep';'Online';'Design';'Dispatch';'Predicted';'RunData';'Baseline';'Market'};
+    fNames = fieldnames(Plant);
+    for i = 1:1:length(allFieldNames)
+        if ~any(strcmp(allFieldNames{i},fNames))
+            Plant.(allFieldNames{i}) = [];
+        end
+    end
+    if isempty(Plant.Weather)
+        load(fullfile(Model_dir,'System Library','Weather','4A.mat'))
+        Plant.Weather = weather;
     end
 end
+mainFig = [];
 close
 %open new GUI
 DISPATCH
 
 % --- Executes on button press in NewProject.
 function NewProject_Callback(hObject, eventdata, handles)
-global Plant
+global Plant mainFig
 Plant = [];
 Plant.Name = char(inputdlg('Specify the project name','Project Name', 1,{'MicroGrid_01'}));
 % hCreate = dialog('Visible','off');
 % CreateNewProject(Plant.Name,hCreate)
 % waitfor(hCreate)
+mainFig = [];
 close
 MainScreen1
 

@@ -1,4 +1,4 @@
-classdef ComparisonHandler
+classdef ComparisonHandler < handle
 % ComparisonHandler Handles comparison between EAGERS and EnergyPlus.
 %   ComparisonHandler(building, weather, date, nFigs)
 %   BUILDING is a struct containing building information.
@@ -46,9 +46,11 @@ classdef ComparisonHandler
         end
         
         % Load EnergyPlus meter file
-        function meter = load_meter(obj)
+        function meter = load_meter(obj, mtrName)
             global Model_dir
-            mtrName = strcat(obj.bldg.Name, '.mat');
+            if nargin < 2
+                mtrName = strcat(obj.bldg.Name, '.mat');
+            end
             mtrFile = fullfile(Model_dir, 'Design', 'Compare2Eplus', mtrName);
             mtrLoaded = load(mtrFile);
             meter = mtrLoaded.mtr;
@@ -63,7 +65,7 @@ classdef ComparisonHandler
                 heating, ...
                 fanPower, ...
                 otherLoads] = ...
-                BuildingProfile(obj.bldg, obj.wthr, obj.date);
+                BuildingProfile(obj.bldg, obj.wthr, obj.date, [],obj.mtr);
             cooling = cooling / obj.bldg.VariableStruct.COP_C;
             heating = heating / obj.bldg.VariableStruct.COP_H;
             hvac = heating + cooling + fanPower;
@@ -112,19 +114,22 @@ classdef ComparisonHandler
         
         % Electric load plotting using flags
         function percErrors = elec_load_plot(obj, varargin)
+            specialModes = {'comp', 'stack'};
             mode = 'default';
-            if obj.contains_str(varargin, 'compPlot')
-                compInfoInd = find(strcmp(varargin, 'compPlot')) + 1;
-                compInfo = varargin{compInfoInd};
-                mode = 'compPlot';
+            for i = 1:1:length(specialModes)
+                specialIndex = find(strcmp(varargin, specialModes{i}));
+                if specialIndex
+                    mode = specialModes{i};
+                    info = varargin{specialIndex + 1};
+                end
             end
             switch mode
-                case 'default'
-                    percErrors = obj.plot_default();
-                case 'compPlot'
-                    percErrors = obj.plot_comparison(compInfo);
+                case 'comp'
+                    percErrors = obj.plot_comparison(info);
+                case 'stack'
+                    percErrors = obj.plot_stack(info);
                 otherwise
-                    error('Mode not recognized.')
+                    percErrors = obj.plot_default();
             end
             obj.order_figs()
         end
@@ -160,27 +165,45 @@ classdef ComparisonHandler
             nCompVals = length(compVal);
             percErrors = zeros(obj.nFigs, nCompVals);
             for iVal = 1:1:nCompVals
-                fprintf('-----Iteration %i-----\n', iVal)
-                fprintf('--> %s = %f\n', compVar, compVal(iVal))
-                obj.bldg.VariableStruct.(compVar) = compVal(iVal);
-                obj.eagers = obj.run_eagers();
-                percErrors(:, iVal) = obj.plot_comparison_iteration(...
-                    obj.ePlus, obj.eagers, plotsToKeep, iVal);
+                obj.display_iteration_text(compVar, compVal, iVal)
+                obj.update_simulation_results(compVar, compVal, iVal)
+                percErrors(:, iVal) = obj.comparison_iteration(obj.ePlus, ...
+                    obj.eagers, plotsToKeep, iVal);
                 fprintf('\n')
             end
         end
         
+        % Display comparison plot iteration to the console
+        function display_iteration_text(~, compVar, compVal, iVal)
+            fprintf('-----Iteration %i-----\n', iVal)
+            if iscell(compVal)
+                fprintf('--> %s = %s\n', compVar, compVal{iVal})
+            else
+                fprintf('--> %s = %f\n', compVar, compVal(iVal))
+            end
+        end
+        
+        % Update simulation results for comparison mode
+        function update_simulation_results(obj, compVar, compVal, iVal)
+            if strcmp(compVar, 'mtr')
+                obj.mtr = obj.load_meter(compVal{iVal});
+                obj.ePlus = obj.load_eplus_results();
+            else
+                obj.bldg.VariableStruct.(compVar) = compVal(iVal);
+                obj.eagers = obj.run_eagers();
+            end
+        end
+        
         % One comparison plot iteration
-        function percErrors = plot_comparison_iteration(obj, ePlus, eagers, ...
+        function percErrors = comparison_iteration(obj, ePlus, eagers, ...
                 plotsToKeep, iVal)
             [xE, dOfY, dt, dtE, xi, xf] = obj.time_constants();
             percErrors = zeros(obj.nFigs, 1);
-            shouldPlot = obj.contains_str(plotsToKeep, ...
-                {'none','None','NONE'}) == 0;
+            shouldPlot = sum(strcmpi(plotsToKeep, 'none')) == 0;
             for iFig = 1:1:obj.nFigs
                 figTitle = obj.figTitles{iFig};
                 keepCondition = isempty(plotsToKeep) ...
-                    || obj.contains_str(plotsToKeep, figTitle);
+                    || sum(strcmp(plotsToKeep, figTitle));
                 if shouldPlot && keepCondition
                     fig = figure(iFig);
                     if iVal == 1
@@ -194,16 +217,22 @@ classdef ComparisonHandler
                     hold off
                 end
                 pErr = 100 * (sum(eagers{iFig}(2:end).*dt) - ...
-                    sum(ePlus{iFig}.*dtE)) / sum(ePlus{iFig}.*dtE);
+                    sum(ePlus{iFig}(xi:xf).*dtE)) / ...
+                    sum(ePlus{iFig}(xi:xf).*dtE);
                 fprintf('%s electric load:\t%f\n', figTitle, pErr)
                 percErrors(iFig) = pErr;
             end
         end
         
+        % Plot one comparison graph
+        function plot_comparison_graph(obj)
+            
+        end
+        
         % Get class time constants
         function [xE, dOfY, dt, dtE, xi, xf] = time_constants(obj)
             D = datevec(obj.date(1));
-            dOfY = obj.date - datenum([D(1), 1,1]);
+            dOfY = obj.date - datenum([D(1), 1, 1]);
             dt = obj.date(2:end) - obj.date(1:end-1);
             
             EplusTime = datenum(datevec(obj.mtr.Timestamp));
@@ -237,21 +266,7 @@ classdef ComparisonHandler
             else
                 lineSpec = {};
             end
-            x = [0; xE];
-            y = [yE; yE(end)];
-            stairs(x, y, lineSpec{:})
-        end
-        
-        % Determine whether input flagName appears anywhere in flags list
-        function isContained = contains_str(~, container, searchVal)
-            if ~iscell(searchVal)
-                searchVal = {searchVal};
-            end
-            isContained = 0;
-            for i = 1:1:length(searchVal)
-                findSum = sum(strcmp(container, searchVal{i})) > 0;
-                isContained = isContained + findSum;
-            end
+            stairs(xE, yE, lineSpec{:})
         end
         
         % Order open figures by figure number

@@ -1,5 +1,6 @@
-global Plant Model_dir
+global Plant
 Plant = [];
+Model_dir = strrep(which('EAGERS.m'),'EAGERS.m',''); %Have to run eagers at least once to locate
 Plant.Name = 'ColumbiaBasin';
 %%Columbia river: 'GC';'CJ';'W';'RR';'RI';'WNPM';'PR';'MN';'JD';'TD';'BNVL';
 %%Snake River: 'BRWNL';'OX';'HC';'LWRGRNT';'LTLGSE';'LWRMONUM';'ICEHRBR';
@@ -7,9 +8,7 @@ Plant.Name = 'ColumbiaBasin';
 
 %%rows 1->366 (hourly): October 2nd, 2015 -> October 1st, 2016; 
 Plant.Data.Timestamp(:,1)= linspace(datenum([2015 10 2 1 0 0]),datenum([2016 10 2 0 0 0]),8784).';
-Plant.Data.Temperature = 20*ones(length(Plant.Data.Timestamp),1);
-Plant.Data.Holidays = [];
-Plant.Data.HistProf = [];
+Plant.Data.Weather.Tdb = 20*ones(length(Plant.Data.Timestamp),1);
 
 
 %% Network Setup
@@ -520,16 +519,16 @@ end
 
 
 %% Loading Data
-load(fullfile(Model_dir,'Data','Hydro','allHistHydroGenData_2007_2016')); %Historical Generation Data(hourly)(kW)
+load(fullfile(Model_dir,'Data','Hydro','allHistHydroGenData_2007_2016.mat')); %Historical Generation Data(hourly)(kW)
 % load(fullfile(Model_dir,'Data','Hydro','SourcesandSinks_2007_2016')); %Source and Sink Data; UpstreamOutFlow(t-T)-DownstreamInFlow(t)
 %%columns 1->18 (kcfs or KW): Grand Coulee, Chief Joseph, Wells, Rocky Ridge, Rock Island, Wanapum, PriestRiver, McNary, John Day, The Dalles, Bonneville, Brownlee, Oxbow, Hells Canyon, Lower Granite, Little Goose, Lower Monumental, Ice Harbor;
 %SourceSink = Mass balance; Sinks and Sources in river segments; Negative values = sinks; Positive values = sources;
 
 %These are corrected data 
-load(fullfile(Model_dir,'Data','Hydro','SourceSinkHrly'))
-load(fullfile(Model_dir,'Data','Hydro','InFlowCrctd'))
-load(fullfile(Model_dir,'Data','Hydro','OutFlowNMD'))
-load(fullfile(Model_dir,'Data','Hydro','powerFlowNMD'))
+load(fullfile(Model_dir,'Data','Hydro','SourceSinkHrly.mat'))
+load(fullfile(Model_dir,'Data','Hydro','InFlowCrctd.mat'))
+load(fullfile(Model_dir,'Data','Hydro','OutFlowNMD.mat'))
+load(fullfile(Model_dir,'Data','Hydro','powerFlowNMD.mat'))
 
 for i = 1:1:length(Dam) 
     if exist(fullfile(Model_dir,'Data','Hydro',strcat(DamNames{i},'_','2007','_','2016','.mat')),'file')
@@ -623,10 +622,12 @@ for i = 1:1:length(NodeNames)%number of dams in network
                     Plant.Network(i).Electrical.connections = {};
                     Plant.Network(i).Electrical.Trans_Eff = [];
                     Plant.Network(i).Electrical.Trans_Limit = [];
+                    Plant.Network(i).Electrical.Load = [];
                     Plant.Network(i).Electrical.connections(end+1) = {Plant.Network(k).name};
                     Plant.Network(i).Electrical.Trans_Eff(end+1) = 1;
                     Plant.Network(i).Electrical.Trans_Limit(end+1) = inf;
-
+                    Plant.Network(i).Electrical.Load = i-x; %put all the load at the first node
+                    
                     %Adding other direction (dir = reverse) for electrical to dam
                     Plant.Network(k).Electrical.connections(end+1) = {Plant.Network(i).name};
                     Plant.Network(k).Electrical.Trans_Eff(end+1) = 1;
@@ -656,7 +657,7 @@ for i = 1:1:length(NodeNames)%number of dams in network
         end 
     end 
 end
-Plant.Network(1).Electrical.Load = 1; %put all the load at the first node
+% Plant.Network(1).Electrical.Load = 1; %put all the load at the first node
 % calculateHistoricalFit %might need to update this to do extra hydro specific fitting of data
 
 %% Temporary filling in missing data
@@ -699,5 +700,6 @@ outputE = zeros(length(Dam),1);
 for i = 1:1:length(Dam)
     Eff = Plant.Generator(i).VariableStruct.MaxGenCapacity/(Plant.Generator(i).VariableStruct.MaxGenFlow*Plant.Generator(i).VariableStruct.MaxHead/0.01181);%Power (kW)/ideal power in kW
     outputE(i) = Eff*Plant.Generator(i).VariableStruct.MaxHead*84.674;%Power (kW) = efficiency(%) * Head (ft) * 84.674 kJ/ (1000ft^3*ft)
+    Plant.Data.Demand.E(:,i) = Plant.Data.Hydro.PowerFlow(:,i)*outputE(i);
 end
-Plant.Data.Demand.E = Plant.Data.Hydro.PowerFlow*outputE; %OutputPower = PowerFlow (1000 ft^3/s) * outputE
+% Plant.Data.Demand.E = Plant.Data.Hydro.PowerFlow*outputE; %OutputPower = PowerFlow (1000 ft^3/s) * outputE

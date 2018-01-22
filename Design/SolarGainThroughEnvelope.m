@@ -37,11 +37,11 @@ areaVectorsWalls        = area_vectors(totalWallAreaSqMeters, orientation);
 solarGainDirectWindows  = direct_solar_gain(areaVectorsWindows, ...
                             weather.irradDireNorm, location, date);
 solarGainDiffuseWindows = diffuse_solar_gain(totalWinAreaSqMeters, ...
-                            weather.irradDiffHorz);
+                            weather.irradDiffHorz, date);
 solarGainDirectWalls    = direct_solar_gain(areaVectorsWalls, ...
                             weather.irradDireNorm, location, date);
 solarGainDiffuseWalls   = diffuse_solar_gain(totalWallAreaSqMeters, ...
-                            weather.irradDiffHorz);
+                            weather.irradDiffHorz, date);
 wallHeatTransmittance   = building.VariableStruct.WallTransmittance;
 solarGainWalls          = wallHeatTransmittance * (solarGainDirectWalls + ...
                             solarGainDiffuseWalls);
@@ -73,6 +73,7 @@ end
 % Solar gains for all four cardinal directions.
 function sgDirect = direct_solar_gain(areaVecs, vecDireNorm, loc, vecDate)
 
+vecDireNorm = match_to_date(vecDate, vecDireNorm);
 sizeDate = size(vecDate);
 sgDirect = zeros(sizeDate);
 for i = 1:1:length(vecDate)
@@ -84,11 +85,12 @@ end
 
 
 % Solar gains for all four cardinal directions.
-function sgDiffuse = diffuse_solar_gain(totWinArea, vecDiffHorz)
+function sgDiffuse = diffuse_solar_gain(totWinArea, vecDiffHorz, vecDate)
 
-sizeDiff = size(vecDiffHorz);
-sgDiffuse = zeros(sizeDiff);
-for i = 1:1:length(vecDiffHorz)
+vecDiffHorz = match_to_date(vecDate, vecDiffHorz);
+sizeDate = size(vecDate);
+sgDiffuse = zeros(sizeDate);
+for i = 1:1:length(vecDate)
     sgDiffuse(i)  = vecDiffHorz(i) * totWinArea;
 end
 
@@ -123,5 +125,20 @@ if sum(abs(directNormalIrradiance)) > 0
         sGain = sGain + max(sgDirection, 0);
     end
 end
+
+end
+
+
+% Get values of input vector corresponding to the input date vector
+function alignedVec = match_to_date(date, inputVec)
+
+[startYear, ~, ~, ~, ~, ~] = datevec(date(1));
+hourOneOfYear = datenum([startYear, 1, 1, 1, 0, 0]);
+tStep = date(2) - date(1);
+iStart = round((date(1) - hourOneOfYear) / tStep);
+nSteps = length(date);
+alignedIndices = (iStart + 1) : 1 : (iStart + nSteps);
+alignedIndices = max(mod(alignedIndices, length(inputVec)), 1);
+alignedVec = inputVec(alignedIndices);
 
 end
