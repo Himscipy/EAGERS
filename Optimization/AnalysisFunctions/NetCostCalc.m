@@ -83,7 +83,7 @@ end
 nS = nnz(Timestamp);
 nG = length(Plant.Generator);
 dt = (Timestamp(2:nS) - Timestamp(1:nS-1))*24;
-scaleCost = updateGeneratorCost(Timestamp(1:nS-1)).*(dt*ones(1,nG));%% All costs were assumed to be 1 when building matrices
+scaleCost = updateGeneratorCost(Timestamp(1:nS-1),Plant.Generator).*(dt*ones(1,nG));%% All costs were assumed to be 1 when building matrices
 stor =[];
 startupcost = zeros(nS-1,nG);
 for i = 1:1:nG

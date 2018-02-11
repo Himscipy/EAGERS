@@ -91,7 +91,11 @@ if QP.excessHeat
 end
 %%remove transmission states and constraints
 n = length(QP.organize);
-nB = length(Plant.Building);
+if isfield(Plant,'Building') && ~isempty(Plant.Building)
+    nB = length(Plant.Building);
+else
+    nB = 0;
+end
 nL = n - nG -nB;
 for i = 1:1:nL
     if ~ismember(i,Plant.subNet.DistrictCool.lineNumber)

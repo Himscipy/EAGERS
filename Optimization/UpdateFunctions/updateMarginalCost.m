@@ -4,6 +4,7 @@ networkNames = fieldnames(Plant.Network);
 networkNames = networkNames(~strcmp('name',networkNames));
 networkNames = networkNames(~strcmp('Equipment',networkNames));
 networkNames = networkNames(~strcmp('Location',networkNames));
+networkNames = networkNames(~strcmp('Buildings',networkNames));
 for i = 1:1:length(networkNames)
     if strcmp(networkNames{i},'Electrical')
         Out.E = [];

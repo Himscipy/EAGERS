@@ -1,50 +1,84 @@
-global Plant Model_dir
-allFieldNames = {'Name';'Data';'Generator';'Building';'Weather';'Network';'Costs';'optimoptions';'subNet';'OpMatA';'OpMatB';'OneStep';'Online';'Design';'Dispatch';'Predicted';'RunData';'Baseline';'Market'};
-fNames = fieldnames(Plant);
-for i = 1:1:length(allFieldNames)
-    if ~any(strcmp(allFieldNames{i},fNames))
-        Plant.(allFieldNames{i}) = [];
+global Plant Model_dir TestData
+if ~isfield(TestData,'Weather') || ~isfield(TestData.Weather,'irradDireNorm') %no solar data
+    nG = length(Plant.Generator);
+    solar = false;
+    for i = 1:1:nG
+        if strcmp(Plant.Generator(i).Type,'Solar')
+            solar = true;
+        end
+    end
+    if solar %need to load solar profile
+        cd(fullfile(Model_dir,'Data','Solar'))
+        [fn,pn,~] = uigetfile('*.mat','Load Solar Irradiation Data File');
+        load(fullfile(pn,fn));
+        TestData.Weather.irradDireNorm = zeros(length(TestData.Timestamp),1);
+        if TestData.Timestamp(1)>=weather.Timestamp(1) && TestData.Timestamp(end)<=weather.Timestamp(end)
+            TestData.Weather.irradDireNorm = interp1(weather.Timestamp,weather.irradDireNorm,TestData.Timestamp); 
+        else %need to move solar data timestamp to line up with TestData timestamp
+            D1 = datevec(TestData.Timestamp(1));
+            D2 = datevec(weather.Timestamp(1));
+            if datenum([D1(1),D2(2),D2(3),D2(4),D2(5),D2(6)])>TestData.Timestamp(1)
+                D2(1) = D2(1)-1;
+            end
+            weather.Timestamp = weather.Timestamp + datenum([D1(1),1,1]) - datenum([D2(1),1,1]);%days between start of years for testdata and solar data respectively
+            y = 1;
+            Xi = 1;
+            Xf = nnz(TestData.Timestamp<=weather.Timestamp(end));
+            while Xi<=length(TestData.Timestamp)
+                TestData.Weather.irradDireNorm(Xi:Xf,1) = interp1(weather.Timestamp,weather.irradDireNorm,TestData.Timestamp(Xi:Xf)); 
+                weather.Timestamp = weather.Timestamp + datenum([D1(1)+y,1,1]) - datenum([D1(1)+y-1,1,1]);%shift weather data 1 year
+                Xi = Xf+1;
+                Xf = nnz(TestData.Timestamp<=weather.Timestamp(end));
+                y = y+1;
+            end
+        end
+        cd(Model_dir)
     end
 end
-if isempty(Plant.Weather)
-    load(fullfile(Model_dir,'System Library','Weather','4A.mat'))
-    Plant.Weather = weather;
-end
 
-if ~isfield(Plant.Data,'Weather') || ~isfield(Plant.Data.Weather,'Tdb') %% if there was not weather data lined up with the historical data, add it
-    D = datevec(Plant.Data.Timestamp(1));
-    h_of_y = linspace(0,8760,length(Plant.Weather.Tdb)+1)';% Hour since start of year
-    t = mod(24*(Plant.Data.Timestamp - datenum([D(1),1,1])),8760);% Hour since start of year
-    Plant.Data.Weather.Tdb = interp1(h_of_y,[Plant.Weather.Tdb(1); Plant.Weather.Tdb],t); 
-end
-
-if ~isfield(Plant.Data,'HistProf') || isempty(Plant.Data.HistProf)
-    S = {'Tdb';'Twb';'irradDireNorm';};
+if ~isfield(Plant,'Data')
+    if isfield(TestData,'Weather')
+        S = fieldnames(TestData.Weather);
+        for j = 1:1:length(S)
+            if isnumeric(TestData.Weather.(S{j}))
+                Plant.Data.HistProf.(S{j}) = TypicalDay([],TestData.Timestamp,TestData.Weather.(S{j}));
+            end
+        end
+    end
+    if isfield(TestData,'Hydro')
+        nodes = length(TestData.Hydro.SourceSink(1,:));
+        for n = 1:1:nodes
+            Plant.Data.HistProf.Hydro.SourceSink(n) = {TypicalDay([],TestData.Hydro.Timestamp,TestData.Hydro.SourceSink(:,n))};
+        end
+    end
+elseif ~isfield(Plant.Data,'HistProf') || isempty(Plant.Data.HistProf)
+    S = fieldnames(TestData.Weather);
     for j = 1:1:length(S)
-        if isfield(Plant.Data,'Weather') && isfield(Plant.Data.Weather,S{j})
-            Plant.Data.HistProf.(S{j}) = TypicalDay([],Plant.Data.Timestamp,Plant.Data.Weather.(S{j}));
+        if isnumeric(TestData.Weather.(S{j}))
+            if isfield(Plant.Data,'Weather') && isfield(Plant.Data.Weather,S{j})
+                Plant.Data.HistProf.(S{j}) = TypicalDay([],Plant.Data.Timestamp,Plant.Data.Weather.(S{j}));
+            else
+                Plant.Data.HistProf.(S{j}) = TypicalDay([],TestData.Timestamp,TestData.Weather.(S{j}));
+            end
+        end
+    end
+    if isfield(Plant.Data,'Hydro')
+        nodes = length(TestData.Hydro.SourceSink(1,:));
+        if isfield(Plant.Data.Hydro,'SourceSink') && nodes == length(Plant.Data.Hydro.SourceSink(1,:))
+            for n = 1:1:nodes
+                Plant.Data.HistProf.Hydro.SourceSink(n) = {TypicalDay([],Plant.Data.Hydro.Timestamp,Plant.Data.Hydro.SourceSink(:,n))};
+            end
         else
-            Date = linspace(datenum([2017,1,1,1,0,0]),datenum([2018,1,1]),8760)'; %hours of 2017
-            Plant.Data.HistProf.(S{j}) = TypicalDay([],Date,Plant.Weather.(S{j}));
+            for n = 1:1:nodes
+                Plant.Data.HistProf.Hydro.SourceSink(n) = {TypicalDay([],TestData.Hydro.Timestamp,TestData.Hydro.SourceSink(:,n))};
+            end
         end
     end
-    if strcmp(Plant.optimoptions.forecast,'Surface') && isfield(Plant.Data,'Demand') && ~isempty(Plant.Data.Demand)
-        F = fieldnames(Plant.Data.Demand);
-        for i = 1:1:length(F)
-            calculateHistoricalFit(F{i}); %% calculate surface fits used in forecasting
-        end
+    if strcmp(Plant.optimoptions.forecast,'Surface')
+        calculateHistoricalFit; %% calculate surface fits used in forecasting
     end
 end
-if isfield(Plant.Data,'Hydro')
-    %spill, outflow, inflow, and source/sink by node
-    nodes = length(Plant.Data.Hydro.SourceSink(1,:));
-    for n = 1:1:nodes
-%         Plant.Data.HistProf.Hydro.SpillFlow(n) = {TypicalDay([],Plant.Data.Hydro.Timestamp,Plant.Data.Hydro.SpillFlow)};
-%         Plant.Data.HistProf.Hydro.OutFlow(n) = {TypicalDay([],Plant.Data.Hydro.Timestamp,Plant.Data.Hydro.OutFlow)};
-%         Plant.Data.HistProf.Hydro.InFlow(n) = {TypicalDay([],Plant.Data.Hydro.Timestamp,Plant.Data.Hydro.InFlow)};
-        Plant.Data.HistProf.Hydro.SourceSink(n) = {TypicalDay([],Plant.Data.Hydro.Timestamp,Plant.Data.Hydro.SourceSink(:,n))};
-    end
-end
+
 %% Load generators, & build QP matrices
 loadGenerator % Loads generators stored in Plant.Generator
 loadBuilding %Loads any buildings into QPform

@@ -1,7 +1,7 @@
 function plotMarginalCapacityCost(handles)
 global Plant DateSim
 axes(handles.MarketAxes)
-cla(handles.MarketAxes)
+% cla(handles.MarketAxes)
 list = get(handles.MarketPopup,'String');
 str =  list{get(handles.MarketPopup,'Value')};
 set(handles.CapacityTable,'Data',Plant.Market.Price);
@@ -11,6 +11,7 @@ switch str
         [X,I] = sort([linspace(0,23,24), linspace(.9999,22.9999,23),24]);
         Y = [Plant.Market.Price(1,:),Plant.Market.Price(1,:)];
         Y = Y(I);
+        hold(handles.MarketAxes,'off')
         plot(handles.MarketAxes,X,Y,'k')
         hold(handles.MarketAxes,'on')
         Y = [Plant.Market.Price(2,:),Plant.Market.Price(2,:)];
@@ -28,6 +29,7 @@ switch str
         D(D>Plant.Market.MarginCost.Timestamp(end)) = Plant.Market.MarginCost.Timestamp(end);
         [X,I] = sort([linspace(0,23,24), linspace(.9999,22.9999,23),24]);
         Y = interp1(Plant.Market.MarginCost.Timestamp,Plant.Market.Capacity(1,:),D); Y = [Y,Y];Y = Y(I);
+        hold(handles.MarketAxes,'off')
         plot(handles.MarketAxes,X,Y,'k')
         hold(handles.MarketAxes,'on')
         Y = interp1(Plant.Market.MarginCost.Timestamp,Plant.Market.Capacity(2,:),D); Y = [Y,Y];Y = Y(I);
@@ -71,6 +73,7 @@ switch str
             end            
         end
         Z(:,25) = NaN;
+        hold(handles.MarketAxes,'off')
         if any(any(~isnan(Z)))
             pcolor(handles.MarketAxes,[0:1:24],[0:1:n],Z)
             c = colorbar('peer',handles.MarketAxes);

@@ -156,7 +156,7 @@ end
 Time = buildTimeVector(Plant.optimoptions);%% set up dt vector of time interval length
 Date = [DateSim; DateSim+Time/24];
 dt = Time - [0; Time(1:end-1)];
-scaleCost = updateGeneratorCost(Date); 
+scaleCost = updateGeneratorCost(Date,Plant.Generator); 
 [~,~,spareGenCumulative] = GenLimit(GenOutput,Binary,dt);
 rmvCost = 0;
 if any(UsefulStoredEnergy.(out))>0

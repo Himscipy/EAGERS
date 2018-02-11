@@ -2,7 +2,6 @@ function EditSystem(varargin)
 % This function updates the parameter options for the selected generator
 % The user can then make changes to this particular generator and save
 % those changes.
-global testSystems SYSINDEX GENINDEX
 if nargin && ischar(varargin{1})
     f= str2func(varargin{1});
     f(varargin{2:length(varargin)})
@@ -12,10 +11,11 @@ end
 
 function editSystem(handles)
 global testSystems SYSINDEX GENINDEX
-quote='''';
 set(handles.uipanelLibrary,'Visible','off');
 set(handles.uipanelGenSpec,'Visible','on');
 set(handles.Library,'Visible','on');
+set(handles.saveSystem,'Visible','on');
+set(handles.pushbuttonRemove,'Visible','on');
 if GENINDEX > 0
     Gen = testSystems(SYSINDEX).Generator(GENINDEX);
 else
@@ -43,60 +43,10 @@ else
 end
 handlesC=get(handles.uipanelGenSpec,'Children');
 for i= 1:length(handlesC)
-    set(handlesC(i),'Visible','off')
-    if strcmp(get(handlesC(i),'Tag'),'EffCurve')||strcmp(get(handlesC(i),'Tag'),'ResponseRate')
-        clearGenAxes(handles)
-    else
-        delete(handlesC(i));
-    end
+    delete(handlesC(i));
 end
 createTextEdit(handles,Gen.Name,[28 34.5 75 2],'CompName',15,'bold')
 switch Gen.Type
-    case {'CHP Generator';'Electric Generator'}
-        OutNames = {'Capacity';'Electricity';};
-        Data(:,1) = Gen.Output.Capacity;
-        Data(:,2) = Gen.Output.Electricity;
-        editable = [true true];
-        if isfield(Gen.Output,'Heat') && nnz(Gen.Output.Heat) > 0
-            Data(:,3) = Gen.Output.Heat;
-            OutNames = {'Capacity';'Electricity';'Heat';};
-            editable = [true true true];
-        end
-        if strcmp(Gen.Type,'CHP Generator')
-            createTable(handles,Data,OutNames,'auto',{},[12 3 28.7 15.7143],'uitableEffCurve',editable)
-        else
-            createTable(handles,Data,OutNames,'auto',{},[16 3 19.3 15.7143],'uitableEffCurve',editable)
-        end
-
-        createText(handles,'Capacity (kW)',[70 32 20 1.75],'textEdit1',12,'normal')
-        createText(handles,'Turn Down Ratio (x:1)',[60 30 30 1.75],'textEdit2',12,'normal')
-        createText(handles,'Ramp Rate',[73 28 18 1.75],'textEdit3',12,'normal') 
-        createText(handles,'Startup Cost',[72 26 18 1.75],'textEdit4',12,'normal') 
-        createText(handles,'Response Rate',[16 32.25 22 1.65],'textEdit5',12,'normal')  
-        createText(handles,'Energy Source',[70 23.5 22 1.75],'textEdit6',12,'bold')
-        
-        createTextEdit(handles,num2str(Gen.Size),[90 32 15 1.75],'compText1',10,'normal')
-        createTextEdit(handles,num2str(Gen.Size/Gen.VariableStruct.Startup.Electricity(end)),[90 30 15 1.75],'compText2',10,'normal')
-        if isfield(Gen.VariableStruct,'dX_dt')
-            createTextEdit(handles,num2str(Gen.VariableStruct.dX_dt),[90 28 15 1.75],'compText3',10,'normal')
-        else
-            createTextEdit(handles,'--',[90 28 15 1.75],'compText3',10,'normal')
-        end
-        createTextEdit(handles,num2str(Gen.VariableStruct.StartCost),[90 26 15 1.75],'compText4',10,'normal')
-        
-        v1=[];
-        v2=[];
-        if strcmp(Gen.Source, 'NG')
-            v1=1;v2=0;  
-        elseif strcmp(Gen.Source, 'Oil')
-            v1=0;v2=1; 
-        end
-        createRadio(handles,'Natural Gas',[67 22 18 1.75],10.5,'normal',v1,'radioSource')
-        createRadio(handles,'Oil',[87 22 18 1.75],10.5,'normal',v2,'radioSource')
-        
-        %%Need to figure out plotting
-        plotGenEfficiency(Gen,handles)
-        plotResponse(Gen,handles)
     case 'Utility'
         if strcmp(Gen.Source,'Electricity')
             createText(handles,'(1) Off-Peak Rate ',[47 32 25 2],'textEdit1',12,'bold');
@@ -124,56 +74,125 @@ switch Gen.Type
             colwidth = num2cell(colwidth);
             
             createTable(handles,Gen.VariableStruct.SumRateTable,hrs,colwidth,{'Sun';'Mon';'Tue';'Wed';'Thu';'Fri';'Sat';},[2 1 102 10.5],'uitableEffCurve',true(1,24));
-
-            if isfield(Gen.VariableStruct,'SumRateTable') && isfield(Gen.VariableStruct,'WinRateTable')
-                handles = createCheckbox(handles,'Seasonal Rates',[1 33 18 1],1,'checkboxSeasonal');
-                x.Value = 1;
-                MainScreen1('checkboxSeasonal_Callback',handles.checkboxSeasonal,0,handles)
-            else
-                createCheckbox(handles,'Seasonal Rates',[1 33 18 1],0,'checkboxSeasonal');
-            end
-            MainScreen1('createGridsellback',handles)        
-        else % Gen.Source: NG (Natural Gas)
-            clearGenAxes(handles)
-                               
-            createText(handles,'Fuel Rate ($/MMBTU)',[60 32 30 1.75],'textEdit1',12,'normal');
+            handles = createCheckbox(handles,'Seasonal Rates',[1 33 18 1],1,'checkboxSeasonal');
+            EditSystem('checkboxSeasonal_Callback',handles.checkboxSeasonal,[],handles)
+            EditSystem('createText',handles,'Grid Sell Back',[2 24.5 30 1.5],'textEdit10',12,'bold')
             
+            if testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.SellBackRate == -1
+                v1=0;v2=1;v3=0;
+            elseif testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.MinImportThresh>=0 && testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.SellBackRate==0
+                v1=1;v2=0;v3=0;
+            else
+                v1=0;v2=0;v3=1;
+            end
+        
+            EditSystem('createRadio',handles,'None',[2 23 10 1.5],10,'normal',v1,'None','radiobuttonGridsellback')
+            EditSystem('createRadio',handles,'% Purchase',[2 21 18 1.5],10,'normal',v2,'SellbackAsPerc','radiobuttonGridsellback')
+            EditSystem('createRadio',handles,'Fixed Rate',[2 19 18 1.5],10,'normal',v3,'FixedRate','radiobuttonGridsellback')
+            if v1 == 1
+                createText(handles,'Minimum Import (kW)',[10 16 30 1.75],'textEdit11',12,'normal');
+            else
+                createText(handles,'Maximum Export (kW)',[10 16 30 1.75],'textEdit11',12,'normal');
+            end
+            EditSystem('createTextEdit',handles,num2str(abs(testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.MinImportThresh)),[20 14 12 1.5],'maxSellback',10,'normal')
+            EditSystem('createTextEdit',handles,num2str(testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.SellBackPerc),[20 21 8 1.5],'editTariffs',10,'normal')
+            EditSystem('createTextEdit',handles,num2str(max(0,testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.SellBackRate)),[20 19 8 1.5],'editSellbackRate',10,'normal')
+            createText(handles,'$/kWh',[28 18.75 10 1.75],'textEdit12',11.5,'normal');
+        else % Gen.Source: NG (Natural Gas)
+            createText(handles,'Fuel Rate ($/MMBTU)',[60 32 30 1.75],'textEdit1',12,'normal');
             createTextEdit(handles,num2str(Gen.VariableStruct.Rate(1)),[90 32 15 1.75],'compText1',10,'normal');
         end
-    case 'Heater'        
-        OutNames = {'Capacity';'Heat';};
-        Data(:,1) = Gen.Output.Capacity;
-        Data(:,2) = Gen.Output.Heat;
-        editable = [true true];
-        createTable(handles,Data,OutNames,'auto',{},[16 3 19.3 15.7143],'uitableEffCurve',editable)
+    case {'CHP Generator';'Electric Generator';'Heater';'Chiller';}
+        if strcmp(Gen.Type,'Heater')
+            OutNames = {'Capacity';'Heat';};
+            Data = [Gen.Output.Capacity,Gen.Output.Heat;];
+            pos = [16 3 19.3 15.7143];
+            LB = Gen.VariableStruct.Startup.Heat(end);
+        elseif strcmp(Gen.Type,'Chiller')
+            OutNames = {'Capacity';'Cooling';};
+            pos = [10 3 20 16];
+            Data = [Gen.Output.Capacity,Gen.Output.Cooling;];
+            LB = Gen.VariableStruct.Startup.Cooling(end);
+        elseif strcmp(Gen.Type,'Electric Generator')
+            OutNames = {'Capacity';'Electricity';};
+            pos = [10 3 20 16];
+            Data = [Gen.Output.Capacity,Gen.Output.Electricity;];
+            LB = Gen.VariableStruct.Startup.Electricity(end);
+        elseif strcmp(Gen.Type,'CHP Generator') 
+            pos = [8 3 30 16];
+            Data = [Gen.Output.Capacity,Gen.Output.Electricity,Gen.Output.Heat;];
+            OutNames = {'Capacity';'Electricity';'Heat';};
+            LB = Gen.VariableStruct.Startup.Electricity(end);
+        end
+        createTable(handles,Data,OutNames,'auto',{},pos,'uitableEffCurve',true(1,length(Data(1,:))))
         
-        createText(handles,'Response Rate',[16 32.25 22 1.65],'textEdit5',12,'normal')  
         createText(handles,'Capacity (kW)',[70 32 20 1.75],'textEdit1',12,'normal')
-        createText(handles,'Ramp Rate',[73 30 18 1.75],'textEdit2',12,'normal') 
-        createText(handles,'Energy Source',[70 23.5 22 1.75],'textEdit4',12,'bold')
+        createText(handles,'Minimum Output (kW)',[60 30 30 1.75],'textEdit2',12,'normal')
+        createText(handles,'Ramp Rate (kW / hr)',[60 28 30 1.75],'textEdit3',12,'normal') 
+        createText(handles,'Startup Cost ($/start)',[60 26 30 1.75],'textEdit4',12,'normal') 
+        createText(handles,'Nat. Freq.',[1 32.5 15 1.65],'textEdit5',12,'normal')  
+        createText(handles,'Damping',[32 32.5 13 1.65],'textEdit6',12,'normal')  
+        createText(handles,'Energy Source',[70 23.5 22 1.75],'textEdit7',12,'bold')
         
         createTextEdit(handles,num2str(Gen.Size),[90 32 15 1.75],'compText1',10,'normal')
-        createTextEdit(handles,num2str(Gen.VariableStruct.dX_dt),[90 30 15 1.75],'compText2',10,'normal')
-
-        
-        v1=[];
-        v2=[];
-        v3=[];
-        if strcmp(Gen.Source, 'NG')
-            v1=1;v2=0;v3=0; 
-        elseif strcmp(Gen.Source, 'Oil')
-            v1=0;v2=1;v3=0;
-        elseif strcmp(Gen.Source, 'Electricity')
-            v1=0;v2=0;v3=1;
+        createTextEdit(handles,num2str(LB),[90 30 15 1.75],'compText2',10,'normal')
+        if isfield(Gen.VariableStruct,'dX_dt')
+            createTextEdit(handles,num2str(Gen.VariableStruct.dX_dt),[90 28 15 1.75],'compText3',10,'normal')
+            p = eig(Gen.VariableStruct.StateSpace.A);
+            w_0 = sqrt(real(p(1))^2 + imag(p(1))^2);
+            zeta = -real(p(1)+p(2))/(2*w_0);
+            createTextEdit(handles,num2str(w_0),[16 32.5 14 1.75],'compText5',10,'normal')
+            createTextEdit(handles,num2str(zeta),[45 32.5 14 1.75],'compText6',10,'normal')
+        else
+            createTextEdit(handles,'--',[90 28 15 1.75],'compText3',10,'normal')
+            createTextEdit(handles,'--',[16 32.5 14 1.75],'compText5',10,'normal')
+            createTextEdit(handles,'--',[45 32.5 14 1.75],'compText6',10,'normal')
         end
-                
-        createRadio(handles,'Natural Gas',[67 22 18 1.75],10.5,'normal',v1,'radioSource')
-        createRadio(handles,'Oil',[85 22 18 1.75],10.5,'normal',v2,'radioSource')
-        createRadio(handles,'Electricity',[85 22 18 1.75],10.5,'normal',v3,'radioSource')
-
+        if isfield(Gen.VariableStruct,'StartCost')
+            createTextEdit(handles,num2str(Gen.VariableStruct.StartCost),[90 26 15 1.75],'compText4',10,'normal')
+        else
+            createTextEdit(handles,'--',[90 26 15 1.75],'compText4',10,'normal')
+        end
+        
+        if strcmp(Gen.Source, 'NG')
+            v1=1;v2=0;v3=0;v4=0;
+        elseif strcmp(Gen.Source, 'Oil')
+            v1=0;v2=1;v3=0;v4=0;
+        elseif strcmp(Gen.Source, 'Electricity')
+            v1=0;v2=0;v3=1;v4=0;
+        elseif strcmp(Gen.Source, 'Heat')
+            v1=0;v2=0;v3=0;v4=1;
+        end
+        
+        if strcmp(Gen.Type,'Heater')
+            createRadio(handles,'Natural Gas',[60 22 25 1.75],10.5,'normal',v1,'NatGas','radioSource')
+%             createRadio(handles,'Oil',[87 22 18 1.75],10.5,'normal',v2,'radioSource')
+            createRadio(handles,'Electricity',[85 22 18 1.75],10.5,'normal',v3,'Electricity','radioSource')
+        elseif strcmp(Gen.Type,'Chiller')
+            createRadio(handles,'Electricity',[60 22 25 1.75],10.5,'normal',v3,'Electricity','radioSource')
+            createRadio(handles,'Heat',[85 22 18 1.75],10.5,'normal',v4,'Heat','radioSource')
+        else
+            createRadio(handles,'Natural Gas',[60 22 25 1.75],10.5,'normal',v1,'NatGas','radioSource')
+            createRadio(handles,'Diesel',[85 22 18 1.75],10.5,'normal',v2,'Diesel','radioSource')
+        end
+            
         %%Need to figure out plotting
+        
+        handles.ResponseRate = axes('Units','characters',...
+            'Position', [9,22,40,10],'NextPlot','add',...
+            'Tag', 'ResponseRate',...
+            'Parent', handles.uipanelGenSpec,...
+            'Visible','on');
+
+        handles.EffCurve = axes('Units','characters',...
+            'Position', [58,3.5,44,15],'NextPlot','add',...
+            'Tag', 'EffCurve',...
+            'Parent', handles.uipanelGenSpec,...
+            'Visible','on');
+
         plotGenEfficiency(Gen,handles)
-        plotResponse(Gen,handles)
+        secondOrderResponse(Gen,handles);
+
     case 'Solar'
         createText(handles,'Location',[66 32 14 1.75],'textEdit1',12,'normal');
         createText(handles,'Size (kW)',[75 28 14 1.75],'textEdit2',12,'normal');
@@ -204,8 +223,8 @@ switch Gen.Type
             val1 = 0;
             val2 = 1;
         end
-        createRadio(handles,'Flat Panel',[5 27 16 1.5],11,'normal',val1,'radiobuttonSType');
-        createRadio(handles,'Concentrated',[23 27 20 1.5],11,'normal',val2,'radiobuttonSType');
+        createRadio(handles,'Flat Panel',[5 27 16 1.5],11,'normal',val1,'Flat','radiobuttonSType');
+        createRadio(handles,'Concentrated',[23 27 20 1.5],11,'normal',val2,'Concentrated','radiobuttonSType');
 
         if strcmp(Gen.VariableStruct.Tracking,'fixed')
             val1 = 1;
@@ -220,9 +239,9 @@ switch Gen.Type
             val2 = 0;
             val3 = 1;
         end
-        createRadio(handles,'Fixed',[1 23 10 1.5],11,'normal',val1,'radiobuttonSTracking');
-        createRadio(handles,'Single Axis',[13 23 17 1.5],11,'normal',val2,'radiobuttonSTracking');            
-        createRadio(handles,'Dual Axis',[32 23 15 1.5],11,'normal',val3,'radiobuttonSTracking');        
+        createRadio(handles,'Fixed',[1 23 10 1.5],11,'normal',val1,'Fixed','radiobuttonSTracking');
+        createRadio(handles,'Single Axis',[13 23 17 1.5],11,'normal',val2,'SingleAxis','radiobuttonSTracking');            
+        createRadio(handles,'Dual Axis',[32 23 15 1.5],11,'normal',val3,'DualAxis','radiobuttonSTracking');        
 
         row = {'DC rating';'Inverter/Transformer';'Mismatch';'Diodes/Connection';'DC wiring';...
                'AC wiring';'Soiling';'System availability';'Shading';'Sun-Tracking';'Age';};
@@ -272,57 +291,18 @@ switch Gen.Type
         createTextEdit(handles,num2str(Gen.VariableStruct.FillRate),[45 26 15 1.75],'compText9',10,'normal');
         createTextEdit(handles,num2str(Gen.VariableStruct.DischRate),[45 24 15 1.75],'compText10',10,'normal');
         
-    case 'Chiller'
-        OutNames = {'Capacity';'Cooling';};
-        Data(:,1) = Gen.Output.Capacity;
-        Data(:,2) = Gen.Output.Cooling;
-        editable = [true true];
-        if isfield(Gen.Output,'Heat') && nnz(Gen.Output.Heat) > 0
-            Data(:,3) = Gen.Output.Heat;
-            OutNames = {'Capacity';'Cooling';'Heat';};
-            editable = [true true true];
-        end
-        if strcmp(Gen.Type,'CHP Generator')
-            createTable(handles,Data,OutNames,'auto',{},[12 3 28.7 15.7143],'uitableEffCurve',editable)
-        else
-            createTable(handles,Data,OutNames,'auto',{},[16 3 19.3 15.7143],'uitableEffCurve',editable)
-        end
-        createText(handles,'Response Rate',[16 32.25 22 1.65],'textEdit5',12,'normal')       
-        createText(handles,'Capacity (kW)',[70 32 20 1.75],'textEdit1',12,'normal')
-        createText(handles,'Ramp Rate',[73 30 18 1.75],'textEdit2',12,'normal') 
-        createText(handles,'Startup Cost',[72 28 18 1.75],'textEdit3',12,'normal') 
-        createText(handles,'Energy Source',[70 23.5 22 1.75],'textEdit4',12,'bold')
-        
-        createTextEdit(handles,num2str(Gen.Size),[90 32 15 1.75],'compText1',10,'normal')
-        createTextEdit(handles,num2str(Gen.VariableStruct.dX_dt),[90 30 15 1.75],'compText2',10,'normal')
-        createTextEdit(handles,num2str(Gen.VariableStruct.StartCost),[90 28 15 1.75],'compText3',10,'normal')
-        
-        v1=[];
-        v2=[];
-        if strcmp(Gen.Source, 'Electricity')
-            v1=1;v2=0; 
-        elseif strcmp(Gen.Source, 'Heat')
-            v1=0;v2=1;
-        end
-                
-        createRadio(handles,'Electricity',[67 22 18 1.75],10.5,'normal',v1,'radioSource')
-        createRadio(handles,'Heat',[85 22 18 1.75],10.5,'normal',v2,'radioSource')
-
-        %%Need to figure out plotting
-        plotGenEfficiency(Gen,handles)
-        plotResponse(Gen,handles)
-    case 'Boiler'
-        OutNames = {'Capacity';'Steam';};
-        Data(:,1) = Gen.Output.Capacity;
-        Data(:,2) = Gen.Output.Steam;
-        editable = [true true];
-        createTable(handles,Data,OutNames,'auto',{},[16 3 19.3 15.7143],'uitableEffCurve',editable)
-        
-        createText(handles,'Capacity (kW)',[70 32 20 1.75],'textEdit1',12,'normal')
-        
-        createTextEdit(handles,num2str(Gen.Size),[90 32 15 1.75],'compText1',10,'normal')
-        
-        plotGenEfficiency(Gen,handles)
+%     case 'Boiler'
+%         OutNames = {'Capacity';'Steam';};
+%         Data(:,1) = Gen.Output.Capacity;
+%         Data(:,2) = Gen.Output.Steam;
+%         editable = [true true];
+%         createTable(handles,Data,OutNames,'auto',{},[16 3 19.3 15.7143],'uitableEffCurve',editable)
+%         
+%         createText(handles,'Capacity (kW)',[70 32 20 1.75],'textEdit1',12,'normal')
+%         
+%         createTextEdit(handles,num2str(Gen.Size),[90 32 15 1.75],'compText1',10,'normal')
+%         
+%         plotGenEfficiency(Gen,handles)
         
     case 'Heating Demands'
 
@@ -335,139 +315,7 @@ switch Gen.Type
     case 'None'
         
 end
-           
-function plotGenEfficiency(Gen,handles)
-axes(handles.EffCurve)
-hold off
-str = {};
-if isfield(Gen.Output,'Electricity') && nnz(Gen.Output.Electricity) > 0
-    c = Gen.Output.Capacity./Gen.Output.Electricity;
-    [AX, H1, H2] = plotyy(Gen.Output.Capacity,Gen.Output.Electricity, ...
-        Gen.Output.Capacity(2:end),c(2:end));
-    hold on
-    set(H1,'Color','k','LineStyle','-','LineWidth',2,'Marker','o')
-    str(end+1) = {'Electric'};
-end
-if isfield(Gen.Output,'Heat') && nnz(Gen.Output.Heat) > 0
-    if strcmp(Gen.Type,'CHP Generator')
-        
-       plot(AX(1),Gen.Output.Capacity,Gen.Output.Heat,'r-o');
-    else
-        c = Gen.Output.Capacity./Gen.Output.Heat;
-        [AX, H1, H2] = plotyy(Gen.Output.Capacity,Gen.Output.Heat, ...
-            Gen.Output.Capacity(2:end),c(2:end));
-        set(H1,'Color','r','LineStyle','-','LineWidth',2,'Marker','o')
-        hold on
-    end
-    str(end+1) = {'Heat'};
-end
-if isfield(Gen.Output,'Steam') && nnz(Gen.Output.Steam) > 0
-    c = Gen.Output.Capacity./Gen.Output.Steam; 
-    [AX, H1, H2] = plotyy(Gen.Output.Capacity,Gen.Output.Steam, ...
-        Gen.Output.Capacity(2:end),c(2:end));
-    set(H1,'Color','m','LineStyle','-','LineWidth',2,'Marker','o')
-    hold on
-    str(end+1) = {'Steam'};
-end
-if isfield(Gen.Output,'Cooling') && nnz(Gen.Output.Cooling) > 0
-    c = Gen.Output.Capacity./Gen.Output.Cooling; 
-    [AX, H1, H2] = plotyy(Gen.Output.Capacity,Gen.Output.Cooling, ...
-        Gen.Output.Capacity(2:end),c(2:end));
-    set(H1,'Color','b','LineStyle','-','LineWidth',2,'Marker','o')
-    str(end+1) = {'Cooling'};
-end
-set(AX,{'ycolor'},{'k';'k'})
-set(H2,'Color','g','LineStyle',':','LineWidth',3)
-str(end+1) = {'Cost Curve'};
 
-if isfield(Gen.Output,'Cooling') && max(Gen.Output.Cooling) > 1
-    ylim([0 max(Gen.Output.Cooling)])
-    a = round(max(Gen.Output.Cooling))+1;
-    ylim(AX(1),[0,a])
-    ylim(AX(2),[0,1])
-else
-    a = round(max(c))+1;
-    ylim(AX(1),[0,1])
-    ylim(AX(2),[0,a])
-    set(AX(1),'YTick',0:.1:1)
-    set(AX(2),'YTick',0:a/10:a)
-end
-set(get(AX(1),'Ylabel'),'String','Efficiency')
-set(get(AX(2),'Ylabel'),'String','Cost Curve Shape')
-xlabel('% of Capacity')
-legend(str);
-title('Efficiency / Cost')
-set(handles.EffCurve,'UserData',AX)
-set(handles.EffCurve,'Tag','EffCurve')
-set(AX(2),'Tag','EffCurve')
-
-
-function plotResponse(Gen,handles)
-if strcmp(Gen.Type,'Chiller')||strcmp(Gen.Type,'Heater')
-    A = Gen.VariableStruct.StateSpace.A;
-    B = Gen.VariableStruct.StateSpace.B;
-    C = Gen.VariableStruct.StateSpace.C;
-    D = Gen.VariableStruct.StateSpace.D;
-    SS = ss(A,B,C,D);
-    Dt=1;
-else
-    A = Gen.VariableStruct.StateSpace.A;
-    B = Gen.VariableStruct.StateSpace.B;
-    C = Gen.VariableStruct.StateSpace.C;
-    D = Gen.VariableStruct.StateSpace.D;
-    Dt = Gen.VariableStruct.StateSpace.Dt;
-    SS = ss(A,B,C,D,Dt);
-end
-x0 = [];
-Names = {};
-if isfield(Gen.Output,'Electricity') && nnz(Gen.Output.Electricity) > 0
-    x0(end+1) = Gen.VariableStruct.Startup.Electricity(end);
-    Names(end+1) = {'Electricity'};
-end
-if isfield(Gen.Output,'Cooling') && nnz(Gen.Output.Cooling) > 0
-
-    x0(end+1) = Gen.VariableStruct.Startup.Cooling(end);
-    Names(end+1) = {'Cooling'};
-end
-if isfield(Gen.Output,'Steam') && nnz(Gen.Output.Steam) > 0
-    x0(end+1) = Gen.VariableStruct.Startup.Steam(end);
-    Names(end+1) = {'Steam'};
-end
-if isfield(Gen.Output,'Heat') && nnz(Gen.Output.Heat) > 0
-    x0(end+1) = Gen.VariableStruct.Startup.Heat(end);
-    Names(end+1) = {'Heat'};
-end
-nS = round(3600/Dt)+1;
-t = linspace(0, Dt*(nS-1),nS);
-u = Gen.Size*linspace(1,1,nS);
-[n,n2] = size(C);
-X0 = zeros(n2,1);
-for i = 1:1:n
-    X0(find(C(i,:),1,'first'))=x0(i);
-end
-% r = size(SS(1,1).A);
-% s = length(x0);
-% x0 = [x0;zeros(r(1)-s,1);];
-[y,t] = lsim(SS,u,t,X0);
-RR = plot(handles.ResponseRate,t/60,y);
-xlabel('Time (min)')
-legend(Names)
-
-set(handles.ResponseRate,'UserData',RR)
-set(handles.ResponseRate,'Tag','ResponseRate')
-
-function clearGenAxes(handles)
-AX_eff = get(handles.EffCurve,'UserData');
-AX_res = get(handles.ResponseRate,'UserData');
-if ~isempty(AX_eff)
-    cla(AX_eff(1))
-    cla(AX_eff(2))
-    set(AX_eff(2),'Visible','off')
-    legend(AX_eff(1),'hide')
-end
-if ~isempty(AX_res)
-    set(AX_res,'Visible','off')
-end
 
 function createTable(handles,Data,ColName,ColWidth,RowName,position,tag,edit)
 quote='''';
@@ -518,7 +366,7 @@ handles.(tag) = uicontrol('Style','checkbox','String',string,...
                      'Position',position,...
                      'Value',value,...
                      'Tag',tag,...
-                     'Callback',eval(strcat('@(hObject,eventdata)MainScreen1(',quote,tag,'_Callback',quote,',hObject,eventdata,guidata(hObject))')));
+                     'Callback',eval(strcat('@(hObject,eventdata)EditSystem(',quote,tag,'_Callback',quote,',hObject,eventdata,guidata(hObject))')));
 
 function createPopup(handles,string,position,size,weight,tag,value,varargin)
 quote='''';
@@ -538,7 +386,7 @@ Popup = uicontrol('Style','popup',...
                        'FontWeight',weight,...
                        'Callback',eval(strcat('@(hObject,eventdata)MainScreen1(',quote,call,'_Callback',quote,',hObject,eventdata,guidata(hObject))')));
 
-function createRadio(handles,string,position,size,weight,value,tag)
+function createRadio(handles,string,position,size,weight,value,tag,call)
 quote='''';
 Radio = uicontrol('Style','radiobutton',...
                   'String',string,...
@@ -549,5 +397,23 @@ Radio = uicontrol('Style','radiobutton',...
                   'FontSize',size,...
                   'FontWeight',weight,...
                   'Tag',tag,...
-                  'Callback',eval(strcat('@(hObject,eventdata)MainScreen1(',quote,tag,'_Callback',quote,',hObject,eventdata,guidata(hObject))')));
+                  'Callback',eval(strcat('@(hObject,eventdata)MainScreen1(',quote,call,'_Callback',quote,',hObject,eventdata,guidata(hObject))')));
 
+function checkboxSeasonal_Callback(hObject,eventdata,handles)
+handlesc =get(handles.uipanelGenSpec,'Children');
+if get(hObject,'Value')==1
+    EditSystem('createPopup',handles,{'Summer','Winter'},[3 31.5 22 1],14,'bold','popupRates',1)
+    x.Value = 1;
+    MainScreen1('popupRates_Callback',x,0,handles)
+    EditSystem('createText',handles,'From',[1 28.5 8 1.5],'Datetext',12,'bold')
+    EditSystem('createText',handles,'To',[25 28.5 5 1.5],'Datetext',12,'bold')
+else
+    for i=1:length(handlesc)
+        hide = {'popupRates','Datetext','popupDates1S','popupDates2S','popupDates3S','popupDates4S',...
+            'popupDates1W','popupDates2W','popupDates3W','popupDates4W'};
+        if nnz(strcmp(hide,get(handlesc(i),'Tag')))
+            set(handlesc(i),'Visible','off')
+            %delete(handlesc(i));
+        end
+    end
+end

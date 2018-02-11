@@ -1,17 +1,11 @@
 function ForecastPlot
-global Plant DateSim GENINDEX
+global Plant DateSim GENINDEX Last24hour TestData
 handles = guihandles;
 %find the current date
-if isempty(Plant.Building)
-    DateSim = Plant.Data.Timestamp(1) + get(handles.sliderDate,'Value');
-    resetLast24Hour
-    Data = GetHistoricalData(DateSim);  
-else
-    DateSim = datenum([2017,1,1]) + get(handles.sliderDate,'Value');
-    resetLast24Hour
-    Data = updateForecast(DateSim,[]);
-end
-
+DateSim = TestData.Timestamp(1) + get(handles.sliderDate,'Value');
+Last24hour = [];%re-load the previous 24 hours
+TimeYesterday = linspace(DateSim-1,DateSim,ceil(24/Plant.optimoptions.Resolution)+1)';
+Last24hour = GetHistoricalData(TimeYesterday);
       
 if isempty(GENINDEX)%plot demands
     set(handles.sliderZoom,'Visible','on')
@@ -25,8 +19,8 @@ if isempty(GENINDEX)%plot demands
     end
     Z = get(handles.sliderZoom,'Value');
     Z_max = get(handles.sliderZoom,'Max');
-    if isfield(Plant.Data,'Timestamp')
-        lastDate = Plant.Data.Timestamp(end);
+    if isfield(TestData,'Timestamp')
+        lastDate = TestData.Timestamp(end);
     else
         lastDate = datenum([2018,1,1]);
     end
@@ -42,25 +36,29 @@ if isempty(GENINDEX)%plot demands
         DateEnd = min(lastDate,DateSim + 365);
     end
         
-    Forecast = updateForecast(linspace(DateSim,DateEnd)',Data);%% function that creates demand vector with time intervals coresponding to those selected
-    if isempty(Plant.Building)
+    Forecast = updateForecast(linspace(DateSim,DateEnd)');%% function that creates demand vector with time intervals coresponding to those selected
+    if ~isfield(Plant,'Building') || isempty(Plant.Building)
         Outs =  fieldnames(Forecast.Demand);
-        Xi = nnz(Plant.Data.Timestamp<(DateSim-1))+1;
-        Xf = nnz(Plant.Data.Timestamp<(DateEnd) & Plant.Data.Timestamp>0);
+        Xi = nnz(TestData.Timestamp<(DateSim-1))+1;
+        Xf = nnz(TestData.Timestamp<(DateEnd) & TestData.Timestamp>0);
         for i = 1:1:length(Outs)
-            Actual.(Outs{i}) = Plant.Data.Demand.(Outs{i})(Xi:Xf);
+            Actual.(Outs{i}) = TestData.Demand.(Outs{i})(Xi:Xf);
         end
-        ActualTime = Plant.Data.Timestamp(Xi:Xf);
+        ActualTime = TestData.Timestamp(Xi:Xf);
     else
         %% need to add heating and cooling
         nB = length(Plant.Building);
         if ~isfield(Forecast,'Demand') || ~isfield(Forecast.Demand,'E')
             Forecast.Demand.E = 0;
+            Forecast.Demand.H = 0;
+            Forecast.Demand.C = 0;
         end
         Forecast.Demand.T = zeros(length(Forecast.Building(1).E0),nB);
         for i = 1:1:nB
             Forecast.Demand.E = Forecast.Demand.E + Forecast.Building(i).E0;
-            Forecast.Demand.T(:,i) = Forecast.Building(i).Tset;
+            Forecast.Demand.H = Forecast.Demand.H + Forecast.Building(i).H0;
+            Forecast.Demand.C = Forecast.Demand.C + Forecast.Building(i).C0;
+            Forecast.Demand.T(:,i) = Forecast.Building(i).Tzone;
         end
         Actual = [];
         ActualTime = [];

@@ -248,7 +248,6 @@ for i = 1:1:length(NodeNames)%number of dams in network
     end 
 end
 Plant.Network(2).Electrical.Load = 1; %put all the load at the first node
-% calculateHistoricalFit %might need to update this to do extra hydro specific fitting of data
 
 %% Temporary filling in missing data
 Plant.Data.Hydro.Timestamp = Plant.Data.Timestamp;

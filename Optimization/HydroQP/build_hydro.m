@@ -340,7 +340,7 @@ end
 
 Plant.Generator = [];
 Plant.Network = [];
-for i = 1:1:length(NodeNames);%number of dams in network
+for i = 1:1:length(NodeNames)%number of dams in network
     Plant.Network(i).name = NodeNames{i}; %names of each node are name of closest city
     Plant.Network(i).Equipment = strcat('Hydro Storage.',Equipment(i)); %equiptment Hydro.Name_of_Dam
     
@@ -381,7 +381,6 @@ for i = 1:1:length(NodeNames);%number of dams in network
     end
 end
 Plant.Network(1).Electrical.Load = 1; %put all the load at the first node
-% calculateHistoricalFit %might need to update this to do extra hydro specific fitting of data
 
 %% Temporary filling in missing data
 Plant.Data.Hydro.Timestamp = Plant.Data.Timestamp;

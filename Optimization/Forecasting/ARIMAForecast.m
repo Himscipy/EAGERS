@@ -1,4 +1,4 @@
-function Forecast = ARIMAForecast(Date,RealData)
+function Forecast = ARIMAForecast(Date)
 global Plant Last24hour
 S = fieldnames(Last24hour.Demand);
 a = 60.9/100;
@@ -7,7 +7,7 @@ for s = 1:1:length(S) %repeat for electric, cooling, heating, and steam as neces
     [f,nD] = size(Last24hour.Demand.(S{s}));
     Forecast.Demand.(S{s}) = zeros(length(Date),nD);
     r = Last24hour.Demand.(S{s});
-    Date2 = [Last24hour.Timestamp;linspace(RealData.Timestamp,RealData.Timestamp+Plant.optimoptions.Horizon/24,Plant.optimoptions.Horizon/Plant.optimoptions.Resolution+1)'];
+    Date2 = [Last24hour.Timestamp;linspace(Last24hour.Timestamp(end)+Plant.optimoptions.Resolution/24,Last24hour.Timestamp(end)+Plant.optimoptions.Horizon/24,Plant.optimoptions.Horizon/Plant.optimoptions.Resolution+1)'];
     r(length(Date2),:) = 0;%pre-allocate
     d1 = r(2:end,:) - r(1:end-1,:);%kW/timestep
     for i = (length(Last24hour.Demand.(S{s})(:,1))+1):length(Date2)

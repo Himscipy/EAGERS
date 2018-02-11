@@ -1,11 +1,10 @@
-function scaleCost = updateGeneratorCost(Timestamp)
-global Plant
+function scaleCost = updateGeneratorCost(Timestamp,Gen)
 nS = length(Timestamp);
-Source = {zeros(length(Plant.Generator),1)};
-for i = 1:1:length(Plant.Generator)
-    if strcmp(Plant.Generator(i).Type,'Utility')
-        Source(i) = {Plant.Generator(i).Source};
-        utility = Plant.Generator(i).VariableStruct;
+Source = {zeros(length(Gen),1)};
+for i = 1:1:length(Gen)
+    if strcmp(Gen(i).Type,'Utility')
+        Source(i) = {Gen(i).Source};
+        utility = Gen(i).VariableStruct;
         if strcmp(Source(i), 'Electricity')
             day = weekday(Timestamp);
             [Y,M,D] = datevec(Timestamp(1));
@@ -29,6 +28,8 @@ for i = 1:1:length(Plant.Generator)
         elseif strcmp(Source(i), 'NG')|| strcmp(Source(i), 'Diesel')
             %gas utility set up as daily prices for a leap year
             date1 = datevec(utility.Timestamp(1));
+            utility.Timestamp(end+1) = utility.Timestamp(end)+1;
+            utility.Rate(end+1) = utility.Rate(1);
             year1 = date1(1);
             datenow = datevec(Timestamp);
             interpDate = datenum([year1*ones(length(Timestamp),1), datenow(:,2:end)]);
@@ -39,12 +40,12 @@ for i = 1:1:length(Plant.Generator)
     end
 end
 
-scaleCost = zeros(nS,length(Plant.Generator));
-for i = 1:1:length(Plant.Generator)
-    if strcmp(Plant.Generator(i).Type,'Utility')
+scaleCost = zeros(nS,length(Gen));
+for i = 1:1:length(Gen)
+    if strcmp(Gen(i).Type,'Utility')
         scaleCost(:,i) = Utility(i).Rate;
-    elseif isempty(strfind(Plant.Generator(i).Type,'Storage')) && ~strcmp(Plant.Generator(i).Source, 'Renewable') && ~strcmp(Plant.Generator(i).Type, 'Hydro') %not storage or renewable or hydro
-        Uindex = find(strcmp(Source,Plant.Generator(i).Source),1);
+    elseif isempty(strfind(Gen(i).Type,'Storage')) && ~strcmp(Gen(i).Source, 'Renewable') && ~strcmp(Gen(i).Type, 'Hydro') %not storage or renewable or hydro
+        Uindex = find(strcmp(Source,Gen(i).Source),1);
         if isempty(Uindex)
             scaleCost(:,i) = 1; %no utility (don't scale costs)
         else

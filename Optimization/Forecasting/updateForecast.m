@@ -1,36 +1,31 @@
-function Forecast = updateForecast(Date,Data)
+function Forecast = updateForecast(Date)
 %Date is the date number, Time is a vector of times (in hours)
 global Plant
-nS = length(Date);
-nG = length(Plant.Generator);
-nB = length(Plant.Building);
 switch Plant.optimoptions.forecast
     case 'SNIWPE'
-        Forecast = SNIWPEForecast(Date,Data);
+        Forecast = SNIWPEForecast(Date);
     case 'ARIMA'
-        Forecast = ARIMAForecast(Date,Data);
+        Forecast = ARIMAForecast(Date);
     case 'NeuralNet'
         %
     case 'Surface'
-        Forecast = SurfaceForecast(Date,WeatherForecast(Date,'Tdb'));
+        Weather = WeatherForecast(Date);
+        Forecast = SurfaceForecast(Date,Weather.Tdb);
     case 'Perfect'
         Forecast = GetCurrentData(Date);
     case 'Building'
+        Weather = WeatherForecast(Date);
+        nB = length(Plant.Building);
         for i = 1:1:nB
-            Forecast.Building(i) = ForecastBuilding(Plant.Building(i),Plant.Weather,Date,Plant.Building(i).QPform.Location);
+            Build = Plant.Building(i);
+            Location = Plant.subNet.Electrical.Location(Build.QPform.Electrical.subnetNode);
+            [Forecast.Building.InternalGains(:,i),Forecast.Building.ExternalGains(:,i),Equipment,InteriorLighting, ExteriorLighting, OtherLoads] = BuildingLoads(Build,Weather.irradDireNorm,Weather.irradDiffHorz,Location,Date);
+            Forecast.Building.NonHVACelectric(:,i) = Equipment + InteriorLighting + ExteriorLighting + OtherLoads;
         end
 end
 Forecast.Timestamp = Date;
-% Forecast.Temperature = WeatherForecast(Date,'Temperature');
-S = {'Tdb';'Twb';'irradDireNorm'};
-for j = 1:1:length(S)
-    Forecast.Weather.(S{j}) = WeatherForecast(Date,S{j});
-end
-Forecast.Renewable = zeros(nS,nG);
-for i = 1:1:nG
-    if strcmp(Plant.Generator(i).Source,'Renewable') && Plant.Generator(i).Enabled
-        Forecast.Renewable(:,i) = RenewableOutput(i,Date,'Predict',Forecast.Weather.irradDireNorm);
-    end
+if isfield(Date,'Weather')
+    Forecast.Weather = WeatherForecast(Date);
 end
 if strcmp(Plant.optimoptions.method,'Dispatch')
     Data = GetCurrentData(Date(1));
@@ -45,25 +40,21 @@ if strcmp(Plant.optimoptions.method,'Dispatch')
             Forecast.(F{j})(1,:) = Data.(F{j});
         end
     end
-    for i = 1:1:nG
-        if strcmp(Plant.Generator(i).Source,'Renewable') && Plant.Generator(i).Enabled
-            Forecast.Renewable(1,i) = RenewableOutput(i,Date(1),'Actual',Forecast.Weather.irradDireNorm(1));
-        end
-    end
 end
-
-if isfield(Plant.subNet,'Hydro')
+if isfield(Forecast,'Building')
+    Forecast.Building.ExternalGains = ForecastExternalGains(Forecast);
+    [Forecast.Building,Forecast.SRtarget] = ForecastBuilding(Weather,Date,Forecast.Building);
+end
+if isfield(Forecast,'Weather') && isfield(Forecast.Weather,'irradDireNorm')
+    Forecast.Renewable = RenewableOutput(Date,Forecast.Weather.irradDireNorm);
+end
+if isfield(Plant,'subNet') && isfield(Plant.subNet,'Hydro')
     Forecast.Hydro.InFlow = ForecastHydro(Date,Forecast.Hydro.SourceSink);
 end
 
 if Plant.optimoptions.SpinReserve
     if isfield(Forecast,'Demand')
-        Forecast.SRtarget = Plant.optimoptions.SpinReservePerc/100*sum(Forecast.Demand.E,2);
-    else
-        Forecast.SRtarget  = Forecast.Building(1).E0;
-        for i = 2:1:nB
-            Forecast.SRtarget = Forecast.SRtarget + Forecast.Building(i).E0;
-        end
+        Forecast.SRtarget = Forecast.SRtarget + Plant.optimoptions.SpinReservePerc/100*sum(Forecast.Demand.E,2);
     end
 end
 end%Ends function updateForecast

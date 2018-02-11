@@ -7,11 +7,15 @@ function MarginCost = MarginalCapacityCost(GenDisp,Date)
 %%turning on generators one at a time in the cheapest order.
 global Plant
 n = 4;%break into 4 segments
-scaleCost = updateGeneratorCost(Date); 
+scaleCost = updateGeneratorCost(Date,Plant.Generator); 
 Binary = GenDisp~=0;
 nS = length(Date)-1;
 nG = length(Plant.Generator);
-nB = length(Plant.Building);
+if isfield(Plant,'Building') && ~isempty(Plant.Building)
+    nB = length(Plant.Building);
+else
+    nB = 0;
+end
 MarginCost.Timestamp = Date;
 dt = (Date(2:end) - Date(1:end-1))*24;
 S= {'E';'H';'C'};

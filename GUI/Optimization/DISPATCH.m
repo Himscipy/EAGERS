@@ -22,7 +22,7 @@ function varargout = DISPATCH(varargin)
  
 % Edit the above text to modify the response to help DISPATCH
  
-% Last Modified by GUIDE v2.5 22-Dec-2017 11:00:33
+% Last Modified by GUIDE v2.5 03-Feb-2018 13:27:52
  
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -52,15 +52,11 @@ handles.output = hObject;
 % Update handles structure
 guidata(hObject, handles);
 
-global Plant GENINDEX TestData mainFig
-TestData =[];
+global Plant GENINDEX mainFig TestData
 GENINDEX = 1;
 mainFig = gcf;
 set(gcf,'Name','DISPATCH')
 movegui(gcf,'center');
-if strcmp(Plant.optimoptions.method,'Planning')
-    Plant.optimoptions.method = 'Dispatch';
-end
 
 %% Set up Main Tabs
 % Assumptions:
@@ -69,7 +65,6 @@ end
 % 2. Tags of main tab panels are of form, 'uipanelMain1', 'uipanelMain2',
 % etc.
 TabText = {'Main Window';'Market Services';'Historian/Forecast';'Network View';'Settings'};
-% set(hObject,'UserData',TabText);
 for i = 1:length(TabText)
     j = num2str(i);
     % panel management
@@ -85,10 +80,13 @@ for i = 1:length(TabText)
         set(handles.(strcat('uipanelMain',j)),'Visible','off')
     end
 end
-
-%make gen list for tabs 1 and 5
+set(handles.GenList,'Position',[1,16,40,27])
 nG = length(Plant.Generator);
-nB = length(Plant.Building);
+if isfield(Plant,'Building') && ~isempty(Plant.Building)
+    nB = length(Plant.Building);
+else
+    nB = 0;
+end
 list=cell(nG+nB,1);
 for i=1:1:nG
     list(i) = {Plant.Generator(i).Name};
@@ -102,7 +100,8 @@ networkNames = fieldnames(Plant.Network);
 networkNames = networkNames(~strcmp('name',networkNames));
 networkNames = networkNames(~strcmp('Equipment',networkNames));
 networkNames = networkNames(~strcmp('Location',networkNames));
-if ~isempty(Plant.Building)
+networkNames = networkNames(~strcmp('Buildings',networkNames));
+if isfield(Plant,'Building') && ~isempty(Plant.Building)
     networkNames(end+1) = {'BuildingTemp'};
 end
 handles = PlotAxes_Setup(hObject, eventdata, handles,networkNames,1);
@@ -113,18 +112,10 @@ set(handles.popupmenuColor,'String',{'parula';'autumn';'cool';'spring';'summer';
 colormap(handles.ResultPlot1,'parula');
 set(hObject,'UserData',colormap(handles.ResultPlot1));
 
-handles = GenList_Make(handles,1);
-handles = GenList_Make(handles,3);
-handles = GenList_Make(handles,5);
+handles = GenList_Make(handles);
 
 set(handles.MarketPopup,'String',{'Market Prices';'Reserve Capacity';'Generation ($/kW)';'Demand Response ($/kW)'},'Value',1);
-
-%Update forecastmethod handles
-if ~isempty(Plant.Building)
-    days = 365;
-else
-    days = ceil(Plant.Data.Timestamp(end) - Plant.Data.Timestamp(1));
-end
+days = ceil(TestData.Timestamp(end) - TestData.Timestamp(1));
 if days<7
     set(handles.sliderZoom,'Min',0,'Max',1,'Value',0,'SliderStep',[1,1]) %either single day or all data   
 elseif days<31
@@ -141,18 +132,44 @@ else
     set(handles.sliderDate,'Min',0,'Max',days,'Value',0,'SliderStep',[1/days,1/days])
     set(handles.sliderStartDate,'Min',0,'Max',days,'Value',0,'SliderStep',[1/days,1/days])
 end
-%%put something into axes
-sliderStartDate_Callback(hObject, eventdata, handles)
-% LineGraph_Callback(hObject, eventdata, handles)
 insertMockups(handles)
+switchTab(handles)
 
 % --- Outputs from this function are returned to the command line.
 function varargout = DISPATCH_OutputFcn(hObject, eventdata, handles) 
 %ask user to save?
 
+function switchTab(handles)
+global GENINDEX 
+tab = 1;
+% Find out which tab is currently selected
+while ~strcmp(get(handles.(strcat('uipanelMain',num2str(tab))),'Visible'),'on') %isempty(m) && isfield(handles,strcat('uipanelMain',num2str(i))) && 
+    tab = tab+1;
+end
+if tab == 1
+    set(handles.GenList,'Visible','on')
+    if get(handles.Start,'Value') == 0
+        sliderStartDate_Callback([], [], handles)
+    end
+elseif tab == 2
+    set(handles.GenList,'Visible','off')
+    if get(handles.Start,'Value') == 0
+        MarketServices(handles)
+    end
+elseif tab == 3
+    GENINDEX = [];
+    set(handles.GenList,'Visible','on')
+    set(handles.Demands,'Visible','off')
+    ForecastPlot
+elseif tab == 4
+    set(handles.GenList,'Visible','off')
+elseif tab == 5
+    set(handles.GenList,'Visible','on')
+    loadSettingsTab(handles)
+end
+
 % Main tabs callback
 function mainTab_Callback(hObject, eventdata, handles)
-global GENINDEX
 n = get(hObject,'Tag');
 n = n(end);
 i = 1;
@@ -182,25 +199,18 @@ set(handles.(strcat('MainTab',n)),'FontWeight','bold','ForegroundColor',[0,0,0])
 % Change visibility
 set(handles.(strcat('uipanelMain',m)),'Visible','off')
 set(handles.(strcat('uipanelMain',n)),'Visible','on')
+switchTab(handles)
 
-%% actions specific to one tab or another
-if strcmp(n,'1')
-    if get(handles.Start,'Value') == 0
-        sliderStartDate_Callback(hObject, eventdata, handles)
-    end
-elseif strcmp(n,'2')
-    if get(handles.Start,'Value') == 0
-        MarketServices
-    end
-elseif strcmp(n,'3')
-    GENINDEX = [];
-    set(handles.Demands,'Visible','off')
-    ForecastPlot
-elseif strcmp(n,'4')
-    
-elseif strcmp(n,'5')
-    loadSettingsTab(handles)
-end
+function insertMockups(handles)
+global Model_dir
+handles.NetworkDisplay = axes('Units','normalized',...
+        'Position', [0,.1,1,.8],...
+        'Tag', 'NetworkDisplay',...
+        'Parent', handles.uipanelMain4,...
+        'Visible','on');
+[x,map] = imread(fullfile(Model_dir,'GUI','Graphics','NetworkDisplayMockup.png'));
+image(x,'Parent',handles.NetworkDisplay);
+set(handles.NetworkDisplay,'xtick',[],'xticklabel',[],'ytick',[],'yticklabel',[],'box','off')
 
 function loadSettingsTab(handles)
 global Plant
@@ -263,7 +273,10 @@ else
     set(handles.textBuffer, 'Visible', 'off');
 end
 
-if isfield(Plant.Data,'Demand')
+if isfield(Plant,'Building') && ~isempty(Plant.Building)
+    Plant.optimoptions.forecast ='Building';
+    set(handles.ForecastMethod,'Visible','off');
+else
     set(handles.ForecastMethod,'Visible','on');
     set(handles.SES, 'value', false);
     set(handles.ARIMA, 'value', false);
@@ -276,9 +289,6 @@ if isfield(Plant.Data,'Demand')
     else
         set(handles.(Plant.optimoptions.forecast), 'value', true);
     end
-elseif ~isempty(Plant.Building)
-    Plant.optimoptions.forecast ='Building';
-    set(handles.ForecastMethod,'Visible','off');
 end
  
 % --- Executes on button press in Switch.
@@ -303,7 +313,8 @@ else %1 large plot and n-1 smaller plots
 end
 if tab==1
     name = 'Result';
-else name = 'Forecast';
+else
+    name = 'Forecast';
 end
 quote='''';
 for i = 1:1:nPlot
@@ -345,7 +356,6 @@ for i = 1:1:nPlot
             'Visible','off');
     end
 end
-%% add pop-up menue with storage names if more than 2 storage devices of this type.
 
 function PlotSwitch(hObject)
 %if you pick the main plot and it is network1, swap with plot 2, 
@@ -379,34 +389,24 @@ if strcmp(screen,'Forecast')
     ForecastPlot
 elseif strcmp(screen,'Result')
     A = get(handles.ResultPlot1,'UserData');
-    ForecastTime = A{1};
-    Forecast = A{2};
-    HistoryTime = A{3};
-    History = A{4};
-    plotDispatch(handles,ForecastTime,Forecast,HistoryTime,History)
+    plotDispatch(handles,A.ForecastTime,A,A.HistoryTime,A.History)
 end
 
-function handles = GenList_Make(handles,tab)
+function handles = GenList_Make(handles)
 global Plant Model_dir
 quote='''';
 list = get(handles.uipanelMain1,'UserData');
-if tab == 1
-    r = 'Main';
-    pos1 = 45;
-elseif tab == 3
-    r = 'Plot';
-    pos1 = 45;
-elseif tab == 5
-    r = 'Comm';
-    pos1 = 30;
-end
 if length(list)>12
-    set(handles.(strcat('NextGen',num2str(tab))),'Visible','on','UserData',1)
-    set(handles.(strcat('PrevGen',num2str(tab))),'UserData',1)
+    set(handles.NextGen,'Visible','on','UserData',1)
+    set(handles.PrevGen,'UserData',1)
 end
 %Makes buttons for GUI && status buttons next to corresponding generator
 nG = length(Plant.Generator);
-nB = length(Plant.Building);
+if isfield(Plant,'Building') && ~isempty(Plant.Building)
+    nB = length(Plant.Building);
+else
+    nB = 0;
+end
 colorVec = get(gcf,'UserData');
 colorsPlot = interp1(linspace(0,1,length(colorVec)),colorVec,linspace(0,1,nG+nB));
 for i=1:1:nG+nB
@@ -414,28 +414,29 @@ for i=1:1:nG+nB
     prev = 12*(curtab-1);
     if curtab==1
         vis = 'on';
-    else vis = 'off';
+    else
+        vis = 'off';
     end
-    pos = pos1 - 2*(i-prev);
+    pos = 27 - 2*(i-prev);
     if i<=nG
         num = num2str(i);
-        callback = strcat('@(hObject,eventdata)DISPATCH(',quote,'Gen',r,'_Callback',quote,',hObject,eventdata,guidata(hObject))');
-        handles.(strcat('Generator',num2str(tab),'_',num)) = uicontrol('Style', 'pushbutton', 'String', list{i},...
+        callback = strcat('@(hObject,eventdata)DISPATCH(',quote,'Gen_Callback',quote,',hObject,eventdata,guidata(hObject))');
+        handles.(strcat('Generator_',num)) = uicontrol('Style', 'pushbutton', 'String', list{i},...
         'Units','characters','Position', [1 pos 25 1.8],...
-        'Tag', strcat('Generator',num2str(tab),'_',num),'FontSize', 10,...
-        'Parent', handles.(strcat('uipanelMain',num2str(tab))),...
+        'Tag', strcat('Generator_',num),'FontSize', 10,...
+        'Parent', handles.GenList,...
         'Callback',eval(callback),'Visible',vis,'UserData',i,'BackgroundColor',colorsPlot(i,:));
     else
         num = num2str(i-nG);
-        callback = strcat('@(hObject,eventdata)DISPATCH(',quote,'Build',r,'_Callback',quote,',hObject,eventdata,guidata(hObject))');
-        handles.(strcat('Building',num2str(tab),'_',num)) = uicontrol('Style', 'pushbutton', 'String', list{i},...
+        callback = strcat('@(hObject,eventdata)DISPATCH(',quote,'Build_Callback',quote,',hObject,eventdata,guidata(hObject))');
+        handles.(strcat('Building_',num)) = uicontrol('Style', 'pushbutton', 'String', list{i},...
         'Units','characters','Position', [1 pos 25 1.8],...
-        'Tag', strcat('Building',num2str(tab),'_',num),'FontSize', 10,...
-        'Parent', handles.(strcat('uipanelMain',num2str(tab))),...
+        'Tag', strcat('Building_',num),'FontSize', 10,...
+        'Parent', handles.GenList,...
         'Callback',eval(callback),'Visible',vis,'UserData',i-nG,'BackgroundColor',colorsPlot(i,:));
     end
-    if tab ==1 && i<=nG %Only make Status buttons on Main Window
-        pos = pos1 + .5 - 2*(i-prev);
+    if i<=nG %Only make Status buttons on Main Window
+        pos = 27.5 - 2*(i-prev);
         callback = strcat('@(hObject,eventdata)DISPATCH(',quote,'Status_Callback',quote,',hObject,eventdata,guidata(hObject))');
         if Plant.Generator(i).Enabled
             [x,map] = imread(fullfile(Model_dir,'GUI','Graphics','green.png'));
@@ -451,118 +452,159 @@ for i=1:1:nG+nB
         end
         if Plant.Generator(i).Enabled
             enableGen  = 'bold';
-        else enableGen  = 'normal';
+        else
+            enableGen  = 'normal';
         end
-        handles.(strcat('GeneratorStat',num2str(tab),'_',num)) = uicontrol('Style', 'pushbutton', 'String', '',...
+        handles.(strcat('GeneratorStat_',num)) = uicontrol('Style', 'pushbutton', 'String', '',...
         'Units','characters',...
         'Position', [27 pos 3 1],...
-        'Tag', strcat('GeneratorStat',num2str(tab),'_',num),...
+        'Tag', strcat('GeneratorStat_',num),...
         'cdata', x,...
         'FontWeight',enableGen,...
-        'Parent', handles.uipanelMain1,...
+        'Parent', handles.GenList,...
         'Callback',eval(callback),...
         'Visible',vis,...
         'UserData',i);
     end
 end
-% --- Executes on button press in PrevGen1.
+% --- Executes on button press in PrevGen.
 function PrevGen_Callback(hObject, eventdata, handles)
 handles = guihandles;
-if strcmp(get(handles.uipanelMain1,'Visible'),'on')
-    tab=1;
-elseif strcmp(get(handles.uipanelMain3,'Visible'),'on')
-    tab=3;
-elseif strcmp(get(handles.uipanelMain5,'Visible'),'on')
-    tab=5;
-end
 list = get(handles.uipanelMain1,'UserData');
 gen = length(list);
-page = get(handles.(strcat('PrevGen',num2str(tab))),'UserData');%current page of the list
+page = get(handles.PrevGen,'UserData');%current page of the list
 if (page-1)<2%if the new page is the 1st
-    set(handles.(strcat('PrevGen',num2str(tab))),'Visible','off','UserData',page-1)
+    set(handles.PrevGen,'Visible','off','UserData',page-1)
 else
-    set(handles.(strcat('PrevGen',num2str(tab))),'Visible','on','UserData',page-1);
+    set(handles.PrevGen,'Visible','on','UserData',page-1);
 end
-set(handles.(strcat('NextGen',num2str(tab))),'Visible','on','UserData',page-1)
+set(handles.NextGen,'Visible','on','UserData',page-1)
 for i = 1:1:12
     if 12*(page-1)+i<=gen
          j = num2str(12*(page-1)+i);
-         set(handles.(strcat('Generator',num2str(tab),'_',j)),'Visible','off');
-         if tab==1
-             set(handles.(strcat('GeneratorStat',num2str(tab),'_',j)),'Visible','off');
-         end
+         set(handles.(strcat('Generator_',j)),'Visible','off');
+         set(handles.(strcat('GeneratorStat_',j)),'Visible','off');
     end
 end
 for i = 1:1:12
     j = num2str(12*(page-2)+i);
-     set(handles.(strcat('Generator',num2str(tab),'_',j)),'Visible','on');
-     if tab==1
-         set(handles.(strcat('GeneratorStat',num2str(tab),'_',j)),'Visible','on');
-     end
+     set(handles.(strcat('Generator_',j)),'Visible','on');
+     set(handles.(strcat('GeneratorStat_',j)),'Visible','on');
 end
 
 
-% --- Executes on button press in NextGen1.
+% --- Executes on button press in NextGen.
 function NextGen_Callback(hObject, eventdata, handles)
 handles = guihandles;
-if strcmp(get(handles.uipanelMain1,'Visible'),'on')
-    tab=1;
-elseif strcmp(get(handles.uipanelMain3,'Visible'),'on')
-    tab=3;
-elseif strcmp(get(handles.uipanelMain5,'Visible'),'on')
-    tab=5;
-end
-
 list = get(handles.uipanelMain1,'UserData');
 gen = length(list);
-page = get(handles.(strcat('PrevGen',num2str(tab))),'UserData');%current page of the list
+page = get(handles.PrevGen,'UserData');%current page of the list
 if page==ceil(gen/12)-1
-    set(handles.(strcat('NextGen',num2str(tab))),'Visible','off','UserData',page+1)
+    set(handles.NextGen,'Visible','off','UserData',page+1)
 else
-    set(handles.(strcat('NextGen',num2str(tab))),'Visible','on','UserData',page+1);
+    set(handles.NextGen,'Visible','on','UserData',page+1);
 end
-set(handles.(strcat('PrevGen',num2str(tab))),'Visible','on','UserData',page+1)
+set(handles.PrevGen,'Visible','on','UserData',page+1)
 for i = 1:1:12
      j = num2str(12*(page-1)+i);
-     set(handles.(strcat('Generator',num2str(tab),'_',j)),'Visible','off');
-     if tab==1
-         set(handles.(strcat('GeneratorStat',num2str(tab),'_',j)),'Visible','off');
-     end
+     set(handles.(strcat('Generator_',j)),'Visible','off');
+     set(handles.(strcat('GeneratorStat_',j)),'Visible','off');
 end
 for i = 1:1:12
     j = num2str(12*(page)+i);
     if 12*(page)+i<=gen
-         set(handles.(strcat('Generator',num2str(tab),'_',j)),'Visible','on');
-         if tab==1
-             set(handles.(strcat('GeneratorStat',num2str(tab),'_',j)),'Visible','on');
-         end
+         set(handles.(strcat('Generator_',j)),'Visible','on');
+         set(handles.(strcat('GeneratorStat_',j)),'Visible','on');
     end
 end
 
 %When Component Buttons on the main tab are clicked
-function GenMain_Callback(hObject, eventdata, handles)
-global Plant GENINDEX
-GENINDEX = get(hObject,'UserData');
-size = num2str(Plant.Generator(GENINDEX).Size);
-set(handles.SelGen,'Title',Plant.Generator(GENINDEX).Name,'UserData',GENINDEX)
-if strcmp(Plant.Generator(GENINDEX).Type,'Utility')
-    set(handles.GenSpec1,'String','Inf')
-else
-    set(handles.GenSpec1,'String',size)
+function Gen_Callback(hObject, eventdata, handles)
+global Plant GENINDEX BUILDINDEX
+tab = 1;
+% Find out which tab is currently selected
+while ~strcmp(get(handles.(strcat('uipanelMain',num2str(tab))),'Visible'),'on') %isempty(m) && isfield(handles,strcat('uipanelMain',num2str(i))) && 
+    tab = tab+1;
 end
-if Plant.Generator(GENINDEX).Enabled == 1
-    set(handles.GenEnable,'Value',1)
-    set(handles.GenDisable,'Value',0)
-elseif Plant.Generator(GENINDEX).Enabled == 0
-    set(handles.GenEnable,'Value',0)
-    set(handles.GenDisable,'Value',1)
+if tab == 1
+    GENINDEX = get(hObject,'UserData');
+    size = num2str(Plant.Generator(GENINDEX).Size);
+    set(handles.SelGen,'Title',Plant.Generator(GENINDEX).Name,'UserData',GENINDEX)
+    if strcmp(Plant.Generator(GENINDEX).Type,'Utility')
+        set(handles.GenSpec1,'String','Inf')
+    else
+        set(handles.GenSpec1,'String',size)
+    end
+    if Plant.Generator(GENINDEX).Enabled == 1
+        set(handles.GenEnable,'Value',1)
+        set(handles.GenDisable,'Value',0)
+    elseif Plant.Generator(GENINDEX).Enabled == 0
+        set(handles.GenEnable,'Value',0)
+        set(handles.GenDisable,'Value',1)
+    end
+elseif tab == 3
+    %plot the forecastmethod and actual dispatch of a single generator
+    BUILDINDEX = [];
+    GENINDEX = get(hObject,'UserData');
+    set(handles.Demands,'Visible','on')
+    ForecastPlot
+elseif tab == 5
+    i = get(hObject,'UserData');
+    set(handles.CurrentComm,'String',['Ports for: ',Plant.Generator(i).Name])
+    if isfield(Plant.Generator(i).VariableStruct,'Comm')
+        Comm = Plant.Generator(i).VariableStruct.Comm;
+    else
+        Comm.OnOff = 0;
+        Comm.Set = 0;
+    end
+    if isfield(Plant.Generator(i).VariableStruct,'Measure')
+        Measure = Plant.Generator(i).VariableStruct.Measure;
+    else
+        Measure.OnOff = 0;
+        Measure.Input = 0;
+        Measure.Electric = 0;
+        Measure.Thermal = 0;
+    end
+    set(handles.editCommandOnOff,'string',num2str(Comm.OnOff))
+    set(handles.editCommandSet,'string',num2str(Comm.Set))
+    set(handles.editMeasureOnOff,'string',num2str(Measure.OnOff))
+    set(handles.editMeasureInput,'string',num2str(Measure.Input))
+    set(handles.editMeasurePrimary,'string',num2str(Measure.Electric))
+    set(handles.editMeasureSecondary,'string',num2str(Measure.Thermal))
 end
 
 %When Building Buttons on the main tab are clicked
-function BuildMain_Callback(hObject, eventdata, handles)
-global Plant
-b = get(hObject,'UserData');
-build = Plant.Building(b);
+function Build_Callback(hObject, eventdata, handles)
+global Plant GENINDEX BUILDINDEX
+tab = 1;
+% Find out which tab is currently selected
+while ~strcmp(get(handles.(strcat('uipanelMain',num2str(tab))),'Visible'),'on') %isempty(m) && isfield(handles,strcat('uipanelMain',num2str(i))) && 
+    tab = tab+1;
+end
+if tab == 1
+    b = get(hObject,'UserData');
+    build = Plant.Building(b);
+elseif tab ==3
+    GENINDEX = [];
+    BUILDINDEX = get(hObject,'UserData');
+    set(handles.Demands,'Visible','on')
+    ForecastPlot
+elseif tab ==5
+    i = get(hObject,'UserData');
+    set(handles.CurrentComm,'String',['Ports for: ',Plant.Building(i).Name])
+    if isfield(Plant.Building(i).VariableStruct,'Measure')
+        Measure = Plant.Building(i).VariableStruct.Measure;
+    else
+        Measure.Temperature = 0;
+        Measure.Humidity = 0;
+    end
+    set(handles.editCommandOnOff,'visible','off')
+    set(handles.editCommandSet,'visible','off')
+    set(handles.editMeasureOnOff,'visible','off')
+    set(handles.editMeasureInput,'visible','off')
+    set(handles.editMeasurePrimary,'string',num2str(Measure.Temperature))
+    set(handles.editMeasureSecondary,'string',num2str(Measure.Humidity))
+end
 
 %When Status colors are clicked
 function Status_Callback(hObject, eventdata,handles)
@@ -597,13 +639,9 @@ set(hObject,'cdata',x)
 
 % --- Executes on slider movement.
 function sliderStartDate_Callback(hObject, eventdata, handles)
-global Plant
+global Plant TestData
 handles = guihandles;
-if isempty(Plant.Building)
-    Date = Plant.Data.Timestamp(1) + get(handles.sliderStartDate,'Value');
-else
-    Date = datenum([2017,1,1]) + get(handles.sliderStartDate,'Value');
-end
+Date = TestData.Timestamp(1) + get(handles.sliderStartDate,'Value');
 WYHydroForecast(Date); %Water Year Forecast for Hydro
 if strcmp(Plant.optimoptions.solver,'NREL')
     [ForecastTime,Dispatch,HistoryTime,History] = SingleOptimizationNREL(Date);
@@ -612,18 +650,27 @@ else
     if ~isfield(Plant,'Dispatch') || isempty(Plant.Dispatch) || ~isfield(Plant.Dispatch,'Timestamp') || isempty(Plant.Dispatch.Timestamp) || min(abs(Plant.Dispatch.Timestamp-Date))>=Plant.optimoptions.Resolution/24
         ForecastTime = Date+[0;buildTimeVector(Plant.optimoptions)/24];
         Solution = SingleOptimization(ForecastTime,[]);
-        History = [];
+        History.Dispatch = [];
+        History.LineFlows = [];
+        History.Buildings = [];
+        History.hydroSOC = [];
         HistoryTime = [];
     else
-        t = max(linspace(1,length(Plant.Dispatch.Timestamp))'.*(Plant.Dispatch.Timestamp<Date)); %index preceeding current step
-        if Plant.Dispatch.Timestamp(t+1)>0 && (Plant.Dispatch.Timestamp(t+1)-Date)<(Date-Plant.Dispatch.Timestamp(t))
-            t = t+1; %The next time step is actually closer
+        Si = max((1:1:length(Plant.Dispatch.Timestamp))'.*(Plant.Dispatch.Timestamp<=Date & Plant.Dispatch.Timestamp>0)); %index preceeding current step
+        if (Plant.Dispatch.Timestamp(Si+1)>0 && (Plant.Dispatch.Timestamp(Si+1)-Date)<(Date-Plant.Dispatch.Timestamp(Si)))
+            Si = Si+1; %The next time step is actually closer
         end
-        ForecastTime = Plant.Predicted.Timestamp(t,:)';
-        Solution.Dispatch = Plant.Predicted.GenDisp(:,:,t);
-        backSteps = min(t,Plant.optimoptions.Horizon/Plant.optimoptions.Resolution);
-        History = Plant.Dispatch.GeneratorState(t-backSteps+1:t,:);
-        HistoryTime = Plant.Dispatch.Timestamp(t-backSteps+1:t);
+        ForecastTime = Plant.Predicted.Timestamp(:,Si);
+        Solution.Dispatch = Plant.Predicted.GenDisp(:,:,Si);
+        Solution.LineFlows = Plant.Predicted.LineFlows(:,:,Si);
+        Solution.Buildings.Temperature = Plant.Predicted.Buildings(:,:,Si);
+        Solution.hydroSOC = Plant.Predicted.hydroSOC(:,:,Si);
+        backSteps = min(Si-1,Plant.optimoptions.Horizon/Plant.optimoptions.Resolution);
+        History.Dispatch = Plant.Dispatch.GeneratorState(Si-backSteps:Si,:);
+        History.LineFlows = Plant.Dispatch.LineFlows(Si-backSteps:Si,:);
+        History.Buildings = Plant.Dispatch.Buildings(Si-backSteps:Si,:);
+        History.hydroSOC = Plant.Dispatch.hydroSOC(Si-backSteps:Si,:);
+        HistoryTime = Plant.Dispatch.Timestamp(Si-backSteps:Si);
     end
     plotDispatch(handles,ForecastTime,Solution,HistoryTime,History)
 end
@@ -636,7 +683,7 @@ end
 
 % --- Executes on button press in Start.
 function Start_Callback(hObject, eventdata, handles)
-global Plant Virtual RealTime mainFig
+global Plant Virtual RealTime mainFig TestData
 %Virtual: Running a simulation only, set to zero when the end of the test data set is reached
 if get(handles.VirtualMode,'Value') ==1 
     Virtual = 1;
@@ -655,11 +702,7 @@ mainFig = gcf;
 set(handles.Start,'Value',1);%reset start button
 set(handles.Stop,'Value',0);%reset stop button
 handles = guihandles;
-if isempty(Plant.Building)
-    Date = Plant.Data.Timestamp(1) + get(handles.sliderStartDate,'Value');
-else
-    Date = datenum([2017,1,1]) + get(handles.sliderStartDate,'Value');
-end
+Date = TestData.Timestamp(1) + get(handles.sliderStartDate,'Value');
 if isfield(Plant.optimoptions,'CoSim') && Plant.optimoptions.CoSim
     CoSimulation(Date,handles) %send to a different function that links to energy plus co-simulation
 else
@@ -744,15 +787,12 @@ if get(handles.StackedGraph,'Value')==1
     d = get(handles.LineGraph,'ForegroundColor');
     set(handles.LineGraph,'Value',1,'BackgroundColor',a,'ForegroundColor',c);
     set(handles.StackedGraph,'Value',0,'BackgroundColor',b,'ForegroundColor',d);
-else set(handles.LineGraph,'Value',1); %was already pressed
+else
+    set(handles.LineGraph,'Value',1); %was already pressed
 end
 handles = guihandles;
 A = get(handles.ResultPlot1,'UserData');
-ForecastTime = A{1};
-Forecast = A{2};
-HistoryTime = A{3};
-History = A{4};
-plotDispatch(handles,ForecastTime,Forecast,HistoryTime,History)
+plotDispatch(handles,A.ForecastTime,A,A.HistoryTime,A.History)
 
 % --- Executes on button press in StackedGraph.
 function StackedGraph_Callback(hObject, eventdata, handles)
@@ -763,15 +803,12 @@ if get(handles.LineGraph,'Value')==1
     d = get(handles.LineGraph,'ForegroundColor');
     set(handles.LineGraph,'Value',0,'BackgroundColor',a,'ForegroundColor',c);
     set(handles.StackedGraph,'Value',1,'BackgroundColor',b,'ForegroundColor',d);
-else set(handles.StackedGraph,'Value',1); %was already pressed
+else
+    set(handles.StackedGraph,'Value',1); %was already pressed
 end
 handles = guihandles;
 A = get(handles.ResultPlot1,'UserData');
-ForecastTime = A{1};
-Forecast = A{2};
-HistoryTime = A{3};
-History = A{4};
-plotDispatch(handles,ForecastTime,Forecast,HistoryTime,History)
+plotDispatch(handles,A.ForecastTime,A,A.HistoryTime,A.History)
 
 % --- Executes on button press in AutoControl.
 function AutoControl_Callback(hObject, eventdata, handles)
@@ -782,7 +819,8 @@ if get(handles.AutoControl,'Value')==1
     d = get(handles.AutoControl,'ForegroundColor');
     set(handles.AutoControl,'Value',1,'BackgroundColor',a,'ForegroundColor',c);
     set(handles.ManualControl,'Value',0,'BackgroundColor',b,'ForegroundColor',d);
-else set(handles.AutoControl,'Value',1); %was already pressed
+else
+    set(handles.AutoControl,'Value',1); %was already pressed
 end
 
 % --- Executes on button press in ManualControl.
@@ -794,7 +832,8 @@ if get(handles.ManualControl,'Value')==1
     d = get(handles.AutoControl,'ForegroundColor');
     set(handles.AutoControl,'Value',0,'BackgroundColor',a,'ForegroundColor',c);
     set(handles.ManualControl,'Value',1,'BackgroundColor',b,'ForegroundColor',d);
-else set(handles.ManualControl,'Value',1); %was already pressed
+else
+    set(handles.ManualControl,'Value',1); %was already pressed
 end
 
 % --- Executes on button press in VirtualMode.
@@ -812,7 +851,8 @@ if get(handles.VirtualMode,'Value')==1
         set(handles.ControllerMode,'Value',0,'BackgroundColor',a,'ForegroundColor',c);
     end
     set(handles.VirtualMode,'Value',1,'BackgroundColor',b,'ForegroundColor',d);
-else set(handles.VirtualMode,'Value',1); %was already pressed
+else
+    set(handles.VirtualMode,'Value',1); %was already pressed
 end
 
 % --- Executes on button press in ObserverMode.
@@ -830,7 +870,8 @@ if get(handles.ObserverMode,'Value')==1
         set(handles.ControllerMode,'Value',0,'BackgroundColor',a,'ForegroundColor',c);
     end
     set(handles.ObserverMode,'Value',1,'BackgroundColor',b,'ForegroundColor',d);
-else set(handles.ObserverMode,'Value',1); %was already pressed
+else
+    set(handles.ObserverMode,'Value',1); %was already pressed
 end
 
 % --- Executes on button press in ControllerMode.
@@ -848,26 +889,11 @@ if get(handles.ControllerMode,'Value')==1
         set(handles.VirtualMode,'Value',0,'BackgroundColor',a,'ForegroundColor',c);
     end
     set(handles.ControllerMode,'Value',1,'BackgroundColor',b,'ForegroundColor',d);
-else set(handles.ControllerMode,'Value',1); %was already pressed
+else
+    set(handles.ControllerMode,'Value',1); %was already pressed
 end
 
 %% Historian/ForecastMethod Tab
-function GenPlot_Callback(hObject, eventdata, handles)
-%plot the forecastmethod and actual dispatch of a single generator
-global GENINDEX BUILDINDEX
-BUILDINDEX = [];
-GENINDEX = get(hObject,'UserData');
-set(handles.Demands,'Visible','on')
-ForecastPlot
-
-%When Building Buttons on the Historian tab are clicked
-function BuildPlot_Callback(hObject, eventdata, handles)
-global GENINDEX BUILDINDEX
-GENINDEX = [];
-BUILDINDEX = get(hObject,'UserData');
-set(handles.Demands,'Visible','on')
-ForecastPlot
-
 function Demands_Callback(hObject, eventdata, handles)
 %plot the forecastmethod and actual demands
 global GENINDEX BUILDINDEX
@@ -902,7 +928,8 @@ if get(handles.CommitedMarket,'Value')==1
     d = get(handles.BiddingMarket,'ForegroundColor');
     set(handles.BiddingMarket,'Value',1,'BackgroundColor',a,'ForegroundColor',c);
     set(handles.CommitedMarket,'Value',0,'BackgroundColor',b,'ForegroundColor',d);
-else set(handles.BiddingMarket,'Value',1); %was already pressed
+else
+    set(handles.BiddingMarket,'Value',1); %was already pressed
 end
 
 
@@ -915,13 +942,13 @@ if get(handles.BiddingMarket,'Value')==1
     d = get(handles.CommitedMarket,'ForegroundColor');
     set(handles.CommitedMarket,'Value',1,'BackgroundColor',a,'ForegroundColor',c);
     set(handles.BiddingMarket,'Value',0,'BackgroundColor',b,'ForegroundColor',d);
-else set(handles.CommitedMarket,'Value',1); %was already pressed
+else
+    set(handles.CommitedMarket,'Value',1); %was already pressed
 end
 
-function MarketServices
+function MarketServices(handles)
 global Plant
-handles = guihandles;
-if ~isfield(Plant.Market,'Price')
+if ~isfield(Plant,'Market') || ~isfield(Plant.Market,'Price')
     Day_Price = [0.2 0.2 0.2 0.2 0.2 0.3 0.3 0.3 0.3 0.3 0.3 0.8 0.8 0.8 0.8 1.3 1.3 0.8 0.8 0.2 0.2 0.2 0.2 0.2]/10;
     Hour_Price = [0.0 0.0 0.0 0.0 0.7 0.8 1.5 1.2 0.4 0.0 0.2 1.0 1.8 2.2 1.7 1.4 1.0 0.7 0.4 0.0 0.0 0.0 0.0 0.0]/10;
     Realtime_Price = [0.03 0.03 0.04 0.04 0.06 0.06 0.05 0.04 0.05 0.1 0.15 0.18 0.16 0.15 0.17 0.12 0.08 0.08 0.07 0.04 0.04 0.03 0.01 0.01];
@@ -961,15 +988,6 @@ if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgr
 end
 
 %% Settings Tab
-function emptyQPmatrices
-%something changed in the specifications, any previously calculated
-%matrices or results do not apply
-global Plant
-A = {'subNet';'OpMatA';'OpMatB';'OneStep';'Online';'Dispatch';'Predicted';'RunData';'Baseline';'Market'};
-for i = 1:1:length(A)
-    Plant.(A{i}) = [];
-end
-
 function Interval_Callback(hObject, eventdata, handles)
 global Plant
 Plant.optimoptions.Interval = str2double(get(handles.Interval, 'String'));
@@ -981,7 +999,7 @@ end
 function Resolution_Callback(hObject, eventdata, handles)
 global Plant
 Plant.optimoptions.Resolution = str2double(get(handles.Resolution, 'String'));
-emptyQPmatrices
+Plant.subNet = [];
 
 function Resolution_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
@@ -991,7 +1009,7 @@ end
 function Horizon_Callback(hObject, eventdata, handles)
 global Plant
 Plant.optimoptions.Horizon = str2double(get(handles.Horizon, 'String'));
-emptyQPmatrices
+Plant.subNet = [];
 
 function Horizon_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
@@ -1007,13 +1025,13 @@ end
 function excessHeat_Callback(hObject, eventdata, handles)
 global Plant
 Plant.optimoptions.excessHeat = get(hObject, 'Value');
-emptyQPmatrices
+Plant.subNet = [];
 
 % --- Executes on button press in excessCool.
 function excessCool_Callback(hObject, eventdata, handles)
 global Plant
 Plant.optimoptions.excessCool = get(hObject, 'Value');
-emptyQPmatrices
+Plant.subNet = [];
 
 function changingtimesteps_SelectionChangeFcn(hObject, eventdata, handles)
 global Plant
@@ -1033,7 +1051,7 @@ switch get(eventdata.NewValue,'Tag')
     case 'logarithm'
         Plant.optimoptions.tspacing = 'logarithm';
 end
-emptyQPmatrices
+Plant.subNet = [];
 
 % --- Executes when selected object is changed in uipanelSolverMethod.
 function NoMixedInteger_Callback(hObject, eventdata, handles)
@@ -1061,12 +1079,12 @@ switch get(eventdata.NewValue,'Tag')
         Plant.optimoptions.SpinReserve = true;
         Plant.optimoptions.SpinReservePerc = str2double(get(handles.SpinReservePerc, 'String'));
 end
-emptyQPmatrices
+Plant.subNet = [];
 
 function SpinReservePerc_Callback(hObject, eventdata, handles)
 global Plant
 Plant.optimoptions.SpinReservePerc = str2double(get(handles.SpinReservePerc, 'String'));
-emptyQPmatrices
+Plant.subNet = [];
 
 function SpinReservePerc_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
@@ -1091,7 +1109,7 @@ global Plant
 val = get(handles.StorageBuff,'Value');
 stor = get(handles.StorageBuff,'UserData');
 Plant.Generator(stor(val)).VariableStruct.Buffer = str2double(get(handles.editBuffer,'String'));
-emptyQPmatrices
+Plant.subNet = [];
 
 function editBuffer_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
@@ -1104,7 +1122,7 @@ function SimBuilding_Callback(hObject, eventdata, handles)
 function Topt_Callback(hObject, eventdata, handles)
 global Plant
 Plant.optimoptions.Topt = str2double(get(handles.Topt, 'String'));
-emptyQPmatrices
+Plant.subNet = [];
 
 function Topt_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
@@ -1114,7 +1132,7 @@ end
 function Tmpc_Callback(hObject, eventdata, handles)
 global Plant
 Plant.optimoptions.Tmpc = str2double(get(handles.Tmpc, 'String'));
-emptyQPmatrices
+Plant.subNet = [];
 
 function Tmpc_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
@@ -1125,7 +1143,7 @@ function scaletime_Callback(hObject, eventdata, handles)
 global Plant
 %scaletime: the ratio of emulated time to time in the test-data. For example 24 hours of test data can be run in 3 hours with a scaletime of 8. scaletime enlarges any energy storage and slows down the transient response of any generators
 Plant.optimoptions.scaletime = str2double(get(handles.scaletime, 'String'));
-emptyQPmatrices
+Plant.subNet = [];
 
 function ForecastMethod_SelectionChangeFcn(hObject, eventdata, handles)
 global Plant
@@ -1141,53 +1159,9 @@ switch get(eventdata.NewValue,'Tag')
         Plant.optimoptions.forecast= 'Surface';
     case 'Perfect'
         Plant.optimoptions.forecast = 'Perfect';
-%         Plant.optimoptions.method = 'Dispatch';
     case 'Building'
         Plant.optimoptions.forecast= 'Building';
 end
-
-function GenComm_Callback(hObject, eventdata, handles)
-global Plant
-i = get(hObject,'UserData');
-set(handles.CurrentComm,'String',['Ports for: ',Plant.Generator(i).Name])
-if isfield(Plant.Generator(i).VariableStruct,'Comm')
-    Comm = Plant.Generator(i).VariableStruct.Comm;
-else
-    Comm.OnOff = 0;
-    Comm.Set = 0;
-end
-if isfield(Plant.Generator(i).VariableStruct,'Measure')
-    Measure = Plant.Generator(i).VariableStruct.Measure;
-else
-    Measure.OnOff = 0;
-    Measure.Input = 0;
-    Measure.Electric = 0;
-    Measure.Thermal = 0;
-end
-set(handles.editCommandOnOff,'string',num2str(Comm.OnOff))
-set(handles.editCommandSet,'string',num2str(Comm.Set))
-set(handles.editMeasureOnOff,'string',num2str(Measure.OnOff))
-set(handles.editMeasureInput,'string',num2str(Measure.Input))
-set(handles.editMeasurePrimary,'string',num2str(Measure.Electric))
-set(handles.editMeasureSecondary,'string',num2str(Measure.Thermal))
-
-%When Building Buttons on the main tab are clicked
-function BuildComm_Callback(hObject, eventdata, handles)
-global Plant
-i = get(hObject,'UserData');
-set(handles.CurrentComm,'String',['Ports for: ',Plant.Building(i).Name])
-if isfield(Plant.Building(i).VariableStruct,'Measure')
-    Measure = Plant.Building(i).VariableStruct.Measure;
-else
-    Measure.Temperature = 0;
-    Measure.Humidity = 0;
-end
-set(handles.editCommandOnOff,'visible','off')
-set(handles.editCommandSet,'visible','off')
-set(handles.editMeasureOnOff,'visible','off')
-set(handles.editMeasureInput,'visible','off')
-set(handles.editMeasurePrimary,'string',num2str(Measure.Temperature))
-set(handles.editMeasureSecondary,'string',num2str(Measure.Humidity))
 
 function editCommandOnOff_Callback(hObject, eventdata, handles)
 recordComm(handles)
@@ -1235,7 +1209,11 @@ end
 function recordComm(handles)
 global Plant
 nG = length(Plant.Generator);
-nB = length(Plant.Building);
+if isfield(Plant,'Building') && ~isempty(Plant.Building)
+    nB = length(Plant.Building);
+else
+    nB = 0;
+end
 click = get(handles.CurrentComm,'String');
 list = get(handles.uipanelMain1,'UserData');
 i = nonzeros((1:(nG+nB))'*strcmp(click,list));
@@ -1253,7 +1231,7 @@ if i<=nG
 else
     Measure.Temperature = str2double(get(handles.editMeasurePrimary,'String'));
     Measure.Humidity = str2double(get(handles.editMeasureSecondary,'String'));
-    Plant.Building(i).VariableStruct.Measure = Measure;
+    Plant.Building(i-nG).VariableStruct.Measure = Measure;
 end
 
 function popupmenuColor_Callback(hObject, eventdata, handles)
@@ -1285,14 +1263,3 @@ function popupmenuColor_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor','white');
 end
-
-function insertMockups(handles)
-global Model_dir
-handles.NetworkDisplay = axes('Units','normalized',...
-        'Position', [0,.1,1,.8],...
-        'Tag', 'NetworkDisplay',...
-        'Parent', handles.uipanelMain4,...
-        'Visible','on');
-[x,map] = imread(fullfile(Model_dir,'GUI','Graphics','NetworkDisplayMockup.png'));
-image(x,'Parent',handles.NetworkDisplay);
-set(handles.NetworkDisplay,'xtick',[],'xticklabel',[],'ytick',[],'yticklabel',[],'box','off')

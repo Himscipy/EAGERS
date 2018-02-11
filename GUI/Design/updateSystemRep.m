@@ -1,4 +1,4 @@
-function updateSystemRep(hObject, eventdata, handles)
+function updateSystemRep(handles)
 %% System representation (pushbuttons need to appear/disappear if they exist)
 global testSystems SYSINDEX
 list = {'pushbuttonHeaterInSys';'textAirHeater_H1';'pushbuttonTES1';'textTES1_H1';'pushbuttonHeatingDemands';'pushbuttonICE_mGT';'textICE_mGT_E';'textICE_mGT_H1';'textICE_mGT_H2';'textICE_mGT_H3';'pushbuttonSolarThermalInSys';...

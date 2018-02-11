@@ -657,16 +657,9 @@ for i = 1:1:length(NodeNames)%number of dams in network
         end 
     end 
 end
-% Plant.Network(1).Electrical.Load = 1; %put all the load at the first node
-% calculateHistoricalFit %might need to update this to do extra hydro specific fitting of data
 
 %% Temporary filling in missing data
 Plant.Data.Hydro.Timestamp = Plant.Data.Timestamp;
-% Plant.Data.Hydro.Equipment = Equipment;
-% Plant.Data.Hydro.Nodes = NodeNames{x+1:x+length(Dam)};
-%%This was for: sourceBrwn,Ox-Brwn,HC-Ox,LG-HC
-% Plant.Data.Hydro.SourceSink(:,15:18) = Plant.Data.Hydro.SourceSink(:,13:16);
-% Plant.Data.Hydro.SourceSink(:,11:14) = 0;
 
 %For first 11 dams, use data from previous time step to fill in missing data points
 for i = 1:1:length(Dam)

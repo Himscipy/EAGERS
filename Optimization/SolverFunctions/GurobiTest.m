@@ -1,30 +1,31 @@
 function [SolutionGurobi,Solution_QP] = GurobiTest(Date)
-global Plant DateSim CurrentState RealTimeData
+global Plant DateSim CurrentState Last24hour
 DateSim = Date;
 Date = Date+[0;buildTimeVector(Plant.optimoptions)/24];
 if ~isfield(Plant,'subNet') || isempty(Plant.subNet)
     initializeOptimization
 end
 loadTestData
-resetLast24Hour
-timestamp = (DateSim:Plant.optimoptions.Resolution/24:(DateSim+Plant.optimoptions.Horizon/24))';
-RealTimeData = interpolateData(timestamp,0.00);%create test data at correct frequency
+Last24hour = [];%re-load the previous 24 hours
+TimeYesterday = linspace(DateSim-1,DateSim,ceil(24/Plant.optimoptions.Resolution)+1)';
+Last24hour = GetHistoricalData(TimeYesterday);
+interpolateData(Plant.optimoptions.Resolution*3600,Plant.optimoptions.Horizon/24,0.00);%create test data at correct frequency
 if isempty(Plant.Building)
-    Data = GetHistoricalData(DateSim); 
+    Data = GetCurrentData(DateSim); 
 else
-    Data = updateForecast(DateSim,[]);
+    Data = updateForecast(DateSim);
 end
 automaticInitialCondition(Data);
-Forecast = updateForecast(Date(2:end),Data);
+Forecast = updateForecast(Date(2:end));
 dt = (Date(2:end) - Date(1:end-1))*24;
 nG = length(Plant.Generator);
 nS = length(Date)-1;
-scaleCost = updateGeneratorCost(Date(2:end)); %% All feedstock costs were assumed to be 1 when building matrices 
-PredictDispatch = ones(length(Date),1)*[CurrentState.Generators, CurrentState.Lines, CurrentState.Buildings];
+scaleCost = updateGeneratorCost(Date(2:end),Plant.Generator); %% All feedstock costs were assumed to be 1 when building matrices 
+PredictDispatch = ones(length(Date),1)*[CurrentState.Generators, CurrentState.Lines, CurrentState.Buildings(1,:)];
 marginCost = updateMarginalCost(PredictDispatch,scaleCost,dt,1);%the dispatch is whatever has been dispatched so far, except for the initial condition.
 tic
 QP = updateMatrices(Plant.OpMatB,Date,scaleCost,marginCost,Forecast,[]);
-x = gurobi_opt(QP,dt);
+x = gurobi_opt(QP);
 if ~any(isnan(x))
     SolutionGurobi = sortSolution(x,QP);
 else 

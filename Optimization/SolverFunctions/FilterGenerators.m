@@ -1,4 +1,4 @@
-function Solution = FilterGenerators(QP_0,FirstDisp,Locked,Timestamp)
+function Solution = FilterGenerators(QP_0,Solution,Locked,Timestamp)
 global Plant OnOff
 dt = (Timestamp(2:end) - Timestamp(1:end-1))*24;
 nS = length(dt);
@@ -17,7 +17,7 @@ for i = 1:1:nG
     dX(:,i) = dt*Plant.Generator(i).VariableStruct.dX_dt;
 end
 %% current best guess
-Solution.Dispatch = FirstDisp;
+FirstDisp = Solution.Dispatch;
 Cost = sum(NetCostCalc(Solution.Dispatch,Timestamp,'Dispatch'));
 %% Proceed with rules
 index = (1:nS)';

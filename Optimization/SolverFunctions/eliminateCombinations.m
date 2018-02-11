@@ -1,4 +1,4 @@
-function [BestDispatch,Alt] = eliminateCombinations(QP_0,K,Alt,IC,netDemand,dt,t,limit)
+function [BestDispatch,Alt] = eliminateCombinations(QP_0,K,Alt,IC,netDemand,dt,t)
 %This function identifies all feasible generator combinations that can meet
 %the demand at this moment in time
 %These feasible combinations are then tested, begining with the options
@@ -10,7 +10,8 @@ function [BestDispatch,Alt] = eliminateCombinations(QP_0,K,Alt,IC,netDemand,dt,t
 [lines,~] = size(K);
 if lines>1 && license('test','Distrib_Computing_Toolbox') 
     parallel = true;
-else parallel = false;
+else
+    parallel = false;
 end
 
 nG = length(QP_0.constCost);
@@ -22,7 +23,11 @@ nH = nnz(QP_0.Organize.Hydro);
 Dispatch = zeros(lines,n);
 LineLoss = zeros(lines,nL);
 excessHeat = zeros(lines,nnz(QP_0.Organize.HeatVented));
+excessCool = zeros(lines,nnz(QP_0.Organize.CoolVented));
 hydroSOC = zeros(lines,nH);
+Temperature = zeros(lines,nB);
+Heating = zeros(lines,nB);
+Cooling = zeros(lines,nB);
 Cost = zeros(lines,1);
 feasible = false(lines,1);
 flag1 = zeros(lines,1);
@@ -33,9 +38,10 @@ if parallel
         [x, flag1(i)] = callQPsolver(QP);
         if flag1(i)==1
             Cost(i) = 0.5*x'*QP.H*x + x'*QP.f;
-            [Dispatch(i,:),LineLoss(i,:),excessHeat(i,:),hydroSOC(i,:)] = sortSingleSolution(x,QP);
+            [Dispatch(i,:),LineLoss(i,:),excessHeat(i,:),excessCool(i,:),hydroSOC(i,:),Temperature(i,:),Heating(i,:),Cooling(i,:)] = sortSingleSolution(x,QP);
         end
     end
+    Cost = Cost+sum(ones(lines,1)*QP_0.constCost.*(K>0),2);
 else
     nzK = sum(K>0,2);%this is the number of active generators per combination (nonzeros of K)
     [~, line] = sort(nzK); %sort the rows by number of generators that are on
@@ -46,55 +52,44 @@ else
         [x, flag1(i)] = callQPsolver(QP);
         if flag1(i)==1
             Cost(i) = 0.5*x'*QP.H*x + x'*QP.f;
-            [Dispatch(i,:),LineLoss(i,:),excessHeat(i,:),hydroSOC(i,:)] = sortSingleSolution(x,QP);
+            Cost(i) = Cost(i)+sum(QP_0.constCost.*(K(i,:)>0),2);
+            [Dispatch(i,:),LineLoss(i,:),excessHeat(i,:),excessCool(i,:),hydroSOC(i,:),Temperature(i,:),Heating(i,:),Cooling(i,:)] = sortSingleSolution(x,QP);
         end
         if i<length(line)
-            K = reduceK(K,netDemand,i,min(Cost(1:i)),dt,t);
+            K = reduceK(K,QP,netDemand,i,Cost(i),min(Cost(1:i-1)),dt,t);
         end
         i = i+1;
     end
 end
 
 feasible(flag1==1) = true;
-% if any(feasible==false)
-%     disp('infeasible scenarios exist')
-% end
-Cost = Cost+sum(ones(lines,1)*QP_0.constCost.*(K>0),2);
 Cost(feasible==false) = inf;
-%Cost = Cost(feasible);
-%if isempty(Cost)
-
-% if nnz(feasible==true)==0
-%     disp('Zero feasible outcomes in eliminateCombinations: ERROR')
-% end
 [Cost,I] = sort(Cost);
 nP = nnz(feasible==true);
 K = K(I(1:nP),:); %the n best combinations
-Dispatch = Dispatch(I(1:nP),:);
 
-
-if strcmp(limit, 'unconstrained')
-    BestDispatch = Dispatch(1,:);
+Alt.Binary{t} = K>0;
+Alt.Disp{t} = Dispatch(I(1:nP),:);
+Alt.Cost{t} = Cost(1:nP)-Cost(1);
+Alt.Generators{t} = Dispatch(I(1:nP),1:nG);
+Alt.LineFlows{t} = Dispatch(I(1:nP),nG+1:nG+nL);
+Alt.Buildings{t} = Dispatch(I(1:nP),nG+nL+1:nG+nL+nB);
+Alt.LineLoss{t} = LineLoss(I(1:nP),:);
+Alt.excessHeat{t} = excessHeat(I(1:nP),:);
+Alt.excessCool{t} = excessCool(I(1:nP),:);
+Alt.hydroSOC{t} = hydroSOC(I(1:nP),:);
+Alt.Temperature{t} = Temperature(I(1:nP),:);
+Alt.Heating{t} = Heating(I(1:nP),:);
+Alt.Cooling{t} = Cooling(I(1:nP),:);
+if isempty(Alt.Disp{t})
+    disp(['No feasible combination of generators at step' num2str(t)]);
+    BestDispatch = IC;
 else
-    Alt.Binary{t} = K>0;
-    Alt.Disp{t} = Dispatch;
-    if isempty(Alt.Disp{t})
-        disp(['No feasible combination of generators at step' num2str(t)]);
-        BestDispatch = IC;
-    else
-        BestDispatch = Alt.Disp{t}(1,:);
-        Alt.Cost{t} = Cost(1:length(K(:,1)))-Cost(1);
-        Alt.Generators{t} = Dispatch(I(1:nP),1:nG);
-        Alt.LineFlows{t} = Dispatch(I(1:nP),nG+1:nG+nL);
-        Alt.Buildings{t} = Dispatch(I(1:nP),nG+nL+1:nG+nL+nB);
-        Alt.LineLoss{t} = LineLoss(1:length(K(:,1)),:);
-        Alt.excessHeat{t} = excessHeat(1:length(K(:,1)),:);
-        Alt.hydroSOC{t} = hydroSOC(1:length(K(:,1)),:);
-    end
+    BestDispatch = Alt.Disp{t}(1,:);
 end
 end %ends function EliminateCombinations
 
-function K = reduceK(K,netDemand,i,bestCost,dt,t)
+function K = reduceK(K,QP,netDemand,i,Cost,bestCost,dt,t)
 %%reduce size of K if you don't have parallel computing toolbox
 if isempty(bestCost)
     bestCost = inf;
@@ -102,6 +97,7 @@ end
 if Cost < bestCost
     %remove combinations that are the best combination and additional more expensive generators
     Outs = fieldnames(netDemand);
+    nG = length(QP.constCost);
     for s = 1:1:length(Outs)
         req = [];
         if strcmp(Outs{s},'E')
@@ -117,17 +113,24 @@ if Cost < bestCost
         if length(req) ==1 % The following definitely works with only 1 node
             bestCostPerkWh = Cost/(netDemand.(Outs{s})(t)*dt);
             nRow = length(K(:,1))-i;%how many rows do you have left
-            include = false(nG,1);
+            include = false(1,nG);
+            minRate = inf+zeros(1,nG);
             for j = 1:1:nG
                 if QP.Organize.Dispatchable(j)
                     states = QP.Organize.States{j};
                     if any(QP.Aeq(req,states))
                         include(j) = true;
+                        minRate(j) = QP.f(states(1));
+                        if minRate(j)== 0 && QP.Aeq(QP.Organize.Balance.Electrical,states(1))<0
+                            minRate(j) = -.1*QP.Aeq(QP.Organize.Balance.Electrical,states(1));
+                        elseif minRate(j)== 0 && QP.Aeq(QP.Organize.Balance.DistrictHeat,states(1))<0
+                            minRate(j) = -.1*QP.Aeq(QP.Organize.Balance.DistrictHeat,states(1));
+                        end
                     end
                 end
             end
-            if ~isempty(include) && i<length(K(:,1))
-                posCheaperGen = include(logical((minRate(include)<bestCostPerkWh).*(1-(K(i,include)>0))));%possibly cheaper generators that are not on for this case, but could be on
+            if i<length(K(:,1))
+                posCheaperGen = nonzeros((1:nG).*include.*((minRate<bestCostPerkWh) & (K(i,:)==0)));%possibly cheaper generators that are not on for this case, but could be on
             else
                 posCheaperGen = [];
             end
@@ -141,16 +144,18 @@ if Cost < bestCost
             end
             %remove combinations that swap the current
             %combination with a more expensive generator
-            for m = 1:1:length(include)
-                if K(i,include(m))==1 && i<length(K(:,1))
-                    cheapGen = include(m);
-                    expensiveGens = minrate(include)>minrate(cheapGen);
+            for m = 1:1:nG
+                if include(m) && K(i,m)>0 && i<length(K(:,1))
+                    expensiveGens = nonzeros((1:nG).*include.*(minRate>minRate(m)));
                     for q = 1:1:length(expensiveGens)
-                        addGen = zeros(1,nG);
-                        addGen(expensiveGens(q)) = 1;
-                        addGen(cheapGen) = -1;
-                        swapK = K(i,:)+addGen;
-                        K = K~=swapK;
+                        if K(i,expensiveGens(q))==0
+                            addGen = zeros(1,nG);
+                            addGen(expensiveGens(q)) = expensiveGens(q);
+                            addGen(m) = -m;
+                            swapK = K(i,:)+addGen;
+                            keep = ~ismember(K,swapK,'rows');
+                            K = K(keep,:);
+                        end
                     end
                 end
             end

@@ -22,10 +22,11 @@ if hydroforecast
     Plant.subNet = []; %will force a re-construction of optimization matrices with current options
     D = datevec(Date);
     if D(2)<10
-        Date = datenum([D(1)-1 10 1 1 0 0]);
+        year = D(1)-1;
     else
-        Date = datenum([D(1) 10 1 1 0 0]);
+        year = D(1);
     end
+    Date = datenum([year 10 1 1 0 0]);
     ForecastTime = Date+[0;buildTimeVector(Plant.optimoptions)/24];
     if nY>1
         Solution = SingleOptimization(ForecastTime,Plant.WYForecast{nY-1});
@@ -37,6 +38,11 @@ if hydroforecast
     Plant.optimoptions = OldOptions;
     Plant.subNet = []; %will force a re-construction of optimization matrices with current options
     initializeOptimization
-    sprintf('WYForecast Completed')
+    disp(strcat('Water Year Forecast Completed for ',num2str(year),':',num2str(year+1)))
+    if any(strcmp(Plant.optimoptions.method,{'Dispatch';'Planning'}))
+        interpolateData(Plant.optimoptions.Resolution*3600,Plant.optimoptions.Interval,0.00);%create test data at correct frequency
+    else %actual control
+        interpolateData(Plant.optimoptions.Tmpc,Plant.optimoptions.Interval,0.00);%create test data at correct frequency
+    end
 end
 end%Ends funtions WYHydroForecast

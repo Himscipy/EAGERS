@@ -1,310 +1,74 @@
-function Forecast = ForecastBuilding(varargin)
+function [Building,SRtarget] = ForecastBuilding(varargin)
 % This function estimates the energy profile of a building 
 % Build is a structure of building parameters
 % Weather is an hourly weather profile (dry bulb, wet bulb, and relative humidity)
 % Date is a vector of points in datenum format at which you are requesting the electric cooling & heating power
-Build = varargin{1};
-Weather = varargin{2};
-Date = varargin{3};
-Location = varargin{4};
-
-[Y,Month,D,H,M,S] = datevec(Date);
-h1 = H(1)+M(1)+S(1);
-D(H==0&M==0&S==0) = D(H==0&M==0&S==0)-1;
-H(H==0&M==0&S==0) = 24;%change hour 0 to hour 24 for interpolating
-if h1 ==0%put start date back.
-    D(1) = D(1) + 1;
-    H(1) = 0;
-end
-days = max(1,ceil(Date(end) - datenum([Y(1),Month(1),D(1)])));
-daysAfter1_1_17 = floor(Date(1)) - datenum([2017,1,1]);
-wd = 1 + mod(daysAfter1_1_17,7); %day of the week, sunday is 1, saturday is 7
-sd = floor(Date(1)); %start date
+global Plant CurrentState
+nB = length(Plant.Building);
+Weather = varargin{1};
+Date = varargin{2};
 nS = length(Date);
-if nS == 1
-    dt = 3600;%need to revisit this?
-else
-    dt1 = Date(2) - Date(1);
-    dt = 86400*(Date - [Date(1)-dt1;Date(1:end-1)]); %duration of each time segment
+Building = varargin{3};%forecast with actual loads from TestData
+Building.E0 = zeros(nS,nB);
+Building.C0 = zeros(nS,nB);
+Building.H0 = zeros(nS,nB);
+Building.Tmin = zeros(nS,nB);
+Building.Tmax = zeros(nS,nB);
+Building.Tset_H = zeros(nS,nB);
+Building.Tset_C = zeros(nS,nB);
+Building.Fan_Power = zeros(nS,nB);
+Building.AirFlow = zeros(nS,nB);
+Building.Tzone = zeros(nS,nB);
+Building.Twall = zeros(nS,nB);
+Building.Damper = zeros(nS,nB);
+for i = 1:1:nB
+    Build = Plant.Building(i);
+    Location = Plant.subNet.Electrical.Location(Build.QPform.Electrical.subnetNode);
+    %%Need warm-up period if not currently running the model
+    if ~isfield(CurrentState,'Buildings') || round(864000*(CurrentState.Buildings(3,i)+Plant.optimoptions.Resolution/24))/864000 ~= Date(1)
+        days = 6;
+        Tzone = 20;
+        Twall = 20;
+        wuDate = linspace(Date(1),Date(1)+1 - Plant.optimoptions.Resolution/24,24)';
+        wuWeather = WeatherForecast(wuDate);
+        [wuInternalGains,wuExternalGains,~,~,~,~] = BuildingLoads(Build,wuWeather.irradDireNorm,wuWeather.irradDiffHorz,Location,wuDate);
+        for d = 1:1:days
+            [~,~,~,Tzone,Twall,~] = BuildingProfile(Build,wuDate,wuInternalGains,wuExternalGains,wuWeather.Tdb,wuWeather.RH,Tzone(end,1),Twall(end,1));
+        end
+        CurrentState.Buildings(1,i) = Tzone(end);
+        CurrentState.Buildings(2,i) = Twall(end);
+        CurrentState.Buildings(3,i) = Date(1); 
+    end
+    Tzone = CurrentState.Buildings(1,i);
+    Twall = CurrentState.Buildings(2,i);
+    [Cooling, Heating, Fan_Power,Tzone,Twall,Damper] = BuildingProfile(Build,Date,Building.InternalGains(:,i),Building.ExternalGains(:,i),Weather.Tdb,Weather.RH,Tzone,Twall);
+    Building.Tmin(:,i) = loadSched(Build,Date,'TsetH') - 0.5*Build.VariableStruct.Comfort;
+    Building.Tmax(:,i) = loadSched(Build,Date,'TsetC') + 0.5*Build.VariableStruct.Comfort;
+    [T_Heat,T_Cool] = EquilibTeperature(Build,Date,Weather,Twall,Building.InternalGains(:,i),Building.ExternalGains(:,i),Building.Tmin(:,i),Building.Tmax(:,i));
+    Building.E0(:,i) = Building.NonHVACelectric(:,i) + Fan_Power(:,i);
+    Building.C0(:,i) = Cooling(:,i) ;
+    Building.H0(:,i) = Heating(:,i);
+    if ~Plant.Building(i).QPform.Heating
+        %Can upgrade to include non-linear mapping of heating to electricity for built-in HVAC equipment
+        Building.E0(:,i) = Building.E0(:,i) + (Building.H0(:,i)- Plant.Building(i).QPform.UA*(Tzone(2:end)-T_Heat))*Build.QPform.H2E;
+    end
+    if ~Plant.Building(i).QPform.Cooling
+        %Can upgrade to include non-linear mapping of cooling to electricity for built-in HVAC equipment
+        Building.E0(:,i) = Building.E0(:,i) + (Building.C0(:,i)- Plant.Building(i).QPform.UA*(T_Cool-Tzone(2:end)))*Build.QPform.C2E;
+    end
+    Building.Tset_H(:,i) = T_Heat;
+    Building.Tset_C(:,i) = T_Cool;
+    Building.Fan_Power(:,i) = Fan_Power;
+    Building.AirFlow(:,i) = Fan_Power/Build.VariableStruct.FanPower;
+    Building.Tzone(:,i) = Tzone(2:end);
+    Building.Twall(:,i) = Twall(2:end);
+    Building.Damper(:,i) = Damper;
 end
-%calculate minimum air flow rate using density of air: 1.225 kg/m^3
-MinFlow = Build.VariableStruct.Volume*1.225*(Build.VariableStruct.AirChangePerHr/100)*(1/3600); %kg/s of flow
+SRtarget  = 0;
+if Plant.optimoptions.SpinReserve
+    for i = 1:1:nB
+        SRtarget = SRtarget + Building.E0(:,i);
+    end
+end
 
-%if next point in schedule is shorter than ramp, then ramp shortens to half the gap
-sched = fieldnames(Build.Schedule);
-for i = 1:1:length(sched)
-    Profile.(sched{i}) = zeros(nS,1);
-end
-Tdb = zeros(nS,1);
-RH = zeros(nS,1); %humidity ratio
-Cooling = zeros(nS,1);
-Heating = zeros(nS,1);
-AirFlow = zeros(nS,1);% flow rate in m^3/s
-Tset = zeros(nS,1);
-h8761 = (0:1:8760)';
-p = 1;
-DateIndex = cell(days);
-for d = 1:1:days
-    h_of_y = 24*(Date(p) - datenum([Y(p),1,1])); %hour since start of year
-    %Load schedules for this day
-    Out = loadSched(Build,wd,h_of_y);
-    p2 = p;
-    while p2<nS && Date(p2)<=sd+d
-        p2 = p2+1;
-    end
-    if Date(p2)>sd+d
-        p2 = p2-1;
-    end
-    for i = 1:1:length(sched)
-        Profile.(sched{i})(p:p2) = interp1(Out.(sched{i})(:,1),Out.(sched{i})(:,2),H(p:p2)+M(p:p2)/60+S(p:p2)/3600);
-    end
-    h_of_y = 24*(Date(p:p2) - datenum([Y(p),1,1])); %hour since start of year
-    Tdb(p:p2) = interp1(h8761,[Weather.Tdb(1);Weather.Tdb],h_of_y);
-    RH(p:p2) = interp1(h8761,[Weather.RH(1);Weather.RH],h_of_y);
-    DateIndex(d) = {p:p2};
-    p = p2+1;
-    wd = wd+1;
-    if wd == 8
-        wd = 1;
-    end
-end
-Equipment = Build.Area*Build.VariableStruct.equipment/1000*Profile.equipment;% kW of equipment load
-if isfield(Build.VariableStruct,'DataCenter')
-    Equipment = Equipment + Build.VariableStruct.DataCenter*Profile.datacenter;
-end
-OtherLoads = zeros(nS,1);
-if isfield(Build.VariableStruct,'WaterSystem')
-    OtherLoads = Build.Area*Build.VariableStruct.WaterSystem*Profile.watersystem;
-end
-if isfield(Profile,'exteriorlights_solarcontroled')
-    for day = 1:days
-        HoD = 24*(Date(DateIndex{day}) - floor(Date(DateIndex{day}(1)))); %hour of day
-        frac_dark = ones(length(HoD),1);
-        if ~isempty(Location)
-            [Sunrise,Sunset,~,~] = SolarCalc(Location.Longitude,Location.Latitude,Location.TimeZone,floor(Date(DateIndex{day}(1))));
-        elseif isfield(Build,'Longitude') %moving location into node structure of network
-            [Sunrise,Sunset,~,~] = SolarCalc(Build.Longitude,Build.Latitude,Build.TimeZone,floor(Date(DateIndex{day}(1))));
-        else
-            [Sunrise,Sunset,~,~] = SolarCalc(-105,40,-6,floor(Date(DateIndex{day}(1))));
-        end
-        h_sr = 1;
-        while HoD(h_sr)<(Sunrise*24+.125) && h_sr<length(HoD)
-            h_sr = h_sr+1;
-        end
-        if h_sr == 1
-            frac_dark(1) = (Sunrise*24+.125)/HoD(1);
-        else
-            frac_dark(h_sr) = ((Sunrise*24+.125) - HoD(h_sr-1))/(HoD(h_sr)-HoD(h_sr-1));
-        end
-        h_ss = h_sr+1;
-        if h_ss<length(HoD)
-            while HoD(h_ss)<(Sunset*24-.125)  && h_ss<length(HoD)
-                h_ss = h_ss+1;
-            end
-            frac_dark(h_ss) = 1-((Sunset*24-.125) - HoD(h_ss-1))/(HoD(h_ss)-HoD(h_ss-1));
-        end
-        frac_dark(h_sr+1:h_ss-1) = 0;
-        Profile.exteriorlights_solarcontroled(DateIndex{day}) = min(Profile.exteriorlights_solarcontroled(DateIndex{day}),frac_dark);
-    end
-    ExteriorLighting = Build.VariableStruct.ExteriorLights*Profile.exteriorlights_fixed + Build.VariableStruct.ExteriorLights*Profile.exteriorlights_solarcontroled;
-else
-    ExteriorLighting = Build.VariableStruct.ExteriorLights*Profile.exteriorlights;
-end
-InteriorLighting = Build.Area*Build.VariableStruct.InteriorLights/1000*(Profile.interiorlights.*(1-Profile.daylighting));% kW of lighting load
-
-SolarGain = 2*Build.Area*Build.VariableStruct.InteriorLights/1000*(Profile.interiorlights.*Profile.daylighting);% kW of solar energy entering (factor of 2 for IR entering with visible)
-InternalGains = Build.Area*Build.VariableStruct.occupancy*Profile.occupancy*.120 + Equipment + InteriorLighting + SolarGain; %heat from occupants (120 W)
-%find ambient dewpoint
-P = 101.325; %atmospheric pressure (kPa)
-Tdb_K = Tdb+273.15; %Tdb (Kelvin)
-satP = exp((-5.8002206e3)./Tdb_K + 1.3914993 - 4.8640239e-2*Tdb_K + 4.1764768e-5*Tdb_K.^2 - 1.4452093e-8*Tdb_K.^3 + 6.5459673*log(Tdb_K))/1000; %saturated water vapor pressure ASHRAE 2013 fundamentals eq. 6 in kPa valid for 0 to 200C
-P_H2O = RH/100.*satP;
-Tdp = 6.54 + 14.526*log(P_H2O) + 0.7389*log(P_H2O).^2 + 0.09486*log(P_H2O).^3 + 0.4569*(P_H2O).^0.1984; %Dew point from partial pressure of water using ASHRAE 2013 Fundamentals eqn 39 valid from 0C to 93C
-Cp_amb = 1.006 + 1.86*(.621945*(P_H2O./(P-P_H2O))); %kJ/kg
-
-%find specific heat of air
-% Tset = 22+273.15;
-% P = 101.325;
-% satP = exp((-5.8002206e3)./Tset + 1.3914993 - 4.8640239e-2*Tset + 4.1764768e-5*Tset.^2 - 1.4452093e-8*Tset.^3 + 6.5459673*log(Tset))/1000; %saturated water vapor pressure ASHRAE 2013 fundamentals eq. 6 in kPa valid for 0 to 200C
-% P_H2O = exp(5423*(1/273-1./(273+Build.VariableStruct.DPset)))./exp(5423*(1/273-1./(273+Tset))).*satP;%Clausius-Clapeyron equation to calculate relative humidity from dewpoint temperature
-% w = (P_H2O/(P-P_H2O));
-w = 0.0085;
-Cp_build = 1.006 + 1.86*(.621945*w); %kJ/kg
-%need to step through time to account for moments with no heating/cooling
-%as the building moves between the heat setpoint and the cooling setpoint
-T_Cset = min(Profile.TsetC);
-T_Hset = max(Profile.TsetH);
-if (Profile.TsetH(1) - Tdb(1))*Build.Area/Build.VariableStruct.Resistance>InternalGains(1)
-    Tact = Profile.TsetH(1); %initially in heating mode
-elseif (Profile.TsetC(1) - Tdb(1))*Build.Area/Build.VariableStruct.Resistance<InternalGains(1)
-    Tact = Profile.TsetC(1); %initially in cooling mode
-else %initially in equilibrium between the heating and cooling setpoints
-    Tact = (T_Cset + T_Hset)/2;
-end
-for t = 1:1:nS
-    Energy2Add = -((Tdb(t) - Profile.TsetH(t))*Build.Area/Build.VariableStruct.Resistance + InternalGains(t)) - (Tact - Profile.TsetH(t))*Build.VariableStruct.Capacitance*Build.Area/dt(t); %net energy needed to be added in kJ/s
-    if Energy2Add>0
-        Tact = Profile.TsetH(t);
-        Flow = MinFlow;
-        Damper = Build.VariableStruct.MinDamper; %treat as little ouside air as possible
-        Cp_Air = Damper*Cp_amb(t) + (1-Damper)*Cp_build;
-        Tsupply = Energy2Add/(Flow*Cp_Air) + Tact; %temperature of supply air to provide this heating
-        Tmix = Damper*Tdb(t) + (1-Damper)*Tact;
-        Heating(t) = Cp_Air*(Tsupply-Tmix)*Flow;
-        Tset(t) = Profile.TsetH(t);
-    else
-        Heating(t) = 0;
-        Energy2Remove = ((Tdb(t) - Profile.TsetC(t))*Build.Area/Build.VariableStruct.Resistance + InternalGains(t)) + (Tact - Profile.TsetC(t))*Build.VariableStruct.Capacitance*Build.Area/dt(t); %net energy needed to be removed in kJ/s
-        if Energy2Remove>0 %would exceed cooling setpoint without intervention       
-            Tact = Profile.TsetC(t);
-            Tsupply = Build.VariableStruct.ColdAirSet;
-            if Tdb(t)<Tact %find economizer position
-                if Tdb(t)>Tsupply
-                    Damper = 1;
-                else
-                    Damper = (Tsupply - Tact)/(Tdb(t) - Tact);
-                end
-            else
-                Damper = Build.VariableStruct.MinDamper; %treat as little ouside air as possible
-            end
-            Tmix = Damper*Tdb(t) + (1-Damper)*Tact;
-            Cp_Air = Damper*Cp_amb(t) + (1-Damper)*Cp_build;
-            Flow = Energy2Remove/((Tact-Tsupply)*Cp_Air); %mass flow of air to provide this cooling
-            Cooling(t) = Cp_Air*(Tmix-Tsupply)*Flow;
-            Tset(t) = Profile.TsetC(t);
-        else
-            Damper = Build.VariableStruct.MinDamper;
-            Tmix = Damper*Tdb(t) + (1-Damper)*Tact;
-            Tsupply = Tmix;
-            Cp_Air = Damper*Cp_amb(t) + (1-Damper)*Cp_build;
-            Flow = 0;%MinFlow;
-            Tact = Tact + ((Tdb(t) - Tact)*Build.Area/Build.VariableStruct.Resistance + InternalGains(t) + (Tmix - Tact)*Cp_Air*Flow).*dt(t)/(Build.VariableStruct.Capacitance*Build.Area); %net change in temperature
-            Tact = min(Profile.TsetC(t),max(Profile.TsetH(t),Tact));
-            Cooling(t) = 0;
-            Tset(t) = Tact;
-%             if t ==1
-%                 Tset(t) = Profile.TsetH(t);
-%             else Tset(t) = Tset(t-1);
-%             end
-        end
-    end
-    AirFlow(t) = Flow/1.225;%flow rate in m^3/s
-%    %% Remove non-daytime heating and cooling
-%    if Profile.TsetC(t)>26 || Profile.TsetH(t)<19
-%        AirFlow(t) = 0;
-%        if Heating(t)>0
-%            Tact = T_Hset;
-%            Heating(t) = 0;
-%        end
-%        if Cooling(t)>0
-%            Tact = T_Cset;
-%            Cooling(t) = 0;
-%        end
-%    end
-%    %% Fixed fan power (i.e. On/Off)
-%    if Profile.TsetH(t)>19 %fan is on
-%        AirFlow(t) = MinFlow*10.75;
-%    else
-%        AirFlow(t) = 0;
-%    end
-   
-    
-%     %% De-Humidification
-%     %estimate de-humidification with Cp
-%     if Tdp(t)>Build.VariableStruct.DPset %must dehumidify incoming air
-%         Cp_Air = Damper*Cp_amb(t) + (1-Damper)*Cp_build;
-%         Tmix = Damper*Tdb(t) + (1-Damper)*Tact;
-%         Cooling(t)  = Flow*Cp_Air*(Tmix - Build.VariableStruct.DPset); %dehumidification energy in kJ/s
-%         Heating(t)  = Flow*Cp_Air*(Tsupply - Build.VariableStruct.DPset); %dehumidification energy in kJ/s
-%     end
-%     
-% %     %%full enthalpy calculations
-% %     if Tdp(t)>Build.VariableStruct.DPset %must dehumidify incoming air
-% %         %ambient air
-% %         AmbientAir = makeAir(Tdb(t),RH(t),Damper*Flow,'rel');
-% %         %recirculated air
-% %         RecircAir = makeAir(Tact,Build.VariableStruct.DPset,(1-Damper)*Flow,'dp');
-% %         %mixed air
-% %         MixedAir = MixAir(RecircAir,AmbientAir);
-% %         CooledAir = MixedAir;
-% %         CooledAir.T = Build.VariableStruct.DPset+273.15; 
-% %         sat_atDP = makeAir(Build.VariableStruct.DPset,100,Flow,'rel');
-% %         CooledAir.H2O = sat_atDP.H2O; %remove water
-% %         Cooling(t)  = (-enthalpyAir(MixedAir)*(MassFlow(MixedAir) - MixedAir.H2O*18) + enthalpyAir(CooledAir)*(MassFlow(CooledAir) - CooledAir.H2O*18)); %dehumidification energy in kJ/s
-% %         HeatedAir = CooledAir;
-% %         HeatedAir.T = Tsupply+273.15;
-% %         Heating(t)  = (enthalpyAir(HeatedAir)*(MassFlow(HeatedAir) - HeatedAir.H2O*18) - enthalpyAir(CooledAir)*(MassFlow(CooledAir) - CooledAir.H2O*18)); %reheat energy in kJ/s
-% %     end   
-end
-Cooling(abs(Cooling)<1e-10) = 0;
-Fan_Power = AirFlow*Build.VariableStruct.FanPower;
-
-Forecast.E0 = Equipment + OtherLoads + InteriorLighting + ExteriorLighting + Fan_Power;
-Forecast.C0 = Cooling;
-if ~Build.QPform.Cooling
-    Forecast.E0 = Forecast.E0 + Cooling*Build.QPform.C2E;
-end
-Forecast.H0 = Heating;
-if ~Build.QPform.Heating
-    Forecast.E0 = Forecast.E0 + Heating*Build.QPform.H2E;
-end
-Forecast.Tset_H = Profile.TsetH;
-Forecast.Tset_C = Profile.TsetC;
-Forecast.Tset = Tset;
 end%Ends function ForecastBuilding
-
-function Out = loadSched(Build,wd,h_of_y)
-sched = fieldnames(Build.Schedule);
-for i = 1:1:length(sched)
-    s = nnz(Build.Schedule.(sched{i}).Seasons<=h_of_y)+1;% get season
-    if isfield(Build.Schedule.(sched{i}),'Ramp')
-        Ramp = Build.Schedule.(sched{i}).Ramp;
-    else Ramp = 1e-4;
-    end
-    % get schedule
-    if wd == 1% Sunday
-        day = 'Sun';
-    elseif wd == 7 % Saturday
-        day = 'Sat';
-    else % Weekday
-        day = 'Weekday';
-    end
-    if iscell(Build.Schedule.(sched{i}).(day))
-        Out.(sched{i}) = convertSched(Build.Schedule.(sched{i}).(day){s},Ramp);
-    else
-        Out.(sched{i}) = convertSched(Build.Schedule.(sched{i}).(day),Ramp);
-    end
-end
-
-end%Ends function loadSched
-
-function newsched = convertSched(sched,Ramp)
-[m,n] = size(sched);
-if m==2
-    newsched = sched; %this is constant all day, already made 0 hour and 24 hour
-else
-    newsched = zeros(2*(m-1),n);
-    sched(1,2) = sched(2,2);
-    newsched(1,:) = sched(1,:);%hour 0
-    newsched(end,:) = sched(m,:);%hour 24
-    if Ramp<1e-3
-        for i = 2:1:m-1 
-            newsched(2*i-2,1) = sched(i);
-            newsched(2*i-2,2) = sched(i,2);
-            newsched(2*i-1,1) = sched(i)+Ramp;
-            newsched(2*i-1,2) = sched(i+1,2);
-        end
-    else 
-        for i = 2:1:m-1 %add points in the middle so it can be properly interpolated
-            t_bef = sched(i) - sched(i-1);
-            t_aft = sched(i+1)-sched(i);
-            Ramp2 = min([Ramp, t_aft/2,t_bef/2]);
-            newsched(2*i-2,1) = sched(i)-0.5*Ramp2;
-            newsched(2*i-2,2) = sched(i,2);
-            newsched(2*i-1,1) = sched(i)+0.5*Ramp2;
-            newsched(2*i-1,2) = sched(i+1,2);
-        end
-    end
-end
-
-end%Ends function convertSched

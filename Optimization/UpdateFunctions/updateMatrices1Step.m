@@ -7,7 +7,11 @@ function QP = updateMatrices1Step(QP,Forecast,scaleCost,marginal,StorPower,dt,IC
 global Plant
 QP.solver = Plant.optimoptions.solver;
 nG = length(Plant.Generator);
-nB = length(Plant.Building);
+if isfield(Plant,'Building') && ~isempty(Plant.Building)
+    nB = length(Plant.Building);
+else
+    nB = 0;
+end
 nL = length(QP.Organize.States)-nB-nG;
 
 UB = zeros(1,nG);
@@ -89,16 +93,29 @@ end
 
 for i = 1:1:nB%Building inequalities & equality
     states = QP.Organize.States{nG+nL+i};
-    req = QP.Organize.Building.req(i);
-    QP.beq(req) = QP.beq(req) + Forecast.Building(i).E0(t) - Plant.Building(i).QPform.H2E*Forecast.Building(i).H0(t) - Plant.Building(i).QPform.C2E*Forecast.Building(i).C0(t);%electric equality
+    req = QP.Organize.Building.Electrical.req(i);
+    QP.beq(req) = QP.beq(req) + Forecast.Building.E0(t,i);%Equipment and nominal Fan Power
+    %Heating Equality
+    req = QP.Organize.Building.DistrictHeat.req(i);
+    QP.Organize.Building.H_Offset(1,i) = Plant.Building(i).QPform.UA*(Forecast.Building.Tzone(t,i)-Forecast.Building.Tset_H(t,i)) - Forecast.Building.H0(t,i);
+    QP.beq(req) = QP.beq(req) - QP.Organize.Building.H_Offset(1,i);%Heating load
+    QP.lb(states(2)) = QP.lb(states(2)) + QP.Organize.Building.H_Offset(1,i);
     
-    QP.b(QP.Organize.Building.r(i)) = Plant.Building(i).QPform.UA*Forecast.Building(i).Tset_H(t) - Forecast.Building(i).H0(t) + Plant.Building(i).QPform.Cap*T(i)/(3600*dt(t));%heating inequality
-    QP.A(QP.Organize.Building.r(i),states(1)) = (Plant.Building(i).QPform.UA+Plant.Building(i).QPform.Cap/(3600*dt(t)));% Heating>= H0 + UA*(Ti-Tset) + Cap*(Ti - T(i-1))/dt where dt is in seconds
-    QP.b(QP.Organize.Building.r(i)+1) = -Plant.Building(i).QPform.UA*Forecast.Building(i).Tset_C(t) - Forecast.Building(i).C0(t) - + Plant.Building(i).QPform.Cap*T(i)/(3600*dt(t));%cooling inequality
-    QP.A(QP.Organize.Building.r(i)+1,states(1)) = -(Plant.Building(i).QPform.UA+Plant.Building(i).QPform.Cap/(3600*dt(t)));% Cooling>= C0 + UA*(Tset-Ti) + Cap*(T(i-1)-Ti)/dt where dt is in seconds
+    %Cooling Equality
+    req = QP.Organize.Building.DistrictCool.req(i);
+    QP.Organize.Building.C_Offset(1,i) = Plant.Building(i).QPform.UA*(Forecast.Building.Tset_C(t,i)-Forecast.Building.Tzone(t,i)) - Forecast.Building.C0(t,i);
+    QP.beq(req) = QP.beq(req) - QP.Organize.Building.C_Offset(1,i);%Cooling Load
+    QP.lb(states(3)) = QP.lb(states(3)) + QP.Organize.Building.C_Offset(1,i);
     
-    QP.b(QP.Organize.Building.r(i)+2) = (Forecast.Building(i).Tset(t) + Plant.Building(i).VariableStruct.Comfort/2);%upper buffer inequality, the longer the time step the larger the penaly cost on the state is.
-    QP.b(QP.Organize.Building.r(i)+3) = -(Forecast.Building(i).Tset(t) - Plant.Building(i).VariableStruct.Comfort/2);%lower buffer inequality
+    %heating inequality
+    QP.b(QP.Organize.Building.r(i)) = Plant.Building(i).QPform.UA*Forecast.Building.Tset_H(t,i) + Plant.Building(i).QPform.Cap*T(1,i)/(3600*dt(t));
+    QP.A(QP.Organize.Building.r(i),states(1)) = (Plant.Building(i).QPform.UA+Plant.Building(i).QPform.Cap/(3600*dt(t)));
+    %cooling inequality
+    QP.b(QP.Organize.Building.r(i)+1) = -Plant.Building(i).QPform.UA*Forecast.Building.Tset_C(t,i) + Plant.Building(i).QPform.Cap*T(1,i)/(3600*dt(t));
+    QP.A(QP.Organize.Building.r(i)+1,states(1)) = -Plant.Building(i).QPform.UA - Plant.Building(i).QPform.Cap/(3600*dt(t));
+    %penalty states (excess and under temperature
+    QP.b(QP.Organize.Building.r(i)+2) = Forecast.Building.Tmax(t,i);%upper buffer inequality, the longer the time step the larger the penaly cost on the state is.
+    QP.b(QP.Organize.Building.r(i)+3) = -Forecast.Building.Tmin(:,i);%lower buffer inequality
 end
 
 %% Update upper and lower bounds based on ramping constraint (if applicable)
@@ -177,9 +194,13 @@ H = diag(QP.H);%convert to vector
 for i = 1:1:nG
     if ~isempty(QP.Organize.States{i})
         states = QP.Organize.States{i}; %states of this generator
-        if strcmp(Plant.Generator(i).Type,'Utility') && strcmp(Plant.Generator(i).Source,'Electricity') && Plant.Generator(i).VariableStruct.SellBackRate>0
+        if strcmp(Plant.Generator(i).Type,'Utility') && strcmp(Plant.Generator(i).Source,'Electricity') 
             QP.f(states(1)) = QP.f(states(1))*scaleCost(i)*dt(t);
-            QP.f(states(2)) = min(0.9999*QP.f(states(1)),Plant.Generator(i).VariableStruct.SellBackRate*dt(t)); %make sure sellback rate is less than purchase rate
+            if Plant.Generator(i).VariableStruct.SellBackRate == -1
+                QP.f(states(2)) = QP.f(states(2))*scaleCost(i)*dt(t); %sellback is a fixed percent of purchase costs (percent set wehn building matrices)
+            else
+                %constant sellback rate was taken care of when building the matrices
+            end
         elseif ismember(Plant.Generator(i).Type,{'Electric Generator';'CHP Generator';'Utility';'Chiller';'Heater';})%all generators and utilities
             H(states) = H(states)*scaleCost(i)*dt(t);
             QP.f(states) = QP.f(states)*scaleCost(i)*dt(t);

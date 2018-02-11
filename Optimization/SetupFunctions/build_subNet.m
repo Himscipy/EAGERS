@@ -3,19 +3,30 @@ function build_subNet
 %organize into sub-networks
 % Group nodes between which transmission losses don't occur
 % only create lines where transmission losses do occur
-global Plant 
+global Plant TestData
 nG = length(Plant.Generator);
-nB = length(Plant.Building);
+if isfield(Plant,'Building') && ~isempty(Plant.Building)
+    nB = length(Plant.Building);
+else 
+    nB = 0;
+end
 nodes = length(Plant.Network);
 genNames = cell(nG,1);
+buildNames = cell(nB,1);
+buildLocation = cell(nB,1);
 nodeNames = cell(nodes,1);
 networkNames = fieldnames(Plant.Network);
 networkNames = networkNames(~strcmp('name',networkNames));
 networkNames = networkNames(~strcmp('Equipment',networkNames));
 networkNames = networkNames(~strcmp('Location',networkNames));
+networkNames = networkNames(~strcmp('Buildings',networkNames));
 
 for i = 1:1:nG
     genNames(i,1) = {Plant.Generator(i).Name};
+end
+for i = 1:1:nB
+    buildNames(i,1) = {Plant.Building(i).Name};
+    buildLocation(i,1) = {Plant.Building(i).Location};
 end
 for i = 1:1:nodes
     nodeNames(i) = {Plant.Network(i).name};
@@ -39,6 +50,14 @@ for net = 1:1:length(networkNames)
     else
         subNet.(networkNames{net}).lineEff = [];   %added space for line effeciencies
     end
+    if strcmp(networkNames{net},'Hydro')
+        listDams = {};
+        for k = 1:1:length(Plant.Network)
+            if ~isempty(Plant.Network(k).Hydro)
+                listDams(end+1) = Plant.Network(k).name;
+            end
+        end
+    end
     n = 0;
     for i = 1:1:nodes
         if ~isempty(Plant.Network(i).(networkNames{net}))
@@ -47,7 +66,7 @@ for net = 1:1:length(networkNames)
                 nLcum = nLcum+1;                
                 subNet.Hydro.nodes(n) = {nodeNames(i)};
                 subNet.Hydro.Location(n) = location(i);
-                subNet.Hydro.nodeNumber(n) = find(strcmp(nodeNames(i),Plant.Data.Hydro.Nodes));%column index of this node in the stored matrices of Data.Hydro.SourceSink and Data.Hydro.Inflow
+                subNet.Hydro.nodeNumber(n) = find(strcmp(nodeNames(i),listDams));%column index of this node in the stored matrices of Data.Hydro.SourceSink and Data.Hydro.Inflow
                 subNet.Hydro.connections(n) = {Plant.Network(i).Hydro.connections};
                 subNet.Hydro.Load(n) = {[]};
                 subNet.Hydro.lineNumber(n,1) = nLcum;
@@ -127,6 +146,7 @@ for net = 1:1:length(networkNames)
     end
     for n = 1:1:length(subNet.(networkNames{net}).nodes)
         gen = [];
+        build = [];
         node_m = subNet.(networkNames{net}).nodes{n};
         for k = 1:1:length(node_m)
             i = find(strcmp(node_m{k},nodeNames),1,'first');
@@ -140,11 +160,21 @@ for net = 1:1:length(networkNames)
                         gen(end+1) = I;
                         Plant.Generator(I).QPform.(networkNames{net}).subnetNode = n;
                     end
-                else disp(strcat('error, generator is not in library',equip{j}))
+                else
+                    disp(strcat('error, generator is not in library',equip{j}))
+                end
+            end
+            if ismember(out,{'E';'C';'H'})
+                for j = 1:1:nB
+                    if any(strcmp(buildLocation{j,1},node_m))
+                        build(end+1) = j;
+                        Plant.Building(i).QPform.(networkNames{net}).subnetNode = n;
+                    end
                 end
             end
         end
         subNet.(networkNames{net}).Equipment{n} = gen;
+        subNet.(networkNames{net}).Buildings{n} = build;
     end
 end
 Plant.subNet = subNet;
@@ -163,8 +193,8 @@ for i = 1:1:nG
         elseif strcmp(out,'W')
             net = 'Hydro';
         end
-        if isfield(Plant.Data,'Demand')
-            Plant.Generator(i).QPform.X.ub = 10*max(Plant.Data.Demand.(out));%max Purchase
+        if isfield(TestData,'Demand')
+            Plant.Generator(i).QPform.X.ub = 10*max(TestData.Demand.(out));%max Purchase
         else
             Plant.Generator(i).QPform.X.ub = 1e6; %arbitrary upper bound that is not inf
         end
@@ -183,43 +213,49 @@ end
 
 %identify the location of any buildings & if they are connected to heaters and chillers
 for i = 1:1:nB
-    I = nonzeros((1:nB)'.*(strcmp(Plant.Building(i).Location,nodeNames)));
+    I = nonzeros((1:nodes)'.*(strcmp(Plant.Building(i).Location,nodeNames)));
     Plant.Building(i).QPform.nodeE = nodeDirectory(I).Electrical; %node in the electric network
     Plant.Building(i).QPform.Location = subNet.Electrical.Location(Plant.Building(i).QPform.nodeE);
     if isfield(subNet,'DistrictHeat')
-        Plant.Building(i).QPform.nodeH = nodeDirectory(I).DistrictHeat; %node in the electric network
-        if ~isempty(subNet.DistrictHeat.connections{Plant.Building(i).QPform.nodeH}) %connected to heaters at a different node
-            Plant.Building(i).QPform.Heating = true;
-        else
-            equip = subNet.DistrictHeat.Equipment{Plant.Building(i).QPform.nodeH};
+        %%Need to update Plant.Building(i).QPform.H2E to only be
+        %%the fans and other associated electric loads, rather than
+        %%the COP of heating if there are heaters at this or a connected node
+        n = nodeDirectory(I).DistrictHeat; %node in the heating network
+        Plant.Building(i).QPform.nodeH  = n;
+        if ~isempty(subNet.DistrictHeat.Equipment{n})
+            equip = subNet.DistrictHeat.Equipment{n};
             for k = 1:1:length(equip)
                 if ismember(Plant.Generator(equip(k)).Type,{'Heater';'CHP Generator';})
                     Plant.Building(i).QPform.Heating = true;
                 end
             end
         end
+        if ~isempty(subNet.DistrictHeat.connections{n}) %connected to heaters at a different node
+            Plant.Building(i).QPform.Heating = true;
+        end
         if Plant.Building(i).QPform.Heating
-            %%Need to update Plant.Building(i).QPform.H2E to only be
-            %%the fans and other associated electric loads, rather than
-            %%the COP of heating
+            Plant.Building(i).QPform.H2E = Plant.Building(i).VariableStruct.FanPower/(1.025*(50-15))/1.225; %Flow = Heating/(Cp_Air*(Tsupply(t)-Tmix)); Power = FanPower*Flow/air density
         end
     end
     if isfield(subNet,'DistrictCool')
-        Plant.Building(i).QPform.nodeC = nodeDirectory(I).DistrictCool; %node in the electric network
-        if ~isempty(subNet.DistrictHeat.connections{Plant.Building(i).QPform.nodeC}) %connected to heaters at a different node
-            Plant.Building(i).QPform.Cooling = true;
-        else
-            equip = subNet.DistrictCool.Equipment{Plant.Building(i).QPform.nodeC};
+        %%Need to update Plant.Building(i).QPform.C2E to only be
+        %%the fans and other associated electric loads, rather than
+        %%the COP of cooling if there are chillers at this or a connected node
+        n = nodeDirectory(I).DistrictCool; %node in the cooling network
+        Plant.Building(i).QPform.nodeC  = n;
+        if ~isempty(subNet.DistrictCool.Equipment{n})
+            equip = subNet.DistrictCool.Equipment{n};
             for k = 1:1:length(equip)
                 if ismember(Plant.Generator(equip(k)).Type,{'Chiller';})
                     Plant.Building(i).QPform.Cooling = true;
                 end
             end
         end
+        if ~isempty(subNet.DistrictHeat.connections{n}) %connected to heaters at a different node
+            Plant.Building(i).QPform.Cooling = true;
+        end
         if Plant.Building(i).QPform.Cooling
-            %%Need to update Plant.Building(i).QPform.C2E to only be
-            %%the fans and other associated electric loads, rather than
-            %%the COP of cooling
+            Plant.Building(i).QPform.C2E = Plant.Building(i).VariableStruct.FanPower/(1.025*(25-12))/1.225; %Flow = Cooling/(Cp_Air*(Tmix-Tsupply(t))); Power = FanPower*Flow/air density
         end
     end    
 end

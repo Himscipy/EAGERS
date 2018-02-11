@@ -17,7 +17,8 @@ if any(AbChill)
     if Feasible == 1
         Solution = sortSolution(x,QP);
     end
-else Feasible = 0;
+else
+    Feasible = 0;
 end
 if Feasible ~=1
     %remove ramping constraints and add them back in until it fails to isolate

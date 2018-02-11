@@ -3,14 +3,20 @@ function GenOutput = StepByStepDispatch(Forecast,scaleCost,dt,limit,FirstProfile
 % StorPower is the amount of power comming from (positive) or going into (negative) the storage device at each timestep according to the first dispatch
 global Plant CurrentState
 nG = length(Plant.Generator);
-nB = length(Plant.Building);
+if isfield(Plant,'Building') && ~isempty(Plant.Building)
+    nB = length(Plant.Building);
+    T_build = CurrentState.Buildings;
+else
+    nB = 0;
+    T_build = [];
+end
 nL = length(Plant.OneStep.Organize.States)-nG-nB;
 Alt = [];
 Alt_C = [];
-T = CurrentState.Buildings;
+
 Dispatchable = logical(Plant.OneStep.Organize.Dispatchable);
 if ~isempty(FirstProfile)
-    IC = [CurrentState.Generators, CurrentState.Lines,CurrentState.Buildings];
+    IC = [CurrentState.Generators, CurrentState.Lines,CurrentState.Buildings(1,:)];
     [nS,~] = size(scaleCost);
     StorPower = zeros(nS,nG);
     GenOutput = zeros(nS+1, nG+nL+nB);%nS should equal 1 in this case (finding IC)
@@ -41,6 +47,7 @@ for i = 1:1:nG
         StartCost(i) = Plant.Generator(i).VariableStruct.StartCost;
     end
 end
+netDemand = [];
 if isfield(Forecast,'Demand')
     Outs = fieldnames(Forecast.Demand);
     for j = 1:1:length(Outs)
@@ -50,16 +57,16 @@ end
 for i = 1:1:nB
     Outs2 = {'E';'H';'C';};
     for j = 1:1:length(Outs2)
-        if ~isfield(netDemand,Outs{j})
-            netDemand.(Outs{j}) = zeros(nS,1);
+        if ~isfield(netDemand,Outs2{j})
+            netDemand.(Outs2{j}) = zeros(nS,1);
         end
-        netDemand.(Outs{j}) = netDemand.(Outs{j}) + Forecast.Building(i).(strcat(Outs{j},'0'));
+        netDemand.(Outs2{j}) = netDemand.(Outs2{j}) + Forecast.Building.(strcat(Outs2{j},'0'))(:,i);
     end
 end
 if isempty(FirstProfile) %finding initial conditions
     limit = 'unconstrained';
     marginal = instantMarginalCost([],scaleCost,[],[],[],1);%update marginal cost
-    QP = updateMatrices1Step(Plant.OneStep,Forecast,scaleCost,marginal,[],dt,IC,[],limit,1,T);
+    QP = updateMatrices1Step(Plant.OneStep,Forecast,scaleCost,marginal,[],dt,IC,[],limit,1,T_build);
 end
 
 %%optimize chilling dispatch first
@@ -72,7 +79,7 @@ if ~isempty(FirstProfile) && nC>2 && any(netDemand.C>0)%more than 2 dispatchable
     D.C = netDemand.C;
     for t = 1:1:nS %for every timestep
         [marginal,StorPower(t,:)] = instantMarginalCost(FirstProfile,scaleCost,netDemand,IC,dt,t);%update marginal cost
-        QP = updateMatrices1Step(Plant.OneStep,Forecast,scaleCost(t,:),marginal,StorPower(t,:),dt,IC,FirstProfile,limit,t,T);
+        QP = updateMatrices1Step(Plant.OneStep,Forecast,scaleCost(t,:),marginal,StorPower(t,:),dt,IC,FirstProfile,limit,t,T_build);
         QP_C = chillerOnly1step(QP,marginal,FirstProfile(t+1,:));
         for i = 1:1:nG
             if ismember(Plant.Generator(i).Type,{'Thermal Storage';}) && isfield(Plant.Generator(i).QPform.output,'C')
@@ -80,7 +87,7 @@ if ~isempty(FirstProfile) && nC>2 && any(netDemand.C>0)%more than 2 dispatchable
             end
         end
         K_C = createCombinations(QP_C,D,FirstProfile(t+1,:),dt(t),t,[],[]);%% create a matrix of all possible combinations (keep electrical and heating together if there are CHP generators, otherwise seperate by product)
-        [BestDispatch,Alt_C] = eliminateCombinations(QP_C,K_C,Alt_C,IC,D,dt(t),t,limit);%% combination elimination loop
+        [BestDispatch,Alt_C] = eliminateCombinations(QP_C,K_C,Alt_C,IC,D,dt(t),t);%% combination elimination loop
         [GenOutput(t+1,:),IC] = updateIC(IC,BestDispatch,FirstProfile(t+1,:),dt(t),limit);
     end
     for i = 1:1:nG
@@ -102,14 +109,14 @@ if ~isempty(FirstProfile) && nC>2 && any(netDemand.C>0)%more than 2 dispatchable
             K_chill(:,i) = FirstProfile(:,i)>0;
         end
     end
-    IC = [CurrentState.Generators, CurrentState.Lines,CurrentState.Buildings];
+    IC = [CurrentState.Generators, CurrentState.Lines,CurrentState.Buildings(1,:)];
 end
 
 Prev = IC;
 for t = 1:1:nS %for every timestep
     if ~isempty(FirstProfile) 
         [marginal,StorPower(t,:)] = instantMarginalCost(FirstProfile,scaleCost,netDemand,IC,dt,t);%update marginal cost
-        QP = updateMatrices1Step(Plant.OneStep,Forecast,scaleCost(t,:),marginal,StorPower(t,:),dt,IC,FirstProfile,limit,t,T);
+        QP = updateMatrices1Step(Plant.OneStep,Forecast,scaleCost(t,:),marginal,StorPower(t,:),dt,IC,FirstProfile,limit,t,T_build);
         for i = 1:1:nG
             if ismember(Plant.Generator(i).Type,{'Electric Storage';'Thermal Storage';'Hydro Storage';})
                 out = fieldnames(Plant.Generator(i).QPform.output);
@@ -129,11 +136,11 @@ for t = 1:1:nS %for every timestep
     else
         K = createCombinations(QP,netDemand,EC,dt(t),t,K_chill(t+1,:),K_all);%% create a matrix of all possible combinations using the best chiller dispatch combination
     end
-    [BestDispatch,Alt] = eliminateCombinations(QP,K,Alt,Prev,netDemand,dt(t),t,limit);%% combination elimination loop
+    [BestDispatch,Alt] = eliminateCombinations(QP,K,Alt,Prev,netDemand,dt(t),t);%% combination elimination loop
     j = 1;
     while ~isempty(Alt) && isempty(Alt.Disp{t}) && ~isempty(K_chill) && j<=length(Alt_C.Disp{t})
         K = createCombinations(QP,netDemand,EC,dt(t),t,Alt_C.Binary{t}(j,:),K_all);%% create a matrix of all possible combinations using the next best chiller dispatch combination
-        [BestDispatch,Alt] = eliminateCombinations(QP,K,Alt,Prev,netDemand,dt(t),t,limit);%% combination elimination loop
+        [BestDispatch,Alt] = eliminateCombinations(QP,K,Alt,Prev,netDemand,dt(t),t);%% combination elimination loop
         j = j+1;
     end
     if ~isempty(FirstProfile) 
@@ -144,8 +151,13 @@ for t = 1:1:nS %for every timestep
     end
 
      %update building temperatures
-    if ~isempty(T)
-        %% Do something here
+    if ~isempty(T_build)
+        Tzone = zeros(2,nB);
+        Twall = zeros(2,nB);
+        for i = 1:1:nB
+            [Tzone(:,i),Twall(:,i)] = BuildingSimulate(Plant.Building(i),Forecast.Weather.Tdb(t),Forecast.Weather.RH(t),dt(t)*3600,Forecast.Building.InternalGains(t,i),Forecast.Building.ExternalGains(t,i),Alt.Cooling{t}(i),Alt.Heating{t}(i),Forecast.Building.AirFlow(t,i),Forecast.Building.Damper(t,i),T_build(1,i),T_build(2,i));
+        end
+        T_build = [Tzone(2,:);Twall(2,:)];
     end
 end
 if ~isempty(FirstProfile)

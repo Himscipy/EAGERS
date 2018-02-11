@@ -8,9 +8,10 @@ elseif isfield(handles,'legend')%2015 matlab
     delete(handles.legend)
 end
 nG = length(Plant.Generator);
-nB = length(Plant.Building);
-if ~isempty(Plant.OpMatA)
-    nL = length(Plant.OpMatA.Organize.IC) - nG - nB;
+if isfield(Plant,'Building') && ~isempty(Plant.Building)
+    nB = length(Plant.Building);
+else
+    nB = 0;
 end
 stor = [];
 Names = cell(nG+nB,1);
@@ -25,14 +26,14 @@ for i = 1:1:nB
 end
 
 %% Collate history and future data
-if isempty(History)
+if isempty(History.Dispatch)
     backSteps = 0;
     Data = Solution.Dispatch;
     Time = ForecastTime*24;
 else
-    backSteps = length(History(:,1));
-    Data = [History;Solution.Dispatch];
-    Time = [HistoryTime;ForecastTime]*24;
+    backSteps = length(History.Dispatch(:,1));
+    Data = [History.Dispatch;Solution.Dispatch(2:end,:)];
+    Time = [HistoryTime;ForecastTime(2:end)]*24;
 end
 D = datevec(Time(1)/24);
 hours = D(4)+D(5)/60+D(6)/3600+(Time - Time(1));
@@ -78,7 +79,11 @@ for i = 1:1:nG
     if strcmp(Plant.Generator(i).Type,'Hydro Storage')
         StoragePower(:,i) =  Data(:,i);
         StorageState(1,i) = CurrentState.Hydro(1,i);
-        StorageState(2:end,i) = Solution.hydroSOC(:,i);
+        if isempty(History.hydroSOC)
+            StorageState(2:end,i) = Solution.hydroSOC(:,i);
+        else
+            StorageState(:,i) = [History.hydroSOC(:,i);Solution.hydroSOC(:,i);];
+        end
     elseif ismember(Plant.Generator(i).Type,{'Electric Storage';'Thermal Storage';})
         StorageState(:,i) = Data(:,i);
         if isfield(Plant.Generator(i).VariableStruct,'MaxDOD')
@@ -114,42 +119,57 @@ while isfield(handles,strcat('ResultPlot',num2str(nPlot+1)))
         S = get(handles.(strcat('ResultName',num2str(nPlot))),'String');
         if strcmp(S,'Electrical')
             S = 'E';
-            ylab = 'Electrical Demand (kW)';
+            ylab = 'Electrical Generation (kW)';
         elseif strcmp(S,'DistrictHeat')
             S = 'H';
-            ylab = 'Heating Demand (kW)';
+            ylab = 'Heating Generation (kW)';
         elseif strcmp(S,'DistrictCool')
             S = 'C';
-            ylab = 'Cooling Deamnd (kW)';
+            ylab = 'Cooling Generation (kW)';
         elseif strcmp(S,'Hydro')
             S = 'W';
             ylab = 'Withdrawls (1000cfs)';
             for i = 1:1:length(Plant.Generator)
                 if strcmp(Plant.Generator(i).Type,'Hydro Storage')%% plot the downriver flow
-                    Data(2:end,i) = Solution.LineFlows(:,Plant.Generator(i).QPform.DownRiverSegment); %Outflow is after Power Produced
+                    n = Plant.Generator(i).QPform.DownRiverSegment;
+                    if isempty(History.LineFlows)
+                        Data(1,i) = 0;
+                        Data(2:end,i) = Solution.LineFlows(:,n);%Outflow is after Power Produced
+                    else
+                        Data(:,i) = [History.LineFlows(:,n);Solution.LineFlows(:,n)];%Outflow is after Power Produced
+                    end
                 end
             end
-        elseif strcmp(S,'Steam')
-            S = 'S';
-            ylab = 'Steam Demand (1000 lbs/hr)';
-        end
-
-        if strcmp(S,'BuildingTemp')
-            S = 'T';
-            ylab = 'Building Temperature Setpoint (C)';
+        elseif strcmp(S,'BuildingTemp')
             name = cell(nB,1);
             storNames ={};
             stor =[];
             for i = 1:1:nB
                 name(i) = {Plant.Building(i).Name};
             end
-            Data2 = Data(:,nG+nL+1:nG+nL+nB);
-        elseif ~isfield(Plant.Generator(i),'QPform')%NREL case
+            if isempty(History.Buildings)
+                Data = [CurrentState.Buildings(1,:);Solution.Buildings.Temperature]*9/5+32;
+            else
+                Data = [History.Buildings;Solution.Buildings.Temperature]*9/5+32;
+            end
+            dataPlot(h,true,Data,hours,dt,s1,name,Names,colorsPlot,tSize)
+            ylim(h,[55,80])
+            set(h2,'xtick',[],'xticklabel',[],'YTick',[],'YTickLabel',[])
+            ylabel(h2,[]);
+            xlabel(h,dateText2,'Color','k','FontSize',tSize)
+            ylabel(h,'Building Temperature Setpoint (F)','Color','k','FontSize',tSize)
+            Data2 = [];
+        elseif strcmp(S,'Steam')
+            S = 'S';
+            ylab = 'Steam Generation (1000 lbs/hr)';
+        end
+        if ~isfield(Plant.Generator(i),'QPform')%NREL case
             name = {'Elec Utility1';'fuel cell';'Battery';};
             stor = 5;
             Data2 = [Data(:,1),Data(:,3),Data(:,5)];
             storNames = {'Battery'};
-        else
+        end
+        if ~strcmp(S,'BuildingTemp') && isfield(Plant.Generator(i),'QPform')
             [name,stor,Data2,storNames] = sortForPlot(S,Data);
         end
         %% Storage
@@ -186,13 +206,10 @@ while isfield(handles,strcat('ResultPlot',num2str(nPlot+1)))
             end
             if nPlot==1
                 xlabel(h,dateText,'Color','k','FontSize',tSize)
-            else xlabel(h,dateText2,'Color','k','FontSize',tSize)
-            end
-            if strcmp(get(handles.(strcat('ResultName',num2str(nPlot))),'String'),'Hydro')
-                ylabel(h,'Flow (1000cfs)','Color','k','FontSize',tSize)
             else
-                ylabel(h,'Generation (kW)','Color','k','FontSize',tSize)
+                xlabel(h,dateText2,'Color','k','FontSize',tSize)
             end
+            ylabel(h,ylab,'Color','k','FontSize',tSize)
         end
     end
 end
@@ -222,7 +239,7 @@ for i = 1:1:length(Plant.Generator)
         dataI = Data(:,i)*Plant.Generator(i).QPform.output.(S)(1); %Hratio for CHP generators      
     end
     if include
-        name(end+1) = {Plant.Generator(i).Name};
+        name(end+1,1) = {Plant.Generator(i).Name};
         Data2(:,end+1) = dataI;
         if any(stor==i)% energy storage
             storNames(end+1) ={Plant.Generator(i).Name};
@@ -233,7 +250,8 @@ end
 function dataPlot(h,LINE,Data2,hours,dt,s1,name,Names,colorsPlot,tSize)
 if tSize==12
     s0 = 1;
-else s0 = s1;
+else
+    s0 = s1;
 end
 axTick = (ceil(hours(1)):round((hours(end)-hours(1))/12):hours(end));
 axIndex = mod(axTick,24);
@@ -269,8 +287,9 @@ for c = 1:1:length(h1)
 end
 
 if ~isempty(negBars)
-    OoM = log10(max(sum(Data2(s0:end-1,:),2)-sum(negBars(1:2:end,:),2)));
-else OoM = log10(max(sum(Data2(s0:end,:),2)));
+    OoM = max(1,log10(max(sum(Data2(s0:end-1,:),2)-sum(negBars(1:2:end,:),2))));
+else
+    OoM = max(1,log10(max(sum(Data2(s0:end,:),2))));
 end
 if (OoM-floor(OoM))==0 %count in increments of 1, 10, 100 or 1000 etc
     Yspace = 10^(OoM-1);
@@ -307,7 +326,8 @@ set(h,'XTick',axTick,'XTickLabel', {axIndex})
 function addStorage2Plot(h,h2,StorageState,hours,s1,colorsPlot,storNames,Names,tSize,hName)
 if tSize==12
     s0 = 1;
-else s0 = s1;
+else
+    s0 = s1;
 end
 
 L = plot(h2,hours(s0:end),StorageState(s0:end,:));

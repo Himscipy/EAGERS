@@ -1,5 +1,5 @@
 function manualInitialCondition
-global Plant DateSim OnOff CurrentState
+global Plant OnOff CurrentState
 CurrentState = [];
 nG = length(Plant.Generator);
 nB = length(Plant.Building);
@@ -10,7 +10,7 @@ Index =[];
 IC = zeros(1,nG+nL);
 CurrentState.Generators = zeros(1,nG);
 CurrentState.Lines = zeros(1,nL);
-CurrentState.Buildings = zeros(1,nB);
+CurrentState.Buildings = zeros(2,nB)+17.4;
 include = {'CHP Generator', 'Electric Generator', 'Chiller','Heater'};
 for i = 1:1:length(Plant.Generator)
     if isfield(Plant.Generator(i).OpMatA,'Stor')
@@ -35,10 +35,6 @@ for i=1:1:nG
 end
 %% specify initial river flow and spillway flows: IC (nL)
 networkNames = fieldnames(Plant.subNet);
-for net = 1:1:length(networkNames)
-    nLinet(net) = length(Plant.subNet.lineNames.(networkNames{net}));
-end
-
 if any(strcmp('Hydro',networkNames))
     for n = 1:1:length(Plant.subNet.Hydro.nodes) 
         name = Plant.subNet.Hydro.lineNames{n};
@@ -53,24 +49,6 @@ if any(strcmp('Hydro',networkNames))
             end
         end
     end
-    %load the previous 24 hours of SourceSink & Outflows
-    interval = Plant.Data.Hydro.Timestamp(2)-Plant.Data.Hydro.Timestamp(1);
-    if Plant.Data.Hydro.Timestamp(1)>(DateSim-1)
-        %take 1st 24 hours and treat as yesterday
-        D = DateSim;
-        while Plant.Data.Hydro.Timestamp(1)>D
-            D = D+1;
-        end
-        xi = nnz(Plant.Data.Hydro.Timestamp<=D);
-        xf = nnz(Plant.Data.Hydro.Timestamp<D+1+interval);
-    else %take last 24 hours
-        xi = nnz(Plant.Data.Hydro.Timestamp<=(DateSim-1));
-        xf = nnz(Plant.Data.Hydro.Timestamp<DateSim+interval);
-    end
-    n = length(Plant.subNet.Hydro.nodes);
-    Plant.Data.HydroHistory.Timestamp = linspace((DateSim-1),DateSim,1/interval+1)';
-    Plant.Data.HydroHistory.SourceSink = Plant.Data.Hydro.SourceSink(xi:xf,1:n);
-    Plant.Data.HydroHistory.OutFlow = Plant.Data.Hydro.OutFlow(xi:xf,1:n);
 end
 OnOff = true(1,nG);
 for i = 1:1:nG
@@ -87,5 +65,5 @@ for i = 1:1:nG
 end
 CurrentState.Generators=IC(1:nG);
 CurrentState.Lines= IC(nG+1:nG+nL); %do we need this anymore?
-CurrentState.Buildings(1,1:nB) = 21.1; %initial temperature guess
+CurrentState.Buildings(:,1:nB) = 17.4; %initial temperature guess
 end%Ends function manualInitialCondition

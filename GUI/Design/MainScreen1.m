@@ -22,7 +22,7 @@ function varargout = MainScreen1(varargin)
 
 % Edit the above text to modify the response to help MainScreen1
 
-% Last Modified by GUIDE v2.5 22-Dec-2017 17:29:25
+% Last Modified by GUIDE v2.5 09-Feb-2018 10:01:35
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -43,7 +43,6 @@ else
 end
 % End initialization code - DO NOT EDIT
 
-
 % --- Executes just before MainScreen1 is made visible.
 function MainScreen1_OpeningFcn(hObject, eventdata, handles, varargin)
 % This function has no output args, see OutputFcn.
@@ -63,18 +62,15 @@ guidata(hObject, handles);
 global Plant Model_dir SYSINDEX GENINDEX testSystems mainFig
 mainFig = gcf;
 movegui(gcf,'center');
-set(gcf,'Name','Energy Planning Tool 2017.0.1')
-Plant.optimoptions.method = 'Planning';
-if isempty(Plant.Building)
-    Plant.optimoptions.forecast = 'Perfect';
-else Plant.optimoptions.forecast = 'Building';
+set(gcf,'Name','Energy Planning Tool 2018.0.1')
+if ~isfield(Plant,'Costs') 
+    Costs = [];
+else
+    Costs = Plant.Costs;
 end
-if isempty(Plant.Costs) || ~isfield(Plant.Costs,'Equipment')
-    defaultCosts
-end
+Plant.Costs = defaultCosts(Costs,Plant.Generator);
 if isempty(testSystems)
-    SYSINDEX = 1;%index in the list of systems (flull Plant structures)
-    testSystems = Plant;
+    SYSINDEX = 1;%index in the list of systems (full Plant structures)
 else
     Names = {};
     for i = 1:1:length(testSystems)
@@ -84,13 +80,16 @@ else
     if isempty(SYSINDEX)
         SYSINDEX = length(testSystems)+1;
     end
-    testSystems(SYSINDEX) = Plant;
+end
+F = fieldnames(Plant);
+for j = 1:1:length(F)
+    testSystems(SYSINDEX).(F{j}) = Plant.(F{j});
 end
 GENINDEX = 1; %index in the list of generators of the current plant
 
 %% Main Tabs
 %Tags of main tab panels are of form, 'uipanelMain1', 'uipanelMain2', etc.
-TabText = {'Main Window';'Building Spec';'System Spec';'Network Spec';'Settings';};
+TabText = {'Main Window';'Building Spec';'System Spec';'Network Spec';'Equip Costs';'Settings';};
 for i = 1:length(TabText)
     j = num2str(i);
     % panel management
@@ -98,18 +97,21 @@ for i = 1:length(TabText)
     set(handles.(strcat('uipanelMain',j)),'BorderType','none')
     if i ==1
         pan1pos = get(handles.uipanelMain1,'Position');
+        set(handles.uipanelMain1,'Visible','on')
         pos = get(handles.MainTab1','Position');
         set(handles.MainTab1,'Position',[pos(1),pos(2),pos(3),pos(4)+.5])
     else
-        set(handles.(strcat('uipanelMain',j)),'Position',pan1pos)
-        set(handles.(strcat('uipanelMain',j)),'Visible','off')
+        set(handles.(strcat('uipanelMain',j)),'Position',pan1pos,'Visible','off')
     end
 end
-set(handles.axesMain,'NextPlot','add');
-set(handles.axesCumulative,'NextPlot','add');
+set(handles.ProjectsPanel,'Position',[110, 42,100,6]);
+handles = PlotAxes_Setup(hObject, eventdata, handles);
+colormap(handles.axesMain,'parula');
+set(hObject,'UserData',colormap(handles.axesMain));
+set(handles.DesignDay,'value', 1);
 %%setup library: give the buttons symbols
 buttonIms = {'mGT', 'ICE', 'SOFC', 'MCFC', 'PEM', 'SolarPV', 'SolarThermal', 'Chiller', ...
-    'AbChiller','AirHeater','WaterHeater', 'ColdStor', 'HotStor', 'Battery'}; % need images for: 'SolarStirling', 'Wind','HighTempStor
+            'AbChiller','AirHeater','WaterHeater', 'ColdStor', 'HotStor', 'Battery'}; % need images for: 'SolarStirling', 'Wind','HighTempStor
 for i = 1:1:length(buttonIms)
     x = imread(fullfile(Model_dir,'GUI','Graphics',strcat(buttonIms{i}, '.png')));
     if license('test','Image Processing Toolbox')
@@ -117,14 +119,113 @@ for i = 1:1:length(buttonIms)
     end
     set(handles.(buttonIms{i}), 'cdata', x)
 end
+list={};
+for i=1:length(testSystems)
+    list(end+1) = {testSystems(i).Name};
+end
+set(handles.ProjectsPanel,'UserData',list)
+handles = SysList_Make(handles);
+popupmenu_Callback
+set(handles.popupmenuBaseline,'String',list,'Value',1);
 
-updateSystemRep(hObject, eventdata, handles)
 
-files = dir(fullfile(Model_dir, 'Projects','*.mat'));
-list=strrep({files.name},'.mat','');
-set(handles.popupmenuProjectMain,'string',list)
-set(handles.popupmenuProjectMain,'value',find(strcmp(testSystems(SYSINDEX).Name,list)))
+function handles = PlotAxes_Setup(hObject, eventdata, handles)
+%primary axes
+handles.axesMain = axes('Units','characters',...
+    'Position', [13,16,125,22],'NextPlot','add',...
+    'Tag', 'axesMain',...
+    'Parent', handles.uipanelMain1,...
+    'Visible','on');
+%histogram axes
+handles.axesCumulative = axes('Units','characters',...
+    'Position', [155,16,50,22],'NextPlot','add','color','none',...
+    'Tag', 'axesCumulative',...
+    'Parent', handles.uipanelMain1,...
+    'Visible','on');
+%primary axes
+handles.axesBuildLoad = axes('Units','characters',...
+    'Position', [55,16,100,22],'NextPlot','add',...
+    'Tag', 'axesBuildLoad',...
+    'Parent', handles.uipanelMain2,...
+    'Visible','on');
+%histogram axes
+handles.axesBuildCumulative = axes('Units','characters',...
+    'Position', [170,16,40,22],'NextPlot','add','color','none',...
+    'Tag', 'axesBuildCumulative',...
+    'Parent', handles.uipanelMain2,...
+    'Visible','on');
 
+
+function popupmenu_Callback
+tab = [];
+handles = guihandles;
+i = 1;
+% Find out which tab is currently selected
+while isempty(tab) && isfield(handles,strcat('uipanelMain',num2str(i)))
+    if strcmp(get(handles.(strcat('uipanelMain',num2str(i))),'Visible'),'on')
+        tab = i;
+    else
+        i = i+1;
+    end
+end
+set(handles.ProjectsPanel,'Visible','on')
+if tab == 1
+    loadMainTab(handles)
+elseif tab == 2
+    loadBuildingTab(handles)
+elseif tab == 3
+    Library_Callback([],[], handles)
+    updateSystemRep(handles)
+elseif tab == 4
+    insertMockups(handles)
+elseif tab == 5
+    displayCosts
+elseif tab == 6
+    set(handles.ProjectsPanel,'Visible','off')
+    loadSettingsTab(handles)
+end
+
+function loadMainTab(handles)
+global TestData
+if isfield(TestData,'Demand')
+    list = {};
+    if isfield(TestData.Demand,'E')
+        list(end+1) = {'Electrical Demand'};
+    end
+    if isfield(TestData.Demand,'H')
+        list(end+1) = {'Heating Demand'};
+    end
+    if isfield(TestData.Demand,'C')
+        list(end+1) = {'Cooling Demand'};
+    end
+    if isfield(TestData.Demand,'W')
+        list(end+1) = {'Water Demand'};
+    end
+    list(end+1) = {'Monthly Costs'};
+elseif isfield(TestData,'Building')
+    list = {'InternalGains';'NonHVACelectric';'Monthly Costs'};
+end
+set(handles.popupmenuAxes,'String',list,'Value',1);
+days = max(2,floor(TestData.Timestamp(end) - TestData.Timestamp(1)));
+if days<7
+    set(handles.sliderZoom1,'Min',0,'Max',1,'Value',0,'SliderStep',[1,1]) %either single day or all data    
+elseif days<31
+    set(handles.sliderZoom1,'Min',0,'Max',2,'Value',0,'SliderStep',[1/2,1/2]) %either single day, week or all data
+elseif days<367
+    set(handles.sliderZoom1,'Min',0,'Max',3,'Value',0,'SliderStep',[1/3,1/3]) %either single day, week, month, or all data
+else
+    set(handles.sliderZoom1,'Min',0,'Max',4,'Value',0,'SliderStep',[1/4,1/4]) %either single day, week, month, year, or all data
+end
+if days>20
+    set(handles.sliderDate1,'Min',0,'Max',days,'Value',0,'SliderStep',[1/days,10/days])
+else
+    set(handles.sliderDate1,'Min',0,'Max',days,'Value',0,'SliderStep',[1/days,1/days])
+end
+set(handles.popupmenuAxes,'Value',1);
+RunPlanning
+
+function loadBuildingTab(handles)
+global Model_dir testSystems SYSINDEX TestData
 files = dir(fullfile(Model_dir, 'System Library','Buildings','*.mat'));
 listB=strrep({files.name},'.mat','');
 set(handles.popupmenuBuilding,'string',listB,'value',1);
@@ -132,7 +233,7 @@ set(handles.popupmenuBuilding,'string',listB,'value',1);
 files = dir(fullfile(Model_dir, 'System Library','Weather','*.mat'));
 listW=strrep({files.name},'.mat','');
 set(handles.popupmenuWeather,'string',listW,'value',1);
-if ~isempty(testSystems(SYSINDEX).Building)
+if isfield(testSystems(SYSINDEX),'Building') && ~isempty(testSystems(SYSINDEX).Building)
     I = find(strcmp(testSystems(SYSINDEX).Building.Name,listB));
     if isempty(I)
         listB(end+1) = {testSystems(SYSINDEX).Building.Name};
@@ -141,60 +242,35 @@ if ~isempty(testSystems(SYSINDEX).Building)
     set(handles.popupmenuBuilding,'string',listB);
     set(handles.popupmenuBuilding,'value',I);
     
-    I = find(strcmp(testSystems(SYSINDEX).Weather.Name,listW));
+    I = find(strcmp(TestData.Weather.Name,listW));
     if isempty(I)
-        listW(end+1) = {testSystems(SYSINDEX).Weather.Name};
+        listW(end+1) = {TestData.Weather.Name};
         I = length(listW);
     end
     set(handles.popupmenuWeather,'string',listW);
     set(handles.popupmenuWeather,'value',I);
     
     set(handles.toggleHistorical,'Value',0);
-    toggleSimulatedBuilding_Callback(hObject, eventdata, handles)
+    toggleSimulatedBuilding_Callback([], [], handles)
 else
-    toggleHistorical_Callback(hObject, eventdata, handles)
+    toggleHistorical_Callback(handles);
 end
-
-n = length(testSystems(SYSINDEX).Costs.Equipment);
-Costs = cell(n,6);
-for i = 1:1:n
-    Costs(i,1) = {testSystems(SYSINDEX).Costs.Equipment(i).Name};
-    Costs(i,2) = {testSystems(SYSINDEX).Costs.Equipment(i).Cost};
-    Costs(i,3) = {testSystems(SYSINDEX).Costs.Equipment(i).OandM};
-    Costs(i,4) = {testSystems(SYSINDEX).Costs.Equipment(i).Financed};
-    Costs(i,5) = {testSystems(SYSINDEX).Costs.Equipment(i).LoanRate};
-    Costs(i,6) = {testSystems(SYSINDEX).Costs.Equipment(i).LoanTerm};
-end
-set(handles.uitableCosts,'Data',Costs)
-EditSystem(handles)
-SysList_Make(handles)
-
-if ~isempty(testSystems(SYSINDEX).Building)
-    days = 365;
-else
-    days = max(2,floor(testSystems(SYSINDEX).Data.Timestamp(end) - testSystems(SYSINDEX).Data.Timestamp(1)));
-end
-if days<7
-    set(handles.sliderZoom1,'Min',0,'Max',1,'Value',0,'SliderStep',[1,1]) %either single day or all data   
+days = max(2,floor(TestData.Timestamp(end) - TestData.Timestamp(1)));
+if days<7   
     set(handles.sliderZoom2,'Min',0,'Max',1,'Value',0,'SliderStep',[1,1]) %either single day or all data   
 elseif days<31
-    set(handles.sliderZoom1,'Min',0,'Max',2,'Value',0,'SliderStep',[1/2,1/2]) %either single day, week or all data
     set(handles.sliderZoom2,'Min',0,'Max',2,'Value',0,'SliderStep',[1/2,1/2]) %either single day, week or all data
 elseif days<367
-    set(handles.sliderZoom1,'Min',0,'Max',3,'Value',0,'SliderStep',[1/3,1/3]) %either single day, week, month, or all data
     set(handles.sliderZoom2,'Min',0,'Max',3,'Value',0,'SliderStep',[1/3,1/3]) %either single day, week, month, or all data
 else
-    set(handles.sliderZoom1,'Min',0,'Max',4,'Value',0,'SliderStep',[1/4,1/4]) %either single day, week, month, year, or all data
     set(handles.sliderZoom2,'Min',0,'Max',4,'Value',0,'SliderStep',[1/4,1/4]) %either single day, week, month, year, or all data
 end
 if days>20
-    set(handles.sliderDate1,'Min',0,'Max',days,'Value',0,'SliderStep',[1/days,10/days])
     set(handles.sliderDate2,'Min',0,'Max',days,'Value',0,'SliderStep',[1/days,10/days])
 else
-    set(handles.sliderDate1,'Min',0,'Max',days,'Value',0,'SliderStep',[1/days,1/days])
     set(handles.sliderDate2,'Min',0,'Max',days,'Value',0,'SliderStep',[1/days,1/days])
 end
-insertMockups(handles)
+sliderDate2_Callback([],[],[])
 
 function insertMockups(handles)
 global Model_dir
@@ -207,6 +283,105 @@ handles.NetworkSetup = axes('Units','normalized',...
 image(x,'Parent',handles.NetworkSetup);
 set(handles.NetworkSetup,'xtick',[],'xticklabel',[],'ytick',[],'yticklabel',[],'box','off')
 
+function displayCosts
+global testSystems SYSINDEX GENINDEX
+handles = guihandles;
+quote='''';
+nG = length(testSystems(SYSINDEX).Generator);
+if ~isfield(testSystems(SYSINDEX),'Building')
+    nB = 0;
+else
+    nB = length(testSystems(SYSINDEX).Building);
+end
+list = get(handles.uipanelMain5,'UserData');
+if ~isempty(list)
+    for i = 1:1:length(list(:,1))
+        if isfield(handles,strcat('Equipment_',list{i,2}))
+            delete(handles.(strcat('Equipment_',list{i,2})))
+        end
+    end
+end
+list = {};
+for i = 1:1:(nG+nB)
+    if i<=nG
+        if ~strcmp(testSystems(SYSINDEX).Generator(i).Type,'Utility')
+            list(end+1,1:2) = {testSystems(SYSINDEX).Generator(i).Name, num2str(i)};
+        end
+    else
+%         list(end+1,1:2) = {testSystems(SYSINDEX).Building(i-nG).Name, num2str(i)};
+    end
+end
+set(handles.uipanelMain5,'UserData',list);
+if length(list(:,1))>12
+    set(handles.NextGen,'Visible','on','UserData',1)
+    set(handles.PrevGen,'UserData',1,'Visible','off')
+else
+    set(handles.NextGen,'Visible','off')
+    set(handles.PrevGen,'Visible','off')
+end
+%Makes buttons for GUI && status buttons next to corresponding generator
+colorVec = get(gcf,'UserData');
+colorsPlot = interp1(linspace(0,1,length(colorVec)),colorVec,linspace(0,1,nG+nB));
+for i=1:1:length(list(:,1))
+    curtab = floor((i-1)/12)+1;
+    prev = 12*(curtab-1);
+    if curtab==1
+        vis = 'on';
+    else
+        vis = 'off';
+    end
+    pos = 45 - 2*(i-prev);
+    k = str2double(list{i,2});
+    callback = strcat('@(hObject,eventdata)MainScreen1(',quote,'SetGenCost_Callback',quote,',hObject,eventdata,guidata(hObject))');
+    handles.(strcat('Equipment_',list{i,2})) = uicontrol('Style', 'pushbutton', 'String', list{i,1},...
+    'Units','characters','Position', [1 pos 25 1.8],...
+    'Tag', strcat('Equipment_',list{i,2}),'FontSize', 10,...
+    'Parent', handles.uipanelMain5',...
+    'Callback',eval(callback),'Visible',vis,'UserData',k,'BackgroundColor',colorsPlot(k,:));
+end
+set(handles.NPC_discount,'String',num2str(testSystems(SYSINDEX).Costs.DiscountRate));
+updateSummaryTable(handles)
+if GENINDEX>0
+    SetGenCost_Callback([],[],[])
+end
+
+function loadSettingsTab(handles)
+global SYSINDEX testSystems
+set(handles.excessHeat, 'value', testSystems(SYSINDEX).optimoptions.excessHeat);
+set(handles.excessCool, 'value', testSystems(SYSINDEX).optimoptions.excessCool);
+set(handles.NoMixedInteger, 'value', ~testSystems(SYSINDEX).optimoptions.MixedInteger);
+set(handles.MixedInteger, 'value', testSystems(SYSINDEX).optimoptions.MixedInteger);
+
+set(handles.SpinReserve, 'value', testSystems(SYSINDEX).optimoptions.SpinReserve);
+if testSystems(SYSINDEX).optimoptions.SpinReserve
+    set(handles.SpinReservePerc, 'Visible','on','string', testSystems(SYSINDEX).optimoptions.SpinReservePerc);
+else set(handles.SpinReservePerc, 'Visible','off');
+end
+
+nG = length(testSystems(SYSINDEX).Generator);
+str = {};
+stor = [];
+for i = 1:1:nG
+    if ismember(testSystems(SYSINDEX).Generator(i).Type,{'Electric Storage';'Thermal Storage'; 'Hydro Storage';})
+        str{end+1} = testSystems(SYSINDEX).Generator(i).Name;
+        stor(end+1) = i;
+        if ~isfield(testSystems(SYSINDEX).Generator(i).VariableStruct,'Buffer')
+            testSystems(SYSINDEX).Generator(i).VariableStruct.Buffer = 20;
+        end
+    end
+end
+if ~isempty(str)
+    set(handles.StorageBuff, 'Visible', 'on','UserData',stor);
+    set(handles.editBuffer, 'Visible', 'on');
+    set(handles.textBuffer, 'Visible', 'on');
+    set(handles.StorageBuff,'string',str,'value',1);
+    set(handles.editBuffer, 'string', testSystems(SYSINDEX).Generator(stor(1)).VariableStruct.Buffer);
+else
+    set(handles.StorageBuff, 'Visible', 'off');
+    set(handles.editBuffer, 'Visible', 'off');
+    set(handles.textBuffer, 'Visible', 'off');
+end
+
 % --- Outputs from this function are returned to the command line.
 function varargout = MainScreen1_OutputFcn(hObject, eventdata, handles) 
 % varargout  cell array for returning output args (see VARARGOUT);
@@ -216,250 +391,6 @@ function varargout = MainScreen1_OutputFcn(hObject, eventdata, handles)
 
 % Get default command line output from handles structure
 varargout{1} = handles.output;
-
-function SysList_Make(handles)
-global testSystems SYSINDEX
-quote='''';
-list={};
-for i=1:length(testSystems)
-    list(end+1) = {testSystems(i).Name};
-end
-%Delete any old buttons
-handlesAll = guihandles;
-handlesAll.axesMain = handles.axesMain;
-handlesAll.axesCumulative = handles.axesCumulative;
-handles = handlesAll; %workaround to pass both axes handles and showSys handles
-hNames = fieldnames(handles);
-show = false(length(list),1);
-for i = 1:1:length(hNames)
-    if strncmp(hNames{i},'showSys',7) 
-        if get(handles.(hNames{i}),'Value') == 1
-            name = hNames{i};
-            show(str2double(name(end))) = true;
-        end
-        delete(handles.(hNames{i}));
-    end
-    if strncmp(hNames{i},'System',6) || strncmp(hNames{i},'DeleteSys',9) || strncmp(hNames{i},'PrevSys',7) || strncmp(hNames{i},'NextSys',7) || strncmp(hNames{i},'textSys',7)
-        delete(handles.(hNames{i}));
-    end
-end
-show(SYSINDEX) = true;
-%make new buttons
-for tab = 1:1:4 %make gen list for tabs 1-4
-    nSys = length(list);
-    for i=1:1:nSys 
-        num = num2str(i);
-        curtab = floor((i-1)/3)+1;
-        prev = 3*(curtab-1);
-        xpos = 46 + 22*(i-prev);
-        if tab == 3
-            xpos = xpos + 40;
-        end
-        if curtab==1
-            vis = 'on';
-        else vis = 'off';
-        end
-        if i == SYSINDEX
-            foregroundC = [0 0 0];
-            backgroundC = [1 1 1];
-            height = 2;
-        else
-            foregroundC = [0.5 0.5 0.5];
-            backgroundC = [1 1 .7];
-            height = 1.8;
-        end
-        handles.(strcat('System',num2str(tab),'_',num)) = uicontrol('Style', 'pushbutton', 'String', list{i},...
-        'Units','characters',...
-        'Position', [xpos 45 20 height],...
-        'Tag', strcat('System',num2str(tab),'_',num),...
-        'FontSize', 10,...
-        'Parent', handles.(strcat('uipanelMain',num2str(tab))),...
-        'Callback',eval(strcat('@(hObject,eventdata)MainScreen1(',quote,'System_Callback',quote,',hObject,eventdata,guidata(hObject))')),...
-        'Visible',vis,...
-        'UserData',i,...
-        'ForegroundColor', foregroundC,'BackgroundColor',backgroundC);
-        if tab ==1 %Only make checkbox & delete options on Main Window
-            %% checkbox to show
-            handles.(strcat('showSys',num)) = uicontrol('Style', 'checkbox',...
-            'Units','characters',...
-            'Position', [xpos+10 43 3 1],...
-            'Tag', strcat('showSys',num),...
-            'Parent', handles.uipanelMain1,...
-            'Callback',eval(strcat('@(hObject,eventdata)MainScreen1(',quote,'popupmenu_Callback',quote,',hObject,eventdata,guidata(hObject))')),...
-            'Visible',vis,'UserData',i);
-            set(handles.(strcat('showSys',num)),'Value',show(i));
-            %% text show:
-            handles.(strcat('textSys',num)) = uicontrol('Style', 'text', 'String', 'Show:',...
-            'Units','characters',...
-            'Position', [xpos+1 43 8 1],...
-            'Tag', strcat('textSys',num),...
-            'Parent', handles.uipanelMain1,...
-            'Visible',vis,'UserData',i);
-            %% delete button
-            handles.(strcat('DeleteSys',num)) = uicontrol('Style', 'pushbutton',...
-            'Units','characters',...
-            'Position', [xpos+15 42.5 5 2],...
-            'Tag', strcat('DeleteSys',num),....
-            'String','X','ForegroundColor','red','BackgroundColor',[.94,.94,.94],'FontSize',18,'FontWeight','bold',...
-            'Parent', handles.uipanelMain1,...
-            'Callback',eval(strcat('@(hObject,eventdata)MainScreen1(',quote,'DeleteSys_Callback',quote,',hObject,eventdata,guidata(hObject))')),...
-            'Visible',vis,'UserData',i);
-        end
-    end
-    %make prev and next buttons
-    handles.(strcat('PrevSys',num2str(tab))) = uicontrol('Style', 'pushbutton', 'String', 'Prev',...
-    'Units','characters','FontSize', 10,'Position', [50 44 15 1.8],...
-    'Tag', strcat('PrevSys',num2str(tab),'_',num),'Parent', handles.uipanelMain1,...
-    'Callback',eval(strcat('@(hObject,eventdata)MainScreen1(',quote,'PrevSys_Callback',quote,',hObject,eventdata,guidata(hObject))')),...
-    'Visible','off','UserData',1);
-    xpos = 140;
-    if tab == 3
-        xpos = 180;
-    end
-    handles.(strcat('NextSys',num2str(tab))) = uicontrol('Style', 'pushbutton', 'String', 'Next',...
-    'Units','characters','FontSize', 10,'Position', [xpos 44 15 1.8],...
-    'Tag', strcat('NextSys',num2str(tab),'_',num),'Parent', handles.uipanelMain1,...
-    'Callback',eval(strcat('@(hObject,eventdata)MainScreen1(',quote,'NextSys_Callback',quote,',hObject,eventdata,guidata(hObject))')),...
-    'Visible','off','UserData',1);
-    if nSys>3 
-        set(handles.(strcat('NextSys',num2str(tab))),'Visible','on');
-    end
-end
-popupmenu_Callback(handles.popupmenuAxes, [], handles)
-
-
-% --- Executes on button press in PrevGen1.
-function PrevSys_Callback(hObject, eventdata, handles)
-if strcmp(get(handles.uipanelMain1,'Visible'),'on')
-    tab=1;
-elseif strcmp(get(handles.uipanelMain2,'Visible'),'on')
-    tab=2;
-elseif strcmp(get(handles.uipanelMain3,'Visible'),'on')
-    tab=3;
-elseif strcmp(get(handles.uipanelMain4,'Visible'),'on')
-    tab=4;
-end
-list = get(handles.uipanelMain1,'UserData');
-gen = length(list);
-page = get(handles.(strcat('PrevSys',num2str(tab))),'UserData');%current page of the list
-if page<2
-    set(handles.(strcat('PrevSys',num2str(tab))),'Visible','off','UserData',page-1)
-else
-    set(handles.(strcat('PrevSys',num2str(tab))),'Visible','on','UserData',page-1);
-end
-set(handles.(strcat('NextSys',num2str(tab))),'Visible','on','UserData',page-1)
-for i = 1:1:12
-    if 12*(page-1)+i<=gen
-         j = num2str(12*(page-1)+i);
-         set(handles.(strcat('System',num2str(tab),'_',j)),'Visible','off');
-         if tab==1
-             set(handles.(strcat('showSys',j)),'Visible','off');
-             set(handles.(strcat('DeleteSys',j)),'Visible','off');
-         end
-    end
-end
-for i = 1:1:12
-    j = num2str(12*(page-2)+i);
-     set(handles.(strcat('System',num2str(tab),'_',j)),'Visible','on');
-     if tab==1
-         set(handles.(strcat('showSys',j)),'Visible','on');
-         set(handles.(strcat('DeleteSys',j)),'Visible','on');
-     end
-end
-
-
-% --- Executes on button press in NextGen1.
-function NextSys_Callback(hObject, eventdata, handles)
-if strcmp(get(handles.uipanelMain1,'Visible'),'on')
-    tab=1;
-elseif strcmp(get(handles.uipanelMain2,'Visible'),'on')
-    tab=2;
-elseif strcmp(get(handles.uipanelMain3,'Visible'),'on')
-    tab=3;
-elseif strcmp(get(handles.uipanelMain4,'Visible'),'on')
-    tab=4;
-end
-
-list = get(handles.uipanelMain1,'UserData');
-gen = length(list);
-page = get(handles.(strcat('PrevSys',num2str(tab))),'UserData');%current page of the list
-if page==ceil(gen/12)-1
-    set(handles.(strcat('NextSys',num2str(tab))),'Visible','off','UserData',page+1)
-else
-    set(handles.(strcat('NextSys',num2str(tab))),'Visible','on','UserData',page+1);
-end
-set(handles.(strcat('PrevSys',num2str(tab))),'Visible','on','UserData',page+1)
-for i = 1:1:12
-     j = num2str(12*(page-1)+i);
-     set(handles.(strcat('System',num2str(tab),'_',j)),'Visible','off');
-     if tab==1
-         set(handles.(strcat('showSys',j)),'Visible','off');
-         set(handles.(strcat('DeleteSys',j)),'Visible','off');
-     end
-end
-for i = 1:1:12
-    j = num2str(12*(page)+i);
-    if 12*(page)+i<=gen
-         set(handles.(strcat('System',num2str(tab),'_',j)),'Visible','on');
-         if tab==1
-             set(handles.(strcat('showSys',j)),'Visible','on');
-             set(handles.(strcat('DeleteSys',j)),'Visible','on');
-         end
-    end
-end
-
-% --- Executes on button press in saveProject.
-function saveProject_Callback(hObject, eventdata, handles)
-global testSystems SYSINDEX Plant Model_dir
-Plant = testSystems(SYSINDEX);
-[f,p]=uiputfile(fullfile(Model_dir,'Projects','New Project.mat'),'Save Project As...');
-if f==0; return; end
-Plant.Name=strrep(f,'.mat','');
-save([p,f],'Plant')
-
-% --- Executes on selection savebuilding in popupmenuProjectMain.
-function popupmenuProjectMain_Callback(hObject, eventdata, handles)
-% hObject    handle to popupmenuProjectMain (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    structure with handles and user data (see GUIDATA)
-global Plant Model_dir testSystems SYSINDEX
-% Load file that was selected from the popupmenu
-SYSINDEX = length(testSystems)+1;
-projList = get(handles.popupmenuProjectMain,'String');
-projName = projList{get(handles.popupmenuProjectMain,'Value')};
-projFile = fullfile(Model_dir,'Projects',projName);
-load(projFile);
-Plant.optimoptions.method = 'Planning';
-if isempty(Plant.Building)
-    Plant.optimoptions.forecast = 'Perfect';
-else Plant.optimoptions.forecast = 'Building';
-end
-allFieldNames = {'Name';'Data';'Generator';'Building';'Weather';'Network';'Costs';'optimoptions';'subNet';'OpMatA';'OpMatB';'OneStep';'Online';'Design';'Dispatch';'Predicted';'RunData';'Baseline'};
-fNames = fieldnames(Plant);
-for i = 1:1:length(allFieldNames)
-    if ~any(strcmp(allFieldNames{i},fNames))
-        Plant.(allFieldNames{i}) = [];
-    end
-end
-if isempty(Plant.Costs) || ~isfield(Plant.Costs,'Equipment')
-    defaultCosts
-end
-testSystems(SYSINDEX) = Plant;
-list={};
-for i=1:length(testSystems)
-    list(end+1) = {testSystems(i).Name};
-end
-set(handles.uipanelMain1,'UserData',list)
-SysList_Make(handles);
-
-
-% --- Executes during object creation, after setting all properties.
-function popupmenuProjectMain_CreateFcn(hObject, eventdata, handles)
-% hObject    handle to popupmenuProjectMain (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
-    set(hObject,'BackgroundColor','white');
-end
 
 % Main tabs callback
 function mainTab_Callback(hObject, eventdata, handles)
@@ -497,108 +428,153 @@ set(handles.(strcat('MainTab',n)),'FontWeight','bold','ForegroundColor',[0,0,0])
 % SaveBuilding visibility
 set(handles.(strcat('uipanelMain',m)),'Visible','off')
 set(handles.(strcat('uipanelMain',n)),'Visible','on')
+popupmenu_Callback
 
-if strcmp(n,'1')
-    set(handles.popupmenuAxes,'Value',1);
-    popupmenu_Callback(handles.popupmenuAxes, eventdata, handles)
-elseif strcmp(n,'2')
-    popupmenu_Callback(handles.popupmenuDemand, eventdata, handles);
-elseif strcmp(n,'5')
-    loadSettingsTab(handles)
-end
+%% ProjectPanel Functions
+function Save_Callback(hObject, eventdata, handles)
+global testSystems SYSINDEX Plant Model_dir
+Plant = testSystems(SYSINDEX);
+[f,p]=uiputfile(fullfile(Model_dir,'Projects','New Project.mat'),'Save Project As...');
+if f==0; return; end
+Plant.Name=strrep(f,'.mat','');
+save([p,f],'Plant')
 
-function loadSettingsTab(handles)
-global SYSINDEX testSystems
-set(handles.excessHeat, 'value', testSystems(SYSINDEX).optimoptions.excessHeat);
-set(handles.excessCool, 'value', testSystems(SYSINDEX).optimoptions.excessCool);
-
-set(handles.DesignDay,'value', 1);
-set(handles.NoMixedInteger, 'value', ~testSystems(SYSINDEX).optimoptions.MixedInteger);
-set(handles.MixedInteger, 'value', testSystems(SYSINDEX).optimoptions.MixedInteger);
-
-set(handles.SpinReserve, 'value', testSystems(SYSINDEX).optimoptions.SpinReserve);
-if testSystems(SYSINDEX).optimoptions.SpinReserve
-    set(handles.SpinReservePerc, 'Visible','on','string', testSystems(SYSINDEX).optimoptions.SpinReservePerc);
-else set(handles.SpinReservePerc, 'Visible','off');
-end
-
-nG = length(testSystems(SYSINDEX).Generator);
-str = {};
-stor = [];
-for i = 1:1:nG
-    if ismember(testSystems(SYSINDEX).Generator(i).Type,{'Electric Storage';'Thermal Storage'; 'Hydro Storage';})
-        str{end+1} = testSystems(SYSINDEX).Generator(i).Name;
-        stor(end+1) = i;
-        if ~isfield(testSystems(SYSINDEX).Generator(i).VariableStruct,'Buffer')
-            testSystems(SYSINDEX).Generator(i).VariableStruct.Buffer = 20;
-        end
-    end
-end
-if ~isempty(str)
-    set(handles.StorageBuff, 'Visible', 'on','UserData',stor);
-    set(handles.editBuffer, 'Visible', 'on');
-    set(handles.textBuffer, 'Visible', 'on');
-    set(handles.StorageBuff,'string',str,'value',1);
-    set(handles.editBuffer, 'string', testSystems(SYSINDEX).Generator(stor(1)).VariableStruct.Buffer);
+function Load_Callback(hObject, eventdata, handles)
+global Plant Model_dir testSystems
+cd(fullfile(Model_dir,'Projects'))
+[fn,pn,~] = uigetfile('*.mat','Load Project File');
+load(fullfile(pn,fn));
+cd(Model_dir)
+if ~isfield(Plant,'Costs') 
+    Costs = [];
 else
-    set(handles.StorageBuff, 'Visible', 'off');
-    set(handles.editBuffer, 'Visible', 'off');
-    set(handles.textBuffer, 'Visible', 'off');
+    Costs = Plant.Costs;
 end
+if isfield(testSystems,'Building') && ~isempty(testSystems(1).Building)
+    Plant.Building = testSystems(1).Building;
+end
+Plant.Costs = defaultCosts(Costs,Plant.Generator);
+newSys = length(testSystems)+1;
+F = fieldnames(Plant);
+for j = 1:1:length(F)
+    testSystems(newSys).(F{j}) = Plant.(F{j});
+end
+handles = guihandles;
+list={};
+for i=1:length(testSystems)
+    list(end+1) = {testSystems(i).Name};
+end
+set(handles.ProjectsPanel,'UserData',list)
+handles = SysList_Make(handles);
+System_Callback(handles.(strcat('System_',num2str(newSys))), eventdata, handles)
+popupmenu_Callback
+set(handles.popupmenuBaseline,'String',get(handles.ProjectsPanel,'UserData'));
 
-%% Tab 1 functions
+function Copy_Callback(hObject, eventdata, handles)
+global Plant testSystems SYSINDEX
+Plant = testSystems(SYSINDEX);
+Plant.Name = char(inputdlg('New Project Name','Select name',1,{strcat(Plant.Name,'_Alt')}));
+testSystems(length(testSystems)+1) = Plant;
+handles = guihandles;
+list={};
+for i=1:length(testSystems)
+    list(end+1) = {testSystems(i).Name};
+end
+set(handles.ProjectsPanel,'UserData',list);
+handles = SysList_Make(handles);
+System_Callback(handles.(strcat('System_',num2str(length(testSystems)))), eventdata, handles)
+popupmenu_Callback
+set(handles.popupmenuBaseline,'String',get(handles.ProjectsPanel,'UserData'));
 
 function System_Callback(hObject, eventdata, handles)
-global SYSINDEX testSystems
-% SaveBuilding color
-for tab = 1:1:4
-    pos = get(handles.(strcat('System',num2str(tab),'_',num2str(SYSINDEX))),'Position');
+global testSystems SYSINDEX GENINDEX
+handles = guihandles;
+if isfield(handles,strcat('System_',num2str(SYSINDEX)))
+    pos = get(handles.(strcat('System_',num2str(SYSINDEX))),'Position');
     pos(4) = 1.8;
-    set(handles.(strcat('System',num2str(tab),'_',num2str(SYSINDEX))),'BackgroundColor',[1 1 .7],'ForegroundColor',[0.5 0.5 0.5],'Position',pos)
+    set(handles.(strcat('System_',num2str(SYSINDEX))),'BackgroundColor',[1 1 .7],'ForegroundColor',[0.5 0.5 0.5],'Position',pos)
 end
 SYSINDEX = get(hObject,'UserData');
-for tab = 1:1:4
-    pos = get(handles.(strcat('System',num2str(tab),'_',num2str(SYSINDEX))),'Position');
-    pos(4) = 2;
-    set(handles.(strcat('System',num2str(tab),'_',num2str(SYSINDEX))),'BackgroundColor',[1 1 1],'ForegroundColor',[0 0 0],'Position',pos)
-end
-n = length(testSystems(SYSINDEX).Costs.Equipment);
-Costs = cell(n,6);
-for i = 1:1:n
-    Costs(i,1) = {testSystems(SYSINDEX).Costs.Equipment(i).Name};
-    Costs(i,2) = {testSystems(SYSINDEX).Costs.Equipment(i).Cost};
-    Costs(i,3) = {testSystems(SYSINDEX).Costs.Equipment(i).OandM};
-    Costs(i,4) = {testSystems(SYSINDEX).Costs.Equipment(i).Financed};
-    Costs(i,5) = {testSystems(SYSINDEX).Costs.Equipment(i).LoanRate};
-    Costs(i,6) = {testSystems(SYSINDEX).Costs.Equipment(i).LoanTerm};
-end
-set(handles.uitableCosts,'Data',Costs)
-popupmenu_Callback(hObject, eventdata, handles)
-%% go to system spec tab to edit
+pos = get(handles.(strcat('System_',num2str(SYSINDEX))),'Position');
+pos(4) = 2;
+set(handles.(strcat('System_',num2str(SYSINDEX))),'BackgroundColor',[1 1 1],'ForegroundColor',[0 0 0],'Position',pos)
+pos2 = get(handles.Save,'Position');
+pos2(1) = pos(1);
+set(handles.Save,'Position',pos2);
+GENINDEX = min(length(testSystems(SYSINDEX).Generator), GENINDEX); % prevent index exceeds matrix dimensions error
+popupmenu_Callback
 
 function DeleteSys_Callback(hObject, eventdata, handles)
-global testSystems SYSINDEX
+global testSystems SYSINDEX GENINDEX
+GENINDEX = 1;
 SYSINDEX = get(hObject,'UserData');
+val = get(handles.popupmenuBaseline,'Value');
+if SYSINDEX<=val
+    val = max(1,val-1);
+end
 if length(testSystems)>SYSINDEX
     testSystems(SYSINDEX:length(testSystems)-1) = testSystems(SYSINDEX+1:length(testSystems));
 end
 testSystems = testSystems(1:length(testSystems)-1);
-SYSINDEX = 1;
-SysList_Make(handles);
-
-
-% --- Executes on button press in NewPlant.
-function NewPlant_Callback(hObject, eventdata, handles)
-global Plant
-Plant.optimoptions.method = 'Planning';
-if isempty(Plant.Building)
-    Plant.optimoptions.forecast = 'Perfect';
-else Plant.optimoptions.forecast = 'Building';
+handles = guihandles;
+handles = SysList_Make(handles);
+System_Callback(handles.(strcat('System_',num2str(1))), eventdata, handles)
+list={};
+for i=1:length(testSystems)
+    list(end+1) = {testSystems(i).Name};
 end
-%% go to system spec tab to edit
+set(handles.ProjectsPanel,'UserData',list);
+set(handles.popupmenuAxes,'Value',1);
+RunPlanning
+set(handles.popupmenuBaseline,'String',get(handles.ProjectsPanel,'UserData'),'Value',val);
 
+function PrevSys_Callback(hObject, eventdata, handles)
+list = get(handles.ProjectsPanel,'UserData');
+gen = length(list);
+page = get(handles.PrevSys,'UserData');%current page of the list
+if page<2
+    set(handles.PrevSys,'Visible','off','UserData',page-1)
+else
+    set(handles.PrevSys,'Visible','on','UserData',page-1);
+end
+set(handles.NextSys,'Visible','on','UserData',page-1)
+for i = 1:1:12
+    if 12*(page-1)+i<=gen
+         j = num2str(12*(page-1)+i);
+         set(handles.(strcat('System_',j)),'Visible','off');
+         set(handles.(strcat('DeleteSys',j)),'Visible','off');
+    end
+end
+for i = 1:1:12
+    j = num2str(12*(page-2)+i);
+     set(handles.(strcat('System_',j)),'Visible','on');
+     set(handles.(strcat('DeleteSys',j)),'Visible','on');
+end
 
-% --- Executes on button press in pushbuttonEDC.
+function NextSys_Callback(hObject, eventdata, handles)
+list = get(handles.ProjectsPanel,'UserData');
+gen = length(list);
+page = get(handles.PrevSys,'UserData');%current page of the list
+if page==ceil(gen/12)-1
+    set(handles.NextSys,'Visible','off','UserData',page+1)
+else
+    set(handles.NextSys,'Visible','on','UserData',page+1);
+end
+set(handles.PrevSys,'Visible','on','UserData',page+1)
+for i = 1:1:12
+     j = num2str(12*(page-1)+i);
+     set(handles.(strcat('System_',j)),'Visible','off');
+     set(handles.(strcat('DeleteSys',j)),'Visible','off');
+end
+for i = 1:1:12
+    j = num2str(12*(page)+i);
+    if 12*(page)+i<=gen
+         set(handles.(strcat('System_',j)),'Visible','on');
+         set(handles.(strcat('DeleteSys',j)),'Visible','on');
+    end
+end
+
+%% Tab 1 functions
 function pushbuttonEDC_Callback(hObject, eventdata, handles)
 global testSystems SYSINDEX Plant mainFig
 mainFig = [];  
@@ -607,260 +583,22 @@ close
 DISPATCH
 
 function popupmenuAxes_Callback(hObject, eventdata, handles)
-popupmenu_Callback(hObject, eventdata, handles)
+RunPlanning
 
-function popupmenu_Callback(hObject, eventdata, handles)
-global testSystems SYSINDEX Plant TestData DispatchWaitbar Virtual RealTime
-Virtual = 1;
-RealTime = 0;
-menu = char(get(hObject,'Tag')); 
-list = get(handles.(menu),'String');
-item = list{get(handles.(menu),'Value')};
-if strcmp(item,'Monthly Costs')
-    set(handles.sliderZoom1,'Visible','off');set(handles.sliderDate1,'Visible','off');set(handles.textDate1,'Visible','off');
-    set(handles.textDay1,'Visible','off'); set(handles.textAllData1,'Visible','off'); set(handles.textHorizon1,'Visible','off');
-    handlesAll = guihandles;
-    handlesAll.axesMain = handles.axesMain;
-    handlesAll.axesCumulative = handles.axesCumulative;
-    handles = handlesAll; %workaround to pass both axes handles and showSys handles
-    for i_ts = 1:1:length(testSystems)
-        if get(handles.(strcat('showSys',num2str(i_ts))),'Value') == 1
-            if ~isempty(testSystems(i_ts).Building)
-                fullyear = 365+1/24*testSystems(i_ts).optimoptions.Resolution;
-            else
-                dStep = (testSystems(i_ts).Data.Timestamp(2) - testSystems(i_ts).Data.Timestamp(1));
-                fullyear = min(365+1/24*testSystems(i_ts).optimoptions.Resolution,(testSystems(i_ts).Data.Timestamp(end)-testSystems(i_ts).Data.Timestamp(1) + dStep));
-            end
-            if get(handles.DesignDay,'Value') ==1
-                if ~isempty(testSystems(i_ts).Building)
-                    mUnique = 1:1:12;
-                else
-                    simTime = (testSystems(i_ts).Data.Timestamp(1):1/24*testSystems(i_ts).optimoptions.Resolution:testSystems(i_ts).Data.Timestamp(end))';
-                    [~, m, ~] = datevec(simTime);
-                    mUnique = unique(m); %months that may need to be tested
-                end
-                SiTest = [];
-                for j = 1:1:length(mUnique)
-                    index = nonzeros((1:1:length(m))'.*(m==mUnique(j)));
-                    SiTest(end+1) = index(1); %first point in each month
-                end
-                interval = 1;
-                %% need to fix logical statements for when data is not 1 year
-                if isempty(testSystems(i_ts).Design) || length(testSystems(i_ts).Design.Timestamp)~=(fullyear*24/testSystems(i_ts).optimoptions.Resolution) || any(testSystems(i_ts).Design.Timestamp(SiTest+1)==0) %at least some design days have not been run
-                    repeat = true;
-                else
-                    repeat = false;
-                end
-            else
-                SiTest = 1;
-                interval = fullyear;
-                if isempty(testSystems(i_ts).Design) || length(testSystems(i_ts).Design.Timestamp)~=fullyear*24/testSystems(i_ts).optimoptions.Resolution || any(testSystems(i_ts).Design.Timestamp==0) %at least some points have not been run
-                    repeat = true;
-                else
-                    repeat = false;
-                end
-            end
-            if  repeat
-                Plant = testSystems(i_ts);
-                TestData = [];
-                if length(SiTest)==1
-                    STR = 'Optimizing Dispatch Throughout Entire Year';
-                else
-                    STR = 'Optimizing Design Day Dispatch';
-                end
-                DispatchWaitbar=waitbar(0,STR,'Visible','on');
-                if SiTest == 1
-                    RunSimulation(TestData.Timestamp(1),[]);
-                else
-                    Plant.optimoptions.Interval = 1;
-                    preAllocateSpace('Design')
-                    for j = 1:1:length(SiTest)
-                        Date = TestData.Timestamp(1) + (SiTest(j)-1)*Plant.optimoptions.Resolution/24;
-                        ForecastTime = Date+[0;buildTimeVector(Plant.optimoptions)/24];%linspace(DateSim,DateEnd)';would need to re-do optimization matrices for this time vector
-                        Solution = SingleOptimization(ForecastTime,[]);
-                        if isempty(Plant.Building)
-                            Data = GetCurrentData(ForecastTime);
-                        else
-                            Data = updateForecast(ForecastTime,[]);
-                        end
-                        Forecast = updateForecast(ForecastTime(2:end),Data);%% function that creates demand vector with time intervals coresponding to those selected
-                        StepDispatchForward(SiTest(j),ForecastTime,Forecast,Solution.Dispatch);
-                    end
-                end
-                close(DispatchWaitbar)
-                testSystems(i_ts) = Plant;
-                [testSystems(i_ts).Costs.Design,testSystems(i_ts).Costs.NPC]  = DesignCosts(i_ts);
-            end
-        end
-    end
-    %plot results
-    PlotCosts(handles)
-else
-    tab = [];
-    i = 1;
-    % Find out which tab is currently selected
-    while isempty(tab) && isfield(handles,strcat('uipanelMain',num2str(i)))
-        if strcmp(get(handles.(strcat('uipanelMain',num2str(i))),'Visible'),'on')
-            tab = i;
-        else
-            i = i+1;
-        end
-    end
-    if ~isempty(testSystems(SYSINDEX).Building)
-        calculateBuildingProfile(handles,tab)
+function PlotDemand(handles)
+list = get(handles.popupmenuDemand,'String');
+item = list{get(handles.popupmenuDemand,'Value')};
+tab = [];
+i = 1;
+% Find out which tab is currently selected
+while isempty(tab) && isfield(handles,strcat('uipanelMain',num2str(i)))
+    if strcmp(get(handles.(strcat('uipanelMain',num2str(i))),'Visible'),'on')
+        tab = i;
     else
-        PlotHistorical(handles,item,tab)
+        i = i+1;
     end
 end
-
-
-function PlotCosts(handles)
-global testSystems 
-if isfield(handles,'LegendDeleteProxy')%2013 matlab
-    delete(handles.LegendColorbarLayout)
-    delete(handles.LegendDeleteProxy)
-elseif isfield(handles,'legend')%2015 matlab
-    delete(handles.legend)
-end
-h1 = handles.axesMain;
-cla(h1);
-hold(h1,'on')
-h2 = handles.axesCumulative;
-cla(h2);
-nShow = 0; %number of systems to plot
-for i = 1:1:length(testSystems)
-    if get(handles.(strcat('showSys',num2str(i))),'Value') == 1
-        nShow = nShow+1;
-    end
-end
-Xpos = zeros(12,nShow);
-for i = 1:1:nShow
-    Xpos(:,i) = (1/nShow^2 + (i-1)/nShow:1:12)';
-end
-j = 0;
-NPC = zeros(nShow,1);
-Name = cell(nShow,1);
-colormap(h1,'summer')
-for i = 1:1:length(testSystems)
-    if get(handles.(strcat('showSys',num2str(i))),'Value') == 1
-        j = j+1;
-        Data = testSystems(i).Costs.Design;
-        NPC(j) = testSystems(i).Costs.NPC;
-        Name(j) = {testSystems(i).Name};
-        %savebuilding color and figure out spacing/width
-        bar(h1,Xpos(:,j),Data,'stacked','BarWidth',0.8/nShow)
-    end
-end
-legend(h1,{'Financing Charges';'O & M Charges';'Demand Charges';'Electric Use Charges';'Fuel Charges';})
-xlim(h1,[0,12])
-ylabel(h1,'Cost ($)','Color','k','FontSize',14)
-set(h1,'XTick',mean(Xpos,2),'XTickLabel', {'Jan';'Feb';'Mar';'Apr';'May';'Jun';'Jul';'Aug';'Sep';'Oct';'Nov';'Dec';})
-colormap(h2,'summer')
-bar(h2,NPC)
-ylabel(h2,'20 Year Net Present Cost ($)','Color','k','FontSize',14)
-set(h2,'XTickLabel',Name) 
-
-function PlotHistorical(handles,demand,tab)
-global testSystems SYSINDEX
-if strcmp(get(handles.sliderZoom1,'Visible'),'off')
-    set(handles.(strcat('sliderZoom',num2str(tab))),'Visible','on','value',1);set(handles.(strcat('sliderDate',num2str(tab))),'Visible','on','value',0);
-    set(handles.(strcat('textDay',num2str(tab))),'Visible','on'); set(handles.(strcat('textAllData',num2str(tab))),'Visible','on'); set(handles.(strcat('textHorizon',num2str(tab))),'Visible','on');
-end
-%find the current date
-DateSim = testSystems(SYSINDEX).Data.Timestamp(1) + get(handles.(strcat('sliderDate',num2str(tab))),'Value');
-maxSlider = get(handles.(strcat('sliderZoom',num2str(tab))),'Max');
-if isfield(testSystems(SYSINDEX).Data,'Demand')
-    lastDate = testSystems(SYSINDEX).Data.Timestamp(end);
-else lastDate = datenum([2018,1,1]);
-end
-if get(handles.(strcat('sliderZoom',num2str(tab))),'Value')==maxSlider
-    DateEnd = lastDate;
-elseif floor(get(handles.(strcat('sliderZoom',num2str(tab))),'Value'))<1
-    DateEnd = min(lastDate,DateSim + 1);
-elseif floor(get(handles.(strcat('sliderZoom',num2str(tab))),'Value'))<2
-    DateEnd = min(lastDate,DateSim + 7);
-elseif floor(get(handles.(strcat('sliderZoom',num2str(tab))),'Value'))<3
-    DateEnd = min(lastDate,DateSim + 31);
-elseif floor(get(handles.(strcat('sliderZoom',num2str(tab))),'Value'))<4
-    DateEnd = min(lastDate,DateSim + 365);
-end
-Xi = nnz(testSystems(SYSINDEX).Data.Timestamp<=DateSim);
-Xf = nnz(testSystems(SYSINDEX).Data.Timestamp<=DateEnd);
-time = testSystems(SYSINDEX).Data.Timestamp(Xi:Xf);
-units = ' (kW)';
-if strcmp(demand,'Electrical Demand')
-    data = testSystems(SYSINDEX).Data.Demand.E(Xi:Xf,:);
-    color = {'black'};
-elseif strcmp(demand,'Cooling Demand')
-    data = testSystems(SYSINDEX).Data.Demand.C(Xi:Xf,:);
-    color = {'blue'};
-elseif strcmp(demand,'Heating Demand')
-    data = testSystems(SYSINDEX).Data.Demand.H(Xi:Xf,:);
-    color = {'red'};
-elseif strcmp(demand,'Water Demand')
-    data = testSystems(SYSINDEX).Data.Demand.W(Xi:Xf,:);
-    color = {'cyan'};
-    units = ' (1000 CFS)';
-end
-if tab ==1 
-    PlotData(handles.axesMain,time,data,[demand, units],color)
-    PlotHistogram(handles.axesCumulative,data,[demand, units])
-elseif tab ==2
-    PlotData(handles.axesBuildLoad,time,data,[demand, units],color)
-    PlotHistogram(handles.axesBuildCumulative,data,[demand, units])
-end
-
-function updateEqipmentCosts(Data)
-global testSystems SYSINDEX
-for i = 1:1:length(Data(:,1))
-    testSystems(SYSINDEX).Costs.Equipment(i).Name = Data{i,1};
-    testSystems(SYSINDEX).Costs.Equipment(i).Cost = Data{i,2};
-    testSystems(SYSINDEX).Costs.Equipment(i).OandM = Data{i,3};
-    testSystems(SYSINDEX).Costs.Equipment(i).Financed = Data{i,4};
-    testSystems(SYSINDEX).Costs.Equipment(i).LoanRate = Data{i,5};
-    testSystems(SYSINDEX).Costs.Equipment(i).LoanTerm = Data{i,6};
-end
-
-function defaultCosts
-global Plant
-nG = length(Plant.Generator);
-j = 0;
-for i = 1:1:nG
-    Type = Plant.Generator(i).Type;
-    if isempty(strfind(Type,'Utility'))
-        j = j+1;
-        Plant.Costs.Equipment(j).Name = Plant.Generator(i).Name;
-        if (strcmp(Type,'CHP Generator') || strcmp(Type,'Electric Generator')) && Plant.Generator(i).VariableStruct.isFuelCell
-            costPerkW = 3000;
-            OM = 100;
-        elseif (strcmp(Type,'CHP Generator') || strcmp(Type,'Electric Generator')) 
-            costPerkW = 1000;
-            OM = 50;
-        elseif strcmp(Type,'Chiller') %chillers
-            if strcmp(Plant.Generator(i).Source,'Electricity')
-                costPerkW = 100;
-                OM = 10;
-            else %absorption chiller
-                costPerkW = 200;
-                OM = 20;
-            end
-        elseif strcmp(Type,'Thermal Storage')%thermal storage
-            costPerkW = 20;
-            OM = 1;
-        elseif strcmp(Type,'Electric Storage')%battery
-            costPerkW = 500;
-            OM = 10;
-        elseif strcmp(Type,'Solar')%solar
-            costPerkW = 500;
-            OM = 5;
-        end
-        Plant.Costs.Equipment(j).Cost = costPerkW*Plant.Generator(i).Size;
-        Plant.Costs.Equipment(j).OandM = OM*Plant.Generator(i).Size;
-        Plant.Costs.Equipment(j).Financed = 100;
-        Plant.Costs.Equipment(j).LoanRate = 6;
-        Plant.Costs.Equipment(j).LoanTerm = 15;
-    end
-end
+PlotHistorical(handles,item,tab)
 
 % --- Executes during object creation, after setting all properties.
 function popupmenuAxes_CreateFcn(hObject, eventdata, handles)
@@ -870,7 +608,7 @@ end
 
 % --- Executes on slider movement.
 function sliderDate1_Callback(hObject, eventdata, handles)
-popupmenu_Callback(handles.popupmenuAxes, eventdata, handles)
+RunPlanning
 
 % --- Executes during object creation, after setting all properties.
 function sliderDate1_CreateFcn(hObject, eventdata, handles)
@@ -885,7 +623,7 @@ if get(handles.sliderZoom1,'Value')== get(handles.sliderZoom1,'Max')
 elseif strcmp(get(handles.sliderDate1,'Visible'),'off')
     set(handles.sliderDate1,'Visible','on');set(handles.textDate1,'Visible','on');
 end
-popupmenu_Callback(handles.popupmenuAxes, eventdata, handles)
+RunPlanning
 
 % --- Executes during object creation, after setting all properties.
 function sliderZoom1_CreateFcn(hObject, eventdata, handles)
@@ -893,21 +631,7 @@ if isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColo
     set(hObject,'BackgroundColor',[.9 .9 .9]);
 end
 
-% --- Executes when entered data in editable cell(s) in uitableCosts.
-function uitableCosts_CellEditCallback(hObject, eventdata, handles)
-% hObject    handle to uitableCosts (see GCBO)
-% eventdata  structure with the following fields (see UITABLE)
-%	Indices: row and column indices of the cell(s) edited
-%	PreviousData: previous data for the cell(s) edited
-%	EditData: string(s) entered by the user
-%	NewData: EditData or its converted form set on the Data property. Empty if Data was not changed
-%	Error: error string when failed to convert EditData to appropriate value for Data
-% handles    structure with handles and user data (see GUIDATA)
-Data = get(hObject,'Data');
-updateEqipmentCosts(Data);
-
-%% Tab 2 functions
-
+%% Tab 2 functions (any changes to project on this tab require re-running design days)
 function popupmenuBuilding_Callback(hObject, eventdata, handles)
 %load the selected building
 global testSystems SYSINDEX Model_dir
@@ -915,7 +639,9 @@ list = get(handles.popupmenuBuilding,'string');
 sel = get(handles.popupmenuBuilding,'Value');
 load(fullfile(Model_dir,'System Library','Buildings',list{sel}));
 testSystems(SYSINDEX).Building = building;
-calculateBuildingProfile(handles,2)
+reLoadBuilding(testSystems(1).Building,testSystems(1).Network)
+sliderDate2_Callback([],[],[])
+testSystems(SYSINDEX).Design = [];%empty design day solution
 
 function popupmenuBuilding_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
@@ -924,12 +650,16 @@ end
 
 function popupmenuWeather_Callback(hObject, eventdata, handles)
 %load selected weather profile
-global testSystems SYSINDEX Model_dir
+global Model_dir testSystems TestData
 list = get(handles.popupmenuWeather,'string');
 sel = get(handles.popupmenuWeather,'Value');
 load(fullfile(Model_dir,'System Library','Weather',list{sel}));
-testSystems(SYSINDEX).Weather = weather;
-calculateBuildingProfile(handles,2)
+TestData.Weather = interpolateWeather(weather,TestData.Timestamp);
+reLoadBuilding(testSystems(1).Building,testSystems(1).Network)
+sliderDate2_Callback([],[],[])
+for i_ts = 1:1:length(testSystems)
+    testSystems(i_ts).Design = [];%empty design day solution for all cases
+end
 
 function popupmenuWeather_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
@@ -938,18 +668,33 @@ end
 
 % --- Executes on button press in toggleSimulatedBuilding.
 function toggleSimulatedBuilding_Callback(hObject, eventdata, handles)
-global testSystems SYSINDEX Model_dir
-if isempty(testSystems(SYSINDEX).Building)
+global testSystems SYSINDEX Model_dir TestData
+if ~isfield(TestData,'Weather') || isempty(TestData.Weather)
     list = get(handles.popupmenuWeather,'string');
     sel = get(handles.popupmenuWeather,'Value');
     load(fullfile(Model_dir,'System Library','Weather',list{sel}));
-    testSystems(SYSINDEX).Weather = weather;
-    popupmenuBuilding_Callback(hObject, eventdata, handles)
+    loadTestWeather(weather);
+    popupmenuBuilding_Callback([], [], handles)
 end
-list = {'Electric';'Cooling';'Heating'};
+list = {};
+if isfield(TestData,'Demand')
+    if isfield(TestData.Demand,'E')
+        list(end+1,1) = {'Electrical Demand'};
+    end
+    if isfield(TestData.Demand,'H')
+        list(end+1,1) = {'Heating Demand'};
+    end
+    if isfield(TestData.Demand,'C')
+        list(end+1,1) = {'Cooling Demand'};
+    end
+    if isfield(TestData.Demand,'W')
+        list(end+1,1) = {'Water Demand'};
+    end
+end
+if isfield(TestData,'Building')
+    list(end+1:end+2) = {'InternalGains';'NonHVACelectric';};
+end
 set(handles.popupmenuDemand,'String',list);
-list(end+1) = {'Monthly Costs'};
-set(handles.popupmenuAxes,'String',list,'Value',1);
 if get(handles.toggleHistorical,'Value')==1
     a = get(handles.toggleHistorical,'BackgroundColor');
     b = get(handles.toggleSimulatedBuilding,'BackgroundColor');
@@ -957,106 +702,89 @@ if get(handles.toggleHistorical,'Value')==1
     d = get(handles.toggleSimulatedBuilding,'ForegroundColor');
     set(handles.toggleSimulatedBuilding,'Value',1,'BackgroundColor',a,'ForegroundColor',c);
     set(handles.toggleHistorical,'Value',0,'BackgroundColor',b,'ForegroundColor',d);
-else set(handles.toggleSimulatedBuilding,'Value',1); %was already pressed
+else
+    set(handles.toggleSimulatedBuilding,'Value',1); %was already pressed
 end
-list = {'popupmenuBuilding';'popupmenuWeather';'SaveBuilding';'pushbuttonReset';'textDaily';'textInterHour';'textIntraHour';};
+list = {'textBuilding';'pushbuttonPrev';'pushbuttonNext';'popupmenuBuilding';'popupmenuWeather';'SaveBuilding';'pushbuttonReset';...
+        'textVariability';'textDaily';'editDailyVariability';'textInterHour';'editHourlyVariability';'textIntraHour';'editSubHourlyVariability';};
 for i = 1:1:length(list)
     set(handles.(list{i}),'Visible','On');
 end
-set(handles.pushbuttonLoad,'Visible','Off')
-pushbuttonPrev_Callback(hObject, eventdata, handles);
-set(handles.editDailyVariability,'Visible','On','String',num2str(testSystems(SYSINDEX).Building.VariableStruct.DailyVariability))
-set(handles.editHourlyVariability,'Visible','On','String',num2str(testSystems(SYSINDEX).Building.VariableStruct.HourlyVariability))
-set(handles.editSubHourlyVariability,'Visible','On','String',num2str(testSystems(SYSINDEX).Building.VariableStruct.SubHourlyVariability))
+set(handles.LoadTestData,'Visible','Off')
+pushbuttonPrev_Callback([], [], handles);
+set(handles.editDailyVariability,'String',num2str(testSystems(SYSINDEX).Building.VariableStruct.DailyVariability))
+set(handles.editHourlyVariability,'String',num2str(testSystems(SYSINDEX).Building.VariableStruct.HourlyVariability))
+set(handles.editSubHourlyVariability,'String',num2str(testSystems(SYSINDEX).Building.VariableStruct.SubHourlyVariability))
 
 % --- Executes on button press in toggleHistorical.
-function toggleHistorical_Callback(hObject, eventdata, handles)
-global testSystems SYSINDEX
-if isempty(testSystems(SYSINDEX).Data)
-    pushbuttonLoad_Callback(hObject, eventdata, handles)
+function toggleHistorical_Callback(handles)
+global TestData
+Outs =  fieldnames(TestData.Demand);
+list = {};
+if strcmp(Outs{1},'E')
+    list(end+1) = {'Electrical Demand'};
+elseif strcmp(Outs{1},'C')
+    list(end+1) = {'Cooling Demand'};
+elseif strcmp(Outs{1},'H')
+    list(end+1) = {'Heating Demand'};
+elseif strcmp(Outs{1},'W')
+    list(end+1) = {'Water Demand'};
 end
-if ~isfield(testSystems(SYSINDEX).Data,'Demand')
-    uiwait(msgbox('Error: you must load demand data','Error','modal'))
+set(handles.popupmenuDemand,'String',list,'Value',1);
+list(end+1) = {'Monthly Costs'};
+set(handles.popupmenuAxes,'String',list,'Value',1);
+if get(handles.toggleSimulatedBuilding,'Value')==1
+    a = get(handles.toggleHistorical,'BackgroundColor');
+    b = get(handles.toggleSimulatedBuilding,'BackgroundColor');
+    c = get(handles.toggleHistorical,'ForegroundColor');
+    d = get(handles.toggleSimulatedBuilding,'ForegroundColor');
+    set(handles.toggleSimulatedBuilding,'Value',0,'BackgroundColor',a,'ForegroundColor',c);
+    set(handles.toggleHistorical,'Value',1,'BackgroundColor',b,'ForegroundColor',d);
 else
-    Outs =  fieldnames(testSystems(SYSINDEX).Data.Demand);
-    list = {};
-    if strcmp(Outs{1},'E')
-        list(end+1) = {'Electrical Demand'};
-    elseif strcmp(Outs{1},'C')
-        list(end+1) = {'Cooling Demand'};
-    elseif strcmp(Outs{1},'H')
-        list(end+1) = {'Heating Demand'};
-    elseif strcmp(Outs{1},'W')
-        list(end+1) = {'Water Demand'};
-    end
-    set(handles.popupmenuDemand,'String',list,'Value',1);
-    list(end+1) = {'Monthly Costs'};
-    set(handles.popupmenuAxes,'String',list,'Value',1);
-    if get(handles.toggleSimulatedBuilding,'Value')==1
-        a = get(handles.toggleHistorical,'BackgroundColor');
-        b = get(handles.toggleSimulatedBuilding,'BackgroundColor');
-        c = get(handles.toggleHistorical,'ForegroundColor');
-        d = get(handles.toggleSimulatedBuilding,'ForegroundColor');
-        set(handles.toggleSimulatedBuilding,'Value',0,'BackgroundColor',a,'ForegroundColor',c);
-        set(handles.toggleHistorical,'Value',1,'BackgroundColor',b,'ForegroundColor',d);
-    else set(handles.toggleHistorical,'Value',1); %was already pressed
-    end
-    list = {'textBuilding';'pushbuttonPrev';'textArea';'textOccupancy';'textLighting';'textEquipment';'editComfort';'textComfort';'editRvalue';...
-            'textClimate';'editArea';'editOccupancy';'pushbuttonOccupancy';'editLighting';'pushbuttonLighting';'editEquipment';'pushbuttonEquipment';...
-            'pushbuttonNext';'textRvalue';'editAirChange';'textAirChange';'editDewPoint';'textDewPoint';'editColdSupply';...
-            'textColdSupply';'editDamper';'textDamper';'popupmenuBuilding';'popupmenuWeather';'SaveBuilding';'pushbuttonReset';...
-            'textVariability';'textDaily';'editDailyVariability';'textInterHour';'editHourlyVariability';'textIntraHour';'editSubHourlyVariability';};
-    for i = 1:1:length(list)
-        set(handles.(list{i}),'Visible','Off');
-    end
-    set(handles.pushbuttonLoad,'Visible','On')
+    set(handles.toggleHistorical,'Value',1); %was already pressed
 end
+set(handles.uipanelBuildParam2,'Visible','Off');
+set(handles.uipanelBuildParam1,'Visible','Off');
+list = {'textBuilding';'pushbuttonPrev';'pushbuttonNext';'popupmenuBuilding';'popupmenuWeather';'SaveBuilding';'pushbuttonReset';...
+        'textVariability';'textDaily';'editDailyVariability';'textInterHour';'editHourlyVariability';'textIntraHour';'editSubHourlyVariability';};
+for i = 1:1:length(list)
+    set(handles.(list{i}),'Visible','Off');
+end
+set(handles.LoadTestData,'Visible','On')
 
 
 function pushbuttonPrev_Callback(hObject, eventdata, handles)
 global testSystems SYSINDEX
-list = {'pushbuttonPrev';'editComfort';'textComfort';'editRvalue';'textRvalue';'editAirChange';'textAirChange';'editDewPoint';'textDewPoint';'editColdSupply';...
-        'textColdSupply';'editDamper';'textDamper';'SaveBuilding';'pushbuttonReset';'editDailyVariability';'editHourlyVariability';'editSubHourlyVariability';};
-for i = 1:1:length(list)
-    set(handles.(list{i}),'Visible','Off');
-end
-set(handles.pushbuttonNext,'Visible','on');
-set(handles.editArea,'Visible','On','String',num2str(testSystems(SYSINDEX).Building.Area*10.76))
-set(handles.textArea,'Visible','On')
-set(handles.editOccupancy,'Visible','On','String',num2str(testSystems(SYSINDEX).Building.VariableStruct.occupancy*10.76))
-set(handles.textOccupancy,'Visible','On')
-set(handles.pushbuttonOccupancy,'Visible','On')
-set(handles.editLighting,'Visible','On','String',num2str(testSystems(SYSINDEX).Building.VariableStruct.InteriorLights*10.76))
-set(handles.textLighting,'Visible','On')
-set(handles.pushbuttonLighting,'Visible','On')
-set(handles.editEquipment,'Visible','On','String',num2str(testSystems(SYSINDEX).Building.VariableStruct.equipment*10.76))
-set(handles.textEquipment,'Visible','On')
-set(handles.pushbuttonEquipment,'Visible','On')
+set(handles.uipanelBuildParam2,'Visible','Off');
+set(handles.uipanelBuildParam1,'Visible','On');
+set(handles.editArea,'String',num2str(testSystems(SYSINDEX).Building.Area*10.76))
+set(handles.editWindowWall,'String',num2str(testSystems(SYSINDEX).Building.VariableStruct.WindowWallRatio))
+set(handles.editOccupancy,'String',num2str(testSystems(SYSINDEX).Building.VariableStruct.occupancy*10.76))
+set(handles.editLighting,'String',num2str(testSystems(SYSINDEX).Building.VariableStruct.InteriorLights*10.76))
+set(handles.editEquipment,'String',num2str(testSystems(SYSINDEX).Building.VariableStruct.equipment*10.76))
 
 function pushbuttonNext_Callback(hObject, eventdata, handles)
 global testSystems SYSINDEX
-list = {'pushbuttonNext';'textArea';'textOccupancy';'textLighting';'textEquipment';'editArea';'editOccupancy';'pushbuttonOccupancy';'editLighting';'pushbuttonLighting';'editEquipment';'pushbuttonEquipment';};
-for i = 1:1:length(list)
-    set(handles.(list{i}),'Visible','Off');
-end
-set(handles.pushbuttonPrev,'Visible','On');
-set(handles.editComfort,'Visible','On','String',num2str(testSystems(SYSINDEX).Building.VariableStruct.Comfort*9/5))
-set(handles.textComfort,'Visible','On')
-set(handles.editRvalue,'Visible','On','String',num2str(testSystems(SYSINDEX).Building.VariableStruct.Resistance*1055/3600*9/5*10.76/1000))
-set(handles.textRvalue,'Visible','On')
-set(handles.editAirChange,'Visible','On','String',num2str(testSystems(SYSINDEX).Building.VariableStruct.AirChangePerHr))
-set(handles.textAirChange,'Visible','On')
-set(handles.editDewPoint,'Visible','On','String',num2str(testSystems(SYSINDEX).Building.VariableStruct.DPset*9/5+32))
-set(handles.textDewPoint,'Visible','On')
-set(handles.editColdSupply,'Visible','On','String',num2str(testSystems(SYSINDEX).Building.VariableStruct.ColdAirSet*9/5+32))
-set(handles.textColdSupply,'Visible','On')
-set(handles.editDamper,'Visible','On','String',num2str(testSystems(SYSINDEX).Building.VariableStruct.MinDamper))
-set(handles.textDamper,'Visible','On')
+set(handles.uipanelBuildParam2,'Visible','On');
+set(handles.uipanelBuildParam1,'Visible','Off');
+set(handles.editComfort,'String',num2str(testSystems(SYSINDEX).Building.VariableStruct.Comfort*9/5))
+set(handles.editRvalue,'String',num2str(testSystems(SYSINDEX).Building.VariableStruct.WallRvalue*1055/3600*9/5*10.76/1000))
+set(handles.editUvalue,'String',num2str(testSystems(SYSINDEX).Building.VariableStruct.WindowUvalue))
+set(handles.editAirChange,'String',num2str(testSystems(SYSINDEX).Building.VariableStruct.AirChangePerHr))
+set(handles.editDewPoint,'String',num2str(testSystems(SYSINDEX).Building.VariableStruct.DPset*9/5+32))
+set(handles.editColdSupply,'String',num2str(testSystems(SYSINDEX).Building.VariableStruct.ColdAirSet*9/5+32))
+set(handles.editFanPower,'String',num2str(testSystems(SYSINDEX).Building.VariableStruct.FanPower))
 
 
-% --- Executes on button press in pushbuttonLoad.
-function pushbuttonLoad_Callback(hObject, eventdata, handles)
+% --- Executes on button press in LoadTestData.
+function LoadTestData_Callback
+global TestData testSystems
+TestData = [];
 %load historical data
+loadTestData
+for i_ts = 1:1:length(testSystems)
+    testSystems(i_ts).Design = [];%empty design day solution
+end
 
 
 function SaveBuilding_Callback(hObject, eventdata, handles)
@@ -1078,7 +806,8 @@ global testSystems SYSINDEX
 testSystems(SYSINDEX).Building.Area = str2double(get(hObject,'String'))/10.76;%convert to m^2
 % volume of treated air space (assume height of 3m)
 testSystems(SYSINDEX).Building.Volume = testSystems(SYSINDEX).Building.Area*3; % m^3
-calculateBuildingProfile(handles,2)
+reLoadBuilding(testSystems(1).Building,testSystems(1).Network)
+sliderDate2_Callback([],[],[])
 
 function editArea_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
@@ -1086,13 +815,17 @@ if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgr
 end
 
 function pushbuttonOccupancy_Callback(hObject, eventdata, handles)
+global testSystems
+handles = guihandles;
 ScheduleEditor(hObject,'occ',handles)
-calculateBuildingProfile(handles,2)
+reLoadBuilding(testSystems(1).Building,testSystems(1).Network)
+sliderDate2_Callback([],[],handles)
 
 function editOccupancy_Callback(hObject, eventdata, handles)
 global testSystems SYSINDEX
 testSystems(SYSINDEX).Building.VariableStruct.occupancy = str2double(get(hObject,'String'))/10.76;%convert to m^2
-calculateBuildingProfile(handles,2)
+reLoadBuilding(testSystems(1).Building,testSystems(1).Network)
+sliderDate2_Callback([],[],[])
 
 function editOccupancy_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
@@ -1100,13 +833,17 @@ if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgr
 end
 
 function pushbuttonLighting_Callback(hObject, eventdata, handles)
+global testSystems
+handles = guihandles;
 ScheduleEditor(hObject,'light',handles)
-calculateBuildingProfile(handles,2)
+reLoadBuilding(testSystems(1).Building,testSystems(1).Network)
+sliderDate2_Callback([],[],handles)
 
 function editLighting_Callback(hObject, eventdata, handles)
 global testSystems SYSINDEX
 testSystems(SYSINDEX).Building.VariableStruct.lighting = str2double(get(hObject,'String'))/10.76;%convert to m^2
-calculateBuildingProfile(handles,2)
+reLoadBuilding(testSystems(1).Building,testSystems(1).Network)
+sliderDate2_Callback([],[],[])
 
 function editLighting_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
@@ -1114,13 +851,17 @@ if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgr
 end
 
 function pushbuttonEquipment_Callback(hObject, eventdata, handles)
-ScheduleEditor(hObject,'eqiuip',handles)
-calculateBuildingProfile(handles,2)
+global testSystems
+handles = guihandles;
+ScheduleEditor(hObject,'equip',handles)
+reLoadBuilding(testSystems(1).Building,testSystems(1).Network)
+sliderDate2_Callback([],[],handles)
 
 function editEquipment_Callback(hObject, eventdata, handles)
 global testSystems SYSINDEX
 testSystems(SYSINDEX).Building.VariableStruct.equipment = str2double(get(hObject,'String'))/10.76;%convert to m^2
-calculateBuildingProfile(handles,2)
+reLoadBuilding(testSystems(1).Building,testSystems(1).Network)
+sliderDate2_Callback([],[],[])
 
 function editEquipment_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
@@ -1130,7 +871,8 @@ end
 function editComfort_Callback(hObject, eventdata, handles)
 global testSystems SYSINDEX
 testSystems(SYSINDEX).Building.VariableStruct.Comfort = str2double(get(hObject,'String'))*5/9;%convert to Celcius
-calculateBuildingProfile(handles,2)
+reLoadBuilding(testSystems(1).Building,testSystems(1).Network)
+sliderDate2_Callback([],[],[])
 
 function editComfort_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
@@ -1144,8 +886,10 @@ global testSystems SYSINDEX
 % Q= U*A*deltaT, resistance = 1/U
 % a value of U = 0.2 BTU/hr-F-ft^2 converts to 1.1352e-3 kJ/s-K-m^2 (0.2*1055/3600*9/5*10.76/1000)  10.76ft^2 per m^2, 1055J/BTU, 9/5F per K
 % inverting gives Resistance = 880.92 m^2*K/kW
-testSystems(SYSINDEX).Building.VariableStruct.Resistance = str2double(get(hObject,'String'))*3600/1055*5/9*1000/10.76;% convert hr-F-ft^2/BTU to m^2*K/kW
-calculateBuildingProfile(handles,2)
+testSystems(SYSINDEX).Building.VariableStruct.WallRvalue = str2double(get(hObject,'String'))*3600/1055*5/9*1000/10.76;% convert hr-F-ft^2/BTU to m^2*K/kW
+testSystems(SYSINDEX).Building.VariableStruct.RoofRvalue = str2double(get(hObject,'String'))*3600/1055*5/9*1000/10.76;% convert hr-F-ft^2/BTU to m^2*K/kW
+reLoadBuilding(testSystems(1).Building,testSystems(1).Network)
+sliderDate2_Callback([],[],[])
 
 function editRvalue_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
@@ -1155,7 +899,8 @@ end
 function editAirChange_Callback(hObject, eventdata, handles)
 global testSystems SYSINDEX
 testSystems(SYSINDEX).Building.VariableStruct.AirChangePerHr = str2double(get(hObject,'String'));
-calculateBuildingProfile(handles,2)
+reLoadBuilding(testSystems(1).Building,testSystems(1).Network)
+sliderDate2_Callback([],[],[])
 
 function editAirChange_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
@@ -1165,7 +910,8 @@ end
 function editDewPoint_Callback(hObject, eventdata, handles)
 global testSystems SYSINDEX
 testSystems(SYSINDEX).Building.VariableStruct.DPset = (str2double(get(hObject,'String'))-32)*5/9;
-calculateBuildingProfile(handles,2)
+reLoadBuilding(testSystems(1).Building,testSystems(1).Network)
+sliderDate2_Callback([],[],[])
 
 function editDewPoint_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
@@ -1175,19 +921,43 @@ end
 function editColdSupply_Callback(hObject, eventdata, handles)
 global testSystems SYSINDEX
 testSystems(SYSINDEX).Building.VariableStruct.ColdAirSet = (str2double(get(hObject,'String'))-32)*5/9;
-calculateBuildingProfile(handles,2)
+reLoadBuilding(testSystems(1).Building,testSystems(1).Network)
+sliderDate2_Callback([],[],[])
 
 function editColdSupply_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor','white');
 end
 
-function editDamper_Callback(hObject, eventdata, handles)
+function editFanPower_Callback(hObject, eventdata, handles)
 global testSystems SYSINDEX
-testSystems(SYSINDEX).Building.VariableStruct.MinDamper = str2double(get(hObject,'String'));
-calculateBuildingProfile(handles,2)
+testSystems(SYSINDEX).Building.VariableStruct.Fan_Power = str2double(get(hObject,'String'));
+reLoadBuilding(testSystems(1).Building,testSystems(1).Network)
+sliderDate2_Callback([],[],[])
 
-function editDamper_CreateFcn(hObject, eventdata, handles)
+function editFanPower_CreateFcn(hObject, eventdata, handles)
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+function editWindowWall_Callback(hObject, eventdata, handles)
+global testSystems SYSINDEX
+testSystems(SYSINDEX).Building.VariableStruct.WindowWallRatio = str2double(get(hObject,'String'));
+reLoadBuilding(testSystems(1).Building,testSystems(1).Network)
+sliderDate2_Callback([],[],[])
+
+function editWindowWall_CreateFcn(hObject, eventdata, handles)
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+function editUvalue_Callback(hObject, eventdata, handles)
+global testSystems SYSINDEX
+testSystems(SYSINDEX).Building.VariableStruct.WindowUvalue = str2double(get(hObject,'String'));
+reLoadBuilding(testSystems(1).Building,testSystems(1).Network)
+sliderDate2_Callback([],[],[])
+
+function editUvalue_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor','white');
 end
@@ -1195,7 +965,8 @@ end
 function editDailyVariability_Callback(hObject, eventdata, handles)
 global testSystems SYSINDEX
 testSystems(SYSINDEX).Building.VariableStruct.DailyVariability = str2double(get(hObject,'String'));
-calculateBuildingProfile(handles,2)
+reLoadBuilding(testSystems(1).Building,testSystems(1).Network)
+sliderDate2_Callback([],[],[])
 
 function editDailyVariability_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
@@ -1205,7 +976,8 @@ end
 function editHourlyVariability_Callback(hObject, eventdata, handles)
 global testSystems SYSINDEX
 testSystems(SYSINDEX).Building.VariableStruct.HourlyVariability = str2double(get(hObject,'String'));
-calculateBuildingProfile(handles,2)
+reLoadBuilding(testSystems(1).Building,testSystems(1).Network)
+sliderDate2_Callback([],[],[])
 
 function editHourlyVariability_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
@@ -1215,83 +987,20 @@ end
 function editSubHourlyVariability_Callback(hObject, eventdata, handles)
 global testSystems SYSINDEX
 testSystems(SYSINDEX).Building.VariableStruct.SubHourlyVariability = str2double(get(hObject,'String'));
-calculateBuildingProfile(handles,2)
+reLoadBuilding(testSystems(1).Building,testSystems(1).Network)
+sliderDate2_Callback([],[],[])
 
 function editSubHourlyVariability_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor','white');
 end
 
-function calculateBuildingProfile(handles,tab)
-global testSystems SYSINDEX
-%find the current date
-DateSim = datenum([2017,1,1]) + get(handles.(strcat('sliderDate',num2str(tab))),'Value');
-maxSlider = get(handles.(strcat('sliderZoom',num2str(tab))),'Max');
-lastDate = datenum([2018,1,1]);
-if get(handles.(strcat('sliderZoom',num2str(tab))),'Value')== maxSlider;
-%     DateEnd = lastDate;
-    A = datevec(DateSim);
-    DateSim = datenum([A(1), 1, 1]);
-    DateEnd = datenum([A(1)+1, 1, 1]);%1 year
-    nS = 12*(DateEnd - DateSim); %2 hour INCREMENT
-elseif floor(get(handles.(strcat('sliderZoom',num2str(tab))),'Value'))<1
-    DateEnd = min(lastDate,DateSim + 1);%1 day
-    nS = 24*6; %10 MIN INCREMENT
-elseif floor(get(handles.(strcat('sliderZoom',num2str(tab))),'Value'))<2
-    DateEnd = min(lastDate,DateSim + 7);%1 week
-    nS = 24*7; %1 hour INCREMENT
-elseif floor(get(handles.(strcat('sliderZoom',num2str(tab))),'Value'))<3
-    A = datevec(DateSim);
-    DateSim = datenum([A(1), A(2), 1]);
-    DateEnd = datenum([A(1), A(2)+1, 1]);%1 month
-    nS = 24*(DateEnd - DateSim); %1 hour INCREMENT
-elseif floor(get(handles.(strcat('sliderZoom',num2str(tab))),'Value'))<4
-    A = datevec(DateSim);
-    DateSim = datenum([A(1), A(2), 1]);
-    DateEnd = datenum([A(1), min(12,A(2)+3), 1]);%3 month
-    nS = 24*(DateEnd - DateSim); %1 hour INCREMENT
-end
-Date = linspace(DateSim,DateEnd,nS+1)';
-nB = length(testSystems(SYSINDEX).Building);
-Electric = zeros(nS+1,1);
-for i = 1:1:nB
-    [Equipment,InteriorLighting,ExteriorLighting,Cooling,Heating,FanPower,OtherLoads] = BuildingProfile(testSystems(SYSINDEX).Building(i),testSystems(SYSINDEX).Weather,Date,[]); % testSystems(SYSINDEX).Building(i).QPform.Location
-    Electric = Electric + Equipment + InteriorLighting + ExteriorLighting + FanPower + Cooling/testSystems(SYSINDEX).Building(i).VariableStruct.COP_C + Heating/testSystems(SYSINDEX).Building(i).VariableStruct.COP_H + OtherLoads;
-end
-% Date = linspace(datenum([2017,1,1]),datenum([2018,1,1]),365*24/testSystems(SYSINDEX).optimoptions.Resolution+1)';
-% Compare2Eplus(testSystems(SYSINDEX).Building(i),testSystems(SYSINDEX).Weather,Date,testSystems(SYSINDEX).Building(i).QPform.Location);
-if tab ==1
-    list = get(handles.popupmenuAxes,'String');
-    item = list{get(handles.popupmenuAxes,'Value')};
-elseif tab ==2
-    list = get(handles.popupmenuDemand,'String');
-    item = list{get(handles.popupmenuDemand,'Value')};
-end
-if strfind(item,'Electric')
-    data = Electric;
-    color = {'black'};
-elseif strfind(item,'Cooling')
-    data = Cooling;
-    color = {'blue'};
-elseif strfind(item,'Heating')
-    data = Heating;
-    color = {'red'};
-end
-units = ' (kW)';
-if tab ==1
-    PlotData(handles.axesMain,Date,data,[item, units],color)
-    PlotHistogram(handles.axesCumulative,data,[item, units])
-elseif tab ==2
-    PlotData(handles.axesBuildLoad,Date,data,[item, units],color)
-    PlotHistogram(handles.axesBuildCumulative,data,[item, units])
-end
-
 % --- Executes on selection savebuilding in popupmenuDemand.
 function popupmenuDemand_Callback(hObject, eventdata, handles)
-popupmenu_Callback(hObject, eventdata, handles)
-% list = get(handles.popupmenuDemand,'String');
-% item = list{get(handles.popupmenuDemand,'Value')};
-% PlotHistorical(handles,item,2)
+handles = guihandles;
+list = get(handles.popupmenuDemand,'String');
+item = list{get(handles.popupmenuDemand,'Value')};
+PlotHistorical(handles,item,2)
 
 % --- Executes during object creation, after setting all properties.
 function popupmenuDemand_CreateFcn(hObject, eventdata, handles)
@@ -1300,7 +1009,10 @@ if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgr
 end
 
 function sliderDate2_Callback(hObject, eventdata, handles)
-popupmenu_Callback(handles.popupmenuDemand, eventdata, handles)
+if isempty(handles) || strcmp(get(hObject,'Tag'),'sliderDate2')
+    handles = guihandles;
+end
+PlotDemand(handles)
 
 function sliderDate2_CreateFcn(hObject, eventdata, handles)
 if isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
@@ -1308,12 +1020,13 @@ if isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColo
 end
 
 function sliderZoom2_Callback(hObject, eventdata, handles)
+handles = guihandles;
 if get(handles.sliderZoom2,'Value')== get(handles.sliderZoom2,'Max')
     set(handles.sliderDate2,'Visible','off');set(handles.textDate2,'Visible','off');
 elseif strcmp(get(handles.sliderDate2,'Visible'),'off')
     set(handles.sliderDate2,'Visible','on');set(handles.textDate2,'Visible','on');
 end
-popupmenu_Callback(handles.popupmenuDemand, eventdata, handles)
+sliderDate2_Callback([],[],[])
 
 function sliderZoom2_CreateFcn(hObject, eventdata, handles)
 if isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
@@ -1321,83 +1034,7 @@ if isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColo
 end
 
 
-%% Tab 3 functions
-function SetupSystem(hObject,eventData,handles)
-% This function updates the GUI graphic to represent the current plant
-% configuration, showing buttons and lines connecting generating sources to
-% the apropriate bus (AC, DC, thermal...)
-global testSystems SYSINDEX GENINDEX
-% Put Plant.Generator information into lists
-nG = length(testSystems(SYSINDEX).Generator);
-isType = zeros(nG,1);
-isFC = zeros(nG,1);
-type = cell(nG,1);
-name = cell(nG,1);
-source = cell(nG,1);
-for i = 1:nG
-    type(i) = {testSystems(SYSINDEX).Generator(i).Type};
-    name(i) = {testSystems(SYSINDEX).Generator(i).Name};
-    source(i) = {testSystems(SYSINDEX).Generator(i).Source};
-    if (strcmp(type(i),'CHP Generator') || strcmp(type(i),'Electric Generator')) && testSystems(SYSINDEX).Generator(i).VariableStruct.isFuelCell
-        isFC(i) = 1;
-    end
-end
-
-% Find indices of relevant components
-str = get(hObject,'String');
-switch str
-    case {'Fuel Cell';'ICE / mGT'}
-        if strcmp(str,'Fuel Cell')
-            isType = strcmp('CHP Generator',type).*isFC + strcmp('Electric Generator',type).*isFC;
-        else
-            isType = strcmp('CHP Generator',type).*(~isFC) + strcmp('Electric Generator',type).*(~isFC);
-        end
-    case 'Utility'
-        isType = strcmp('Utility',type);
-    case 'Solar PV'
-        isType = strcmp('Solar',type);
-    case 'Air Heater'
-        isType = strcmp('Heater',type);
-    case 'TES 2' % feeds Hot Water Demands
-        isType = strcmp('Thermal Storage',type).*strcmp('Heat',source);
-    case 'TES 3' % feeds Cooling Demands
-        isType = strcmp('Thermal Storage',type).*strcmp('Cooling',source);
-    case 'Battery'
-        isType = strcmp('Electric Storage',type);
-    case 'Chiller'
-        isType = strcmp('Chiller',type);
-    case 'Water Heater'
-        isType = strcmp('Boiler',type);
-%     Following buttons don't work until we decided what they display
-%     case 'Heating Demands'
-%         GENINDEX = -1;
-%     case 'Hot Water Demands'
-%         GENINDEX = -2;
-%     case 'Cooling Demands'
-%         GENINDEX = -3;
-%     case 'AC / DC Conversion'
-%         GENINDEX = -4;
-end
-isType = nonzeros(linspace(1,nG,nG)'.*isType);
-
-% Decide whether to show the user a list of the chosen type
-if ~isempty(isType)
-    if length(isType) ==1
-        GENINDEX = isType;
-    else
-        % s - selection index; OK - whether an option was selected
-        [s,OK] = listdlg('PromptString','Select desired component', ...
-            'ListSize',[160 100], ...
-            'SelectionMode','single', ...
-            'ListString',name(isType));
-        if OK
-            GENINDEX = isType(s);
-            EditSystem(handles)
-        end
-    end
-end
-EditSystem(handles)
-
+%% Tab 3 functions (any changes to the system specification or perfomance features requires the designn days to be re-run)
 function saveSystem_Callback(hObject, eventdata, handles)
 global GENINDEX SYSINDEX testSystems Model_dir
 component = testSystems(SYSINDEX).Generator(GENINDEX);
@@ -1410,6 +1047,8 @@ function Library_Callback(hObject, eventdata, handles)
 set(handles.uipanelLibrary,'Visible','on');
 set(handles.uipanelGenSpec,'Visible','off');
 set(handles.Library,'Visible','off');
+set(handles.saveSystem,'Visible','off');
+set(handles.pushbuttonRemove,'Visible','off');
 
 %% The following need to represent different things for each system selected in 3rd tab
 function CompName_Callback(hObject, eventdata, handles)
@@ -1421,10 +1060,6 @@ old = old(1:first);
 new = cellstr(strcat(old,get(hObject,'String')));
 testSystems(SYSINDEX).Network.Equipment(GENINDEX) = new;
 
-
-
-
-
 function CompName_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor','white');
@@ -1435,27 +1070,36 @@ global testSystems SYSINDEX GENINDEX
 Gen = testSystems(SYSINDEX).Generator(GENINDEX);
 if strcmp(Gen.Type,'Utility')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.SumRates(1,1) = str2double(get(hObject,'String'));
-elseif strcmp(Gen.Type,'CHP Generator') || strcmp(Gen.Type,'Electric Generator')
+elseif ismember(Gen.Type,{'CHP Generator';'Electric Generator';'Heater';'Chiller'}) 
+    handles = guihandles;
+    testSystems(SYSINDEX).Generator(GENINDEX) = updateComponentSpec(testSystems(SYSINDEX).Generator(GENINDEX),'UB',str2double(get(hObject,'String')));
+    p = eig(testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.StateSpace.A);
+    w_0 = sqrt(real(p(1))^2 + imag(p(1))^2);
+    zeta = -real(p(1)+p(2))/(2*w_0);
+    set(handles.compText5,'String',num2str(w0));
+    set(handles.compText6,'String',num2str(zeta));
+    secondOrderResponse(testSystems(SYSINDEX).Generator(GENINDEX),handles);
+elseif ismember(Gen.Type,{'Electric Storage';'Thermal Storage';}) 
     testSystems(SYSINDEX).Generator(GENINDEX).Size = str2double(get(hObject,'String'));
 elseif strcmp(Gen.Type,'Solar')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.Size = str2double(get(hObject,'String'));
-elseif strcmp(Gen.Type,'Electric Storage')
-    testSystems(SYSINDEX).Generator(GENINDEX).Size = str2double(get(hObject,'String'));
-elseif strcmp(Gen.Type,'Thermal Storage')
-    testSystems(SYSINDEX).Generator(GENINDEX).Size = str2double(get(hObject,'String'));
 end
-
+testSystems(SYSINDEX).Design = [];%empty design day solution
 
 function compText2_Callback(hObject, eventdata, handles)
 global testSystems SYSINDEX GENINDEX
 Gen = testSystems(SYSINDEX).Generator(GENINDEX);
 if strcmp(Gen.Type,'Utility')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.SumRates(1,2) = str2double(get(hObject,'String'));
-elseif strcmp(Gen.Type,'CHP Generator') || strcmp(Gen.Type,'Electric Generator')
-    newend = testSystems(SYSINDEX).Generator(GENINDEX).Size/str2double(get(hObject,'String'));
-    l = length(testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.Startup.Electricity);
-    begin = testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.Startup.Electricity(1);
-    testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.Startup.Electricity = linspace(begin,newend,l);
+elseif ismember(Gen.Type,{'CHP Generator';'Electric Generator';'Heater';'Chiller'}) 
+    handles = guihandles;
+    testSystems(SYSINDEX).Generator(GENINDEX) = updateComponentSpec(testSystems(SYSINDEX).Generator(GENINDEX),'LB',str2double(get(hObject,'String')));
+    p = eig(testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.StateSpace.A);
+    w0 = sqrt(real(p(1))^2 + imag(p(1))^2);
+    zeta = -real(p(1)+p(2))/(2*w0);
+    set(handles.compText5,'String',num2str(w0));
+    set(handles.compText6,'String',num2str(zeta));
+    secondOrderResponse(testSystems(SYSINDEX).Generator(GENINDEX),handles);
 elseif strcmp(Gen.Type,'Solar')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.Sizem2 = str2double(get(hObject,'String'));
 elseif strcmp(Gen.Type,'Electric Storage')
@@ -1463,18 +1107,22 @@ elseif strcmp(Gen.Type,'Electric Storage')
 elseif strcmp(Gen.Type,'Thermal Storage')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.SizeLiter = str2double(get(hObject,'String'));
 end
+testSystems(SYSINDEX).Design = [];%empty design day solution
 
 function compText3_Callback(hObject, eventdata, handles)
 global testSystems SYSINDEX GENINDEX
 Gen = testSystems(SYSINDEX).Generator(GENINDEX);
 if strcmp(Gen.Type,'Utility')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.SumRates(2,1) = str2double(get(hObject,'String'));
-elseif strcmp(Gen.Type,'CHP Generator') || strcmp(Gen.Type,'Electric Generator')
-    if isfield(Gen.VariableStruct,'dX_dt')
-        testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.dX_dt = str2double(get(hObject,'String'));
-    else
-        hObject.String='--';
-    end
+elseif ismember(Gen.Type,{'CHP Generator';'Electric Generator';'Heater';'Chiller'})
+    handles = guihandles;
+    testSystems(SYSINDEX).Generator(GENINDEX) = updateComponentSpec(testSystems(SYSINDEX).Generator(GENINDEX),'dX_dt',str2double(get(hObject,'String')));
+    p = eig(testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.StateSpace.A);
+    w0 = sqrt(real(p(1))^2 + imag(p(1))^2);
+    zeta = -real(p(1)+p(2))/(2*w0);
+    set(handles.compText5,'String',num2str(w0));
+    set(handles.compText6,'String',num2str(zeta));
+    secondOrderResponse(testSystems(SYSINDEX).Generator(GENINDEX),handles);
 elseif strcmp(Gen.Type,'Solar')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.Eff = str2double(get(hObject,'String'));
 elseif strcmp(Gen.Type,'Electric Storage')
@@ -1482,13 +1130,14 @@ elseif strcmp(Gen.Type,'Electric Storage')
 elseif strcmp(Gen.Type,'Thermal Storage')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.Tcold = str2double(get(hObject,'String'));
 end
+testSystems(SYSINDEX).Design = [];%empty design day solution
 
 function compText4_Callback(hObject, eventdata, handles)
 global testSystems SYSINDEX GENINDEX
 Gen = testSystems(SYSINDEX).Generator(GENINDEX);
 if strcmp(Gen.Type,'Utility')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.SumRates(2,2) = str2double(get(hObject,'String'));
-elseif strcmp(Gen.Type,'CHP Generator') || strcmp(Gen.Type,'Electric Generator')
+elseif ismember(Gen.Type,{'CHP Generator';'Electric Generator';'Heater';'Chiller';})
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.StartCost = str2double(get(hObject,'String'));
 elseif strcmp(Gen.Type,'Solar')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.Azimuth = str2double(get(hObject,'String'));
@@ -1497,12 +1146,18 @@ elseif strcmp(Gen.Type,'Electric Storage')
 elseif strcmp(Gen.Type,'Thermal Storage')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.Thot = str2double(get(hObject,'String'));
 end
+testSystems(SYSINDEX).Design = [];%empty design day solution
 
 function compText5_Callback(hObject, eventdata, handles)
 global testSystems SYSINDEX GENINDEX
 Gen = testSystems(SYSINDEX).Generator(GENINDEX);
 if strcmp(Gen.Type,'Utility')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.SumRates(3,1) = str2double(get(hObject,'String'));
+elseif ismember(Gen.Type,{'CHP Generator';'Electric Generator';'Heater';'Chiller';})
+    handles = guihandles;
+    testSystems(SYSINDEX).Generator(GENINDEX) = updateComponentSpec(testSystems(SYSINDEX).Generator(GENINDEX),'w0',str2double(get(hObject,'String')));
+    set(handles.compText3,'String',num2str(testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.dX_dt));
+    secondOrderResponse(testSystems(SYSINDEX).Generator(GENINDEX),handles);
 elseif strcmp(Gen.Type,'Solar')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.Tilt = str2double(get(hObject,'String'));
 elseif strcmp(Gen.Type,'Electric Storage')
@@ -1510,18 +1165,27 @@ elseif strcmp(Gen.Type,'Electric Storage')
 elseif strcmp(Gen.Type,'Thermal Storage')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.dX_dt = str2double(get(hObject,'String'));
 end
-
+testSystems(SYSINDEX).Design = [];%empty design day solution
 
 function compText6_Callback(hObject, eventdata, handles)
 global testSystems SYSINDEX GENINDEX
 Gen = testSystems(SYSINDEX).Generator(GENINDEX);
 if strcmp(Gen.Type,'Utility')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.SumRates(3,2) = str2double(get(hObject,'String'));
+elseif ismember(Gen.Type,{'CHP Generator';'Electric Generator';'Heater';'Chiller';})
+    handles = guihandles;
+    testSystems(SYSINDEX).Generator(GENINDEX) = updateComponentSpec(testSystems(SYSINDEX).Generator(GENINDEX),'zeta',str2double(get(hObject,'String')));
+    p = eig(testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.StateSpace.A);
+    w0 = sqrt(real(p(1))^2 + imag(p(1))^2);
+    zeta = -real(p(1)+p(2))/(2*w0);
+    set(handles.compText5,'String',num2str(w0));
+    secondOrderResponse(testSystems(SYSINDEX).Generator(GENINDEX),handles);
 elseif strcmp(Gen.Type,'Electric Storage')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.PeakCharge = str2double(get(hObject,'String'));
 elseif strcmp(Gen.Type,'Thermal Storage')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.ChargeEff = str2double(get(hObject,'String'));
 end
+testSystems(SYSINDEX).Design = [];%empty design day solution
 
 function compText7_Callback(hObject, eventdata, handles)
 global testSystems SYSINDEX GENINDEX
@@ -1531,6 +1195,7 @@ if strcmp(Gen.Type,'Electric Storage')
 elseif strcmp(Gen.Type,'Thermal Storage')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.DischargeEff = str2double(get(hObject,'String'));
 end
+testSystems(SYSINDEX).Design = [];%empty design day solution
 
 function compText8_Callback(hObject, eventdata, handles)
 global testSystems SYSINDEX GENINDEX
@@ -1540,6 +1205,7 @@ if strcmp(Gen.Type,'Electric Storage')
 elseif strcmp(Gen.Type,'Thermal Storage')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.SelfDischarge = str2double(get(hObject,'String'));
 end
+testSystems(SYSINDEX).Design = [];%empty design day solution
 
 function compText9_Callback(hObject, eventdata, handles)
 global testSystems SYSINDEX GENINDEX
@@ -1547,6 +1213,7 @@ Gen = testSystems(SYSINDEX).Generator(GENINDEX);
 if strcmp(Gen.Type,'Thermal Storage')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.FillRate = str2double(get(hObject,'String'));
 end
+testSystems(SYSINDEX).Design = [];%empty design day solution
 
 function compText10_Callback(hObject, eventdata, handles)
 global testSystems SYSINDEX GENINDEX
@@ -1554,6 +1221,7 @@ Gen = testSystems(SYSINDEX).Generator(GENINDEX);
 if strcmp(Gen.Type,'Thermal Storage')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.DischRate = str2double(get(hObject,'String'));
 end
+testSystems(SYSINDEX).Design = [];%empty design day solution
 
 function uitableEffCurve_CellEditCallback(hObject, eventdata, handles)
 global testSystems SYSINDEX GENINDEX
@@ -1579,26 +1247,7 @@ if length(Outputs) == 5
 else
     testSystems(SYSINDEX).Generator(GENINDEX).Output.(Outputs{nOutput(2)})(nOutput(1)) = newValue;
 end
-
-function checkboxSeasonal_Callback(hObject, eventdata, handles)
-handlesc =get(handles.uipanelGenSpec,'Children');
-if get(hObject,'Value')==1
-    EditSystem('createPopup',handles,{'Summer','Winter'},[3 31.5 22 1],14,'bold','popupRates',1)
-    x.Value = 1;
-    MainScreen1('popupRates_Callback',x,0,handles)
-    EditSystem('createText',handles,'From',[1 28.5 8 1.5],'Datetext',12,'bold')
-    EditSystem('createText',handles,'To',[25 28.5 5 1.5],'Datetext',12,'bold')
-
-else
-    for i=1:length(handlesc)
-        hide = {'popupRates','Datetext','popupDates1S','popupDates2S','popupDates3S','popupDates4S',...
-            'popupDates1W','popupDates2W','popupDates3W','popupDates4W'};
-        if nnz(strcmp(hide,get(handlesc(i),'Tag')))
-            set(handlesc(i),'Visible','off')
-            %delete(handlesc(i));
-        end
-    end
-end
+testSystems(SYSINDEX).Design = [];%empty design day solution
 
 function popupRates_Callback(hObject,eventdata,handles)
 global GENINDEX SYSINDEX testSystems
@@ -1678,7 +1327,7 @@ days=(1:m_d(End1,2))';
 EditSystem('createPopup',handles,{'1','2','3','4','5','6','7','8','9','10','11','12'},...
             [30 29 7 1],12,'normal',tag3,End1,'popupDates')
 EditSystem('createPopup',handles,days,[38 29 7 1],12,'normal',tag4,End2,'popupDates')
-
+testSystems(SYSINDEX).Design = [];%empty design day solution
 
 function popupDates_Callback(hObject,handles0,handles)
 global GENINDEX SYSINDEX testSystems
@@ -1699,14 +1348,14 @@ Type = get(hObject,'Tag');
 m_d=[1 31; 2 28; 3 31; 4 30; 5 31; 6 30; 7 31; 8 31; 9 30; 10 31; 11 30; 12 31];
 
 
-if ~isempty(strfind(Type,'S'))
+if ismember(Type,{'popupDates1S','popupDates2S','popupDates3S','popupDates4S'})
     xS = xS(:,1:4);
     xS = fliplr(xS);
-    if ~isempty(strfind(Type,'1'))
+    if strcmp(Type,'popupDates1S')
         Gen.VariableStruct.SumStartMonth = Date;
-    elseif ~isempty(strfind(Type,'2'))
+    elseif strcmp(Type,'popupDates2S')
         Gen.VariableStruct.SumStartDay = Date;
-    elseif ~isempty(strfind(Type,'3'))
+    elseif strcmp(Type,'popupDates3S')
         if xS(1,4) >= m_d(xS(1,3),2)
             Gen.VariableStruct.WinStartMonth = Date + 1;
             Gen.VariableStruct.WinStartDay = 1;
@@ -1717,7 +1366,7 @@ if ~isempty(strfind(Type,'S'))
             Gen.VariableStruct.WinStartMonth = Date;
             Gen.VariableStruct.WinStartDay = xS(1,4)+1;
         end
-    else
+    elseif strcmp(Type,'popupDates4S')
         if m_d(xS(1,3),2) == Date
             Gen.VariableStruct.WinStartMonth = xS(1,3) + 1;
             Gen.VariableStruct.WinStartDay = 1;
@@ -1740,14 +1389,14 @@ if ~isempty(strfind(Type,'S'))
         set(handlesc(xS(2,4)),'Value',days(end))
     end
     set(handlesc(xS(2,4)),'String',days);
-elseif ~isempty(strfind(Type,'W'))
+elseif ismember(Type,{'popupDates1W','popupDates2W','popupDates3W','popupDates4W'})
     xW = xW(:,1:4);
     xW = fliplr(xW);
-    if ~isempty(strfind(Type,'1'))
+    if strcmp(Type,'popupDates1W')
         Gen.VariableStruct.WinStartMonth = Date;
-    elseif ~isempty(strfind(Type,'2'))
+    elseif strcmp(Type,'popupDates2W')
         Gen.VariableStruct.WinStartDay = Date;
-    elseif ~isempty(strfind(Type,'3'))
+    elseif strcmp(Type,'popupDates3W')
         if xW(1,4) >= m_d(xW(1,3),2)
             Gen.VariableStruct.SumStartMonth = Date + 1;
             Gen.VariableStruct.SumStartDay = 1;
@@ -1758,7 +1407,7 @@ elseif ~isempty(strfind(Type,'W'))
             Gen.VariableStruct.SumStartMonth = Date;
             Gen.VariableStruct.SumStartDay = xW(1,4)+1;
         end
-    else
+    elseif strcmp(Type,'popupDates4W')
         if m_d(xW(1,3),2) == Date
             Gen.VariableStruct.SumStartMonth = xW(1,3) + 1;
             Gen.VariableStruct.SumStartDay = 1;
@@ -1782,42 +1431,60 @@ elseif ~isempty(strfind(Type,'W'))
     end
     set(handlesc(xW(2,4)),'String',days);
 end
-
 testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct=Gen.VariableStruct;
-
-function createGridsellback(handles)
-EditSystem('createText',handles,'Grid Sell Back',[2 25 30 1.5],'textEdit1',12,'bold')
-EditSystem('createRadio',handles,'None',[10 23 15 1.5],10,'normal',1,'radiobuttonGridsellback')
-EditSystem('createRadio',handles,'% of Tariffs',[10 21 19 1.5],10,'normal',0,'radiobuttonGridsellback')
-EditSystem('createRadio',handles,'Reversed Meter',[10 18 22 1.5],10,'normal',0,'radiobuttonGridsellback')
-EditSystem('createTextEdit',handles,'10',[14 19.5 8 1.5],'editTariffs',10,'normal','radiobuttonGridsellback')
-
+testSystems(SYSINDEX).Design = [];%empty design day solution
               
 function radiobuttonGridsellback_Callback(hObject,handles0,handles)
 global GENINDEX SYSINDEX testSystems
-handlesc = get(handles.uipanelGenSpec,'Children');
-for i = 1:length(handlesc)
-    if strcmp(get(handlesc(i),'Tag'),'radiobuttonGridsellback')
-        if ~strcmp(get(handlesc(i),'String'),get(hObject,'String'))
-            set(handlesc(i),'Value',0)
-        else
-            set(hObject,'Value',1)
-        end
-    elseif strcmp(get(handlesc(i),'Tag'),'editTariffs')
-        x=i;
-    end
-end
-if strcmp(get(hObject,'String'),'None')
+handles = guihandles;
+if strcmp(get(hObject,'Tag'),'None')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.SellBackRate = 0;
-elseif strcmp(get(hObject,'String'),'% of Tariffs')
-    editTariffs(hObject,handlesc(x))
-elseif strcmp(get(hObject,'String'),'Reversed Meter')
+    testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.SellBackPerc = 0;
+    testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.MinImportThresh = 0;
+    set(handles.textEdit11,'String','Minimum Import (kW)');
+    set(handles.SellbackAsPerc,'Value',0);
+    set(handles.FixedRate,'Value',0);
+    set(handles.maxSellback,'String','0');
+elseif strcmp(get(hObject,'Tag'),'SellbackAsPerc')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.SellBackRate = -1;
+    testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.SellBackPerc = str2double(get(handles.editTariffs,'String'));
+    testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.MinImportThresh = -inf;
+    set(handles.textEdit11,'String','Maximum Export (kW)');
+    set(handles.None,'Value',0);
+    set(handles.FixedRate,'Value',0);
+    set(handles.maxSellback,'String','inf');
+elseif strcmp(get(hObject,'Tag'),'FixedRate')
+    testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.SellBackRate = str2double(get(handles.editSellbackRate,'String'));
+    testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.SellBackPerc = 0;
+    testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.MinImportThresh = -inf;
+    set(handles.textEdit11,'String','Maximum Export (kW)');
+    set(handles.SellbackAsPerc,'Value',0);
+    set(handles.None,'Value',0);
+    set(handles.maxSellback,'String','inf');
 end
+testSystems(SYSINDEX).Design = [];%empty design day solution
 
 function editTariffs(hObject,handles)
 global GENINDEX SYSINDEX testSystems
-testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.SellBackRate = str2num(get(handles,'String'))/100;
+handles = guihandles;
+testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.SellBackRate = -1;
+testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.SellBackPerc = str2double(get(handles.editTariffs,'String'));
+
+function editSellbackRate(hObject,handles)
+global GENINDEX SYSINDEX testSystems
+handles = guihandles;
+testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.SellBackRate = str2double(get(handles.editSellbackRate,'String'));
+testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.SellBackPerc = 0;
+
+function maxSellback(hObject,handles)
+global GENINDEX SYSINDEX testSystems
+handles = guihandles;
+if get(handles.None,'Value') == 0
+    testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.MinImportThresh = - str2double(get(handles.editMaxSellback,'String'));
+else
+    testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.MinImportThresh = str2double(get(handles.editMaxSellback,'String'));
+end
+
 
 function radioSource_Callback(hObject,eventdata,handles)
 global GENINDEX SYSINDEX testSystems
@@ -1836,6 +1503,7 @@ if strcmp(get(hObject,'String'),'Natural Gas')
 else
     testSystems(SYSINDEX).Generator(GENINDEX).Source = get(hObject,'String');
 end
+testSystems(SYSINDEX).Design = [];%empty design day solution
 
 function popupSolar_Callback(hObject,eventdata,handles)
 global GENINDEX SYSINDEX testSystems
@@ -1846,6 +1514,7 @@ stateName = {'Alabama';'Alaska';'Arizona';'Arkansas';'California';'Colorado';'Co
 stateNum = get(hObject,'Value');
 state = stateName(stateNum);
 testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.State = char(state);
+testSystems(SYSINDEX).Design = [];%empty design day solution
 
 function radiobuttonSType_Callback(hObject,eventdata,handles)
 global GENINDEX SYSINDEX testSystems
@@ -1864,6 +1533,7 @@ if strcmp(get(hObject,'String'),'Flat Panel')
 elseif strcmp(get(hObject,'String'),'Concentrated')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.PVtype = 'concentrated';
 end
+testSystems(SYSINDEX).Design = [];%empty design day solution
 
 function radiobuttonSTracking_Callback(hObject,eventdata,handles)
 global GENINDEX SYSINDEX testSystems
@@ -1884,14 +1554,17 @@ elseif strcmp(get(hObject,'String'),'Single Axis')
 elseif strcmp(get(hObject,'String'),'Dual Axis')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.Tracking = '2axis';
 end
+testSystems(SYSINDEX).Design = [];%empty design day solution
 
 function uitableDCAC_CellEditCallback(hObject,eventdata,handles)
 global GENINDEX SYSINDEX testSystems
 testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.Data = get(hObject,'Data');
+testSystems(SYSINDEX).Design = [];%empty design day solution
 
 function uitableBat_CellEditCallback(hObject,eventdata,handles)
 global GENINDEX SYSINDEX testSystems
 testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.VoltCurve = get(hObject,'Data');
+testSystems(SYSINDEX).Design = [];%empty design day solution
 
 function AddSystem(hObject, eventdata,handles)
 %AddSystem(hObject,handles)
@@ -1934,9 +1607,16 @@ if OK && ~strcmp(list{s},emptyStr)
     testSystems(SYSINDEX).Network(1).Equipment(end+1) = {strcat( ...
     testSystems(SYSINDEX).Generator(GENINDEX).Type,'.',testSystems(SYSINDEX).Generator(GENINDEX).Name)};
     EditSystem(handles)
-    emptyQPmatrices
 end
-updateSystemRep(hObject,[], handles)
+updateSystemRep(handles)
+updateSystemList
+if ~isfield(testSystems(SYSINDEX),'Costs') 
+    Costs = [];
+else
+    Costs = testSystems(SYSINDEX).Costs;
+end
+testSystems(SYSINDEX).Costs = defaultCosts(Costs,testSystems(SYSINDEX).Generator);
+testSystems(SYSINDEX).Design = [];%empty design day solution
 
 % --- Executes on button press in pushbuttonRemove.
 function pushbuttonRemove_Callback(hObject, eventdata, handles)
@@ -1947,34 +1627,203 @@ if GENINDEX > 0
         testSystems(SYSINDEX).Network(n).Equipment = testSystems(SYSINDEX).Network(n).Equipment(~strcmp(str,testSystems(SYSINDEX).Network(n).Equipment));
     end
     testSystems(SYSINDEX).Generator = testSystems(SYSINDEX).Generator([1:GENINDEX-1,GENINDEX+1:length(testSystems(SYSINDEX).Generator)]);
-    GENINDEX = 0;
-    updateSystemRep(hObject, eventdata, handles)
-    EditSystem(handles)
-    emptyQPmatrices
+    testSystems(SYSINDEX).Costs.Equipment = testSystems(SYSINDEX).Costs.Equipment([1:GENINDEX-1,GENINDEX+1:length(testSystems(SYSINDEX).Costs.Equipment)]);
+    GENINDEX = 1;
+    updateSystemRep(handles)
+    updateSystemList
+    Library_Callback([],[], handles);
 end
+testSystems(SYSINDEX).Design = [];%empty design day solution
 
-function emptyQPmatrices
-%something changed in the specifications, any previously calculated
-%matrices or results do not apply
-global testSystems SYSINDEX
-A = {'subNet';'OpMatA';'OpMatB';'OneStep';'Online';'Dispatch';'Predicted';'RunData';'Baseline'};
-for i = 1:1:length(A)
-    testSystems(SYSINDEX).(A{i}) = [];
-end
-
-% --- Executes on selection savebuilding in CompFuel.
 function CompFuel_Callback(hObject, eventdata, handles)
 global testSystems SYSINDEX GENINDEX
 fuels = get(hObject,'String');
 testSystems(SYSINDEX).Generator(GENINDEX).Source = fuels{get(hObject,'Value')};
+testSystems(SYSINDEX).Design = [];%empty design day solution
 
-% --- Executes during object creation, after setting all properties.
 function CompFuel_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor','white');
 end
 
 %% Tab 5 functions
+function PrevGen_Callback(hObject, eventdata, handles)
+handles = guihandles;
+list = get(handles.uipanelMain5,'UserData');
+gen = length(list);
+page = get(handles.PrevGen,'UserData');%current page of the list
+if (page-1)<2%if the new page is the 1st
+    set(handles.PrevGen,'Visible','off','UserData',page-1)
+else
+    set(handles.PrevGen,'Visible','on','UserData',page-1);
+end
+set(handles.NextGen,'Visible','on','UserData',page-1)
+for i = 1:1:12
+    if 12*(page-1)+i<=gen
+         j = num2str(12*(page-1)+i);
+         set(handles.(strcat('Equipment_',j)),'Visible','off');
+    end
+end
+for i = 1:1:12
+    j = num2str(12*(page-2)+i);
+     set(handles.(strcat('Equipment_',j)),'Visible','on');
+end
+
+function NextGen_Callback(hObject, eventdata, handles)
+handles = guihandles;
+list = get(handles.uipanelMain5,'UserData');
+gen = length(list);
+page = get(handles.PrevGen,'UserData');%current page of the list
+if page==ceil(gen/12)-1
+    set(handles.NextGen,'Visible','off','UserData',page+1)
+else
+    set(handles.NextGen,'Visible','on','UserData',page+1);
+end
+set(handles.PrevGen,'Visible','on','UserData',page+1)
+for i = 1:1:12
+     j = num2str(12*(page-1)+i);
+     set(handles.(strcat('Equipment_',j)),'Visible','off');
+end
+for i = 1:1:12
+    j = num2str(12*(page)+i);
+    if 12*(page)+i<=gen
+         set(handles.(strcat('Equipment_',j)),'Visible','on');
+    end
+end
+
+function SetGenCost_Callback(hObject, eventdata, handles)
+global testSystems SYSINDEX GENINDEX
+if ~isempty(hObject)
+    GENINDEX = get(hObject,'UserData');
+end
+handles = guihandles;
+list = {'Name';'Size';'Cost';'CostkW';'O_M';'Financed';'Loan';'LoanTerm';};
+for i = 1:1:length(list(:,1))
+    if isfield(handles,strcat('Cost_',list{i},'_text'))
+        delete(handles.(strcat('Cost_',list{i},'_text')))
+        delete(handles.(strcat('Cost_',list{i},'_edit')))
+        delete(handles.(strcat('Cost_',list{i},'_unit')))
+    end
+end
+if isfield(handles,'OptimizeGen')
+    delete(handles.OptimizeGen);
+end
+listText = {'Name';'Size';'Total Cost';'Normalized Cost';'Operations & Maintenance';'Percent Financed';'Interest Rate';'Load period';};
+listUnits = {'';'kW';'$';'$/kW';'$/month';'%';'%';'years';};
+listValues = cell(8,1);
+listValues(1) = {testSystems(SYSINDEX).Costs.Equipment(GENINDEX).Name};
+listValues(2) = {num2str(testSystems(SYSINDEX).Generator(GENINDEX).Size)};
+listValues(3) = {num2str(testSystems(SYSINDEX).Costs.Equipment(GENINDEX).Cost)};
+listValues(4) = {num2str(testSystems(SYSINDEX).Costs.Equipment(GENINDEX).Cost/testSystems(SYSINDEX).Generator(GENINDEX).Size)};
+listValues(5) = {num2str(testSystems(SYSINDEX).Costs.Equipment(GENINDEX).OandM)};
+listValues(6) = {num2str(testSystems(SYSINDEX).Costs.Equipment(GENINDEX).Financed)};
+listValues(7) = {num2str(testSystems(SYSINDEX).Costs.Equipment(GENINDEX).LoanRate)};
+listValues(8) = {num2str(testSystems(SYSINDEX).Costs.Equipment(GENINDEX).LoanTerm)};
+quote = '''';
+for i=1:1:length(list)
+    handles.(strcat('Cost_',list{i},'_text')) = uicontrol('Style', 'text', 'String', listText{i},...
+    'Units','characters','Position', [50 49-5*i 35 1.5],'HorizontalAlignment','left',...
+    'Tag', strcat('Cost_',list{i},'_text'),'FontSize', 12,'FontWeight','bold',...
+    'Parent', handles.uipanelMain5','Visible','on');
+    callback = strcat('@(hObject,eventdata)MainScreen1(',quote,'EditGenCost_Callback',quote,',hObject,eventdata,guidata(hObject))');
+    handles.(strcat('Cost_',list{i},'_edit')) = uicontrol('Style', 'edit', 'String', listValues{i},...
+    'Units','characters','Position', [50 47-5*i 20 2],'BackgroundColor',[1,1,1],...
+    'Tag', strcat('Cost_',list{i},'_edit'),'FontSize', 10,...
+    'Parent', handles.uipanelMain5','UserData',i,'Enable','on',...
+    'Callback',eval(callback),'Visible','on');
+    handles.(strcat('Cost_',list{i},'_unit')) = uicontrol('Style', 'text', 'String', listUnits{i},...
+    'Units','characters','Position', [71 47.25-5*i 25 1.5],'HorizontalAlignment','left',...
+    'Tag', strcat('Cost_',list{i},'_unit'),'FontSize', 10,...
+    'Parent', handles.uipanelMain5','Visible','on');
+end
+handles.OptimizeGen = uicontrol('Style', 'pushbutton', 'String', 'Optimize Size',...
+'Units','characters','Position', [80 36 30 3],'BackgroundColor',[1,0,0],...
+'Tag', 'OptimizeGen','FontSize', 14,...
+'Parent', handles.uipanelMain5','Callback','OptimizeGeneratorSize','Visible','on');
+
+function EditGenCost_Callback(hObject, eventdata, handles)
+global testSystems SYSINDEX GENINDEX
+handles = guihandles;
+i = get(hObject,'UserData');
+if i == 1
+    testSystems(SYSINDEX).Costs.Equipment(GENINDEX).Name = get(hObject,'String');
+elseif i == 2
+    testSystems(SYSINDEX).Generator(GENINDEX) = updateComponentSpec(testSystems(SYSINDEX).Generator(GENINDEX),'UB',str2double(get(hObject,'String')));
+elseif i == 3
+    testSystems(SYSINDEX).Costs.Equipment(GENINDEX).Cost = str2double(get(hObject,'String'));
+    set(handles.Cost_CostkW_edit,'String',num2str(testSystems(SYSINDEX).Costs.Equipment(GENINDEX).Cost/testSystems(SYSINDEX).Generator(GENINDEX).Size));
+elseif i == 4
+    testSystems(SYSINDEX).Costs.Equipment(GENINDEX).Cost = str2double(get(hObject,'String'))*testSystems(SYSINDEX).Generator(GENINDEX).Size;
+    set(handles.Cost_Cost_edit,'String',num2str(testSystems(SYSINDEX).Costs.Equipment(GENINDEX).Cost)); 
+elseif i == 5
+    testSystems(SYSINDEX).Costs.Equipment(GENINDEX).OandM = str2double(get(hObject,'String'));
+elseif i == 6
+    testSystems(SYSINDEX).Costs.Equipment(GENINDEX).Financed = str2double(get(hObject,'String'));
+elseif i == 7
+    testSystems(SYSINDEX).Costs.Equipment(GENINDEX).LoanRate = str2double(get(hObject,'String'));
+elseif i == 8
+    testSystems(SYSINDEX).Costs.Equipment(GENINDEX).LoanTerm = str2double(get(hObject,'String'));
+end
+updateSummaryTable(handles)
+
+function popupmenuBaseline_Callback(hObject, eventdata, handles)
+%do nothing
+
+% --- Executes during object creation, after setting all properties.
+function popupmenuBaseline_CreateFcn(hObject, eventdata, handles)
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+function NPC_Years_Callback(hObject, eventdata, handles)
+%Do nothing
+function NPC_Years_CreateFcn(hObject, eventdata, handles)
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+function NPC_discount_Callback(hObject, eventdata, handles)
+global testSystems SYSINDEX
+testSystems(SYSINDEX).Costs.DiscountRate = str2double(get(hObject,'String'));
+
+function NPC_discount_CreateFcn(hObject, eventdata, handles)
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+% --- Executes when entered data in editable cell(s) in uitableCosts.
+function uitableCosts_CellEditCallback(hObject, eventdata, handles)
+Data = get(hObject,'Data');
+updateEqipmentCosts(Data);
+
+function updateSummaryTable(handles)
+global testSystems SYSINDEX
+n = length(testSystems(SYSINDEX).Costs.Equipment);
+Costs = cell(n,6);
+for i = 1:1:n
+    if ~isempty(testSystems(SYSINDEX).Costs.Equipment(i).Name)
+        Costs(i,1) = {testSystems(SYSINDEX).Costs.Equipment(i).Name};
+        Costs(i,2) = {testSystems(SYSINDEX).Costs.Equipment(i).Cost};
+        Costs(i,3) = {testSystems(SYSINDEX).Costs.Equipment(i).OandM};
+        Costs(i,4) = {testSystems(SYSINDEX).Costs.Equipment(i).Financed};
+        Costs(i,5) = {testSystems(SYSINDEX).Costs.Equipment(i).LoanRate};
+        Costs(i,6) = {testSystems(SYSINDEX).Costs.Equipment(i).LoanTerm};
+    end
+end
+set(handles.uitableCosts,'Data',Costs)
+
+function updateEqipmentCosts(Data)
+global testSystems SYSINDEX
+for i = 1:1:length(Data(:,1))
+    testSystems(SYSINDEX).Costs.Equipment(i).Name = Data{i,1};
+    testSystems(SYSINDEX).Costs.Equipment(i).Cost = Data{i,2};
+    testSystems(SYSINDEX).Costs.Equipment(i).OandM = Data{i,3};
+    testSystems(SYSINDEX).Costs.Equipment(i).Financed = Data{i,4};
+    testSystems(SYSINDEX).Costs.Equipment(i).LoanRate = Data{i,5};
+    testSystems(SYSINDEX).Costs.Equipment(i).LoanTerm = Data{i,6};
+end
+
+%% Tab 6 functions
 function AggressiveOpt_Callback(hObject, eventdata, handles)
 if get(handles.AggressiveOpt,'Value')
     set(handles.MedAncilOpt,'Value',0)
@@ -2012,10 +1861,8 @@ global testSystems SYSINDEX
 switch get(eventdata.NewValue,'Tag')
     case 'NoMixedInteger'
         testSystems(SYSINDEX).optimoptions.MixedInteger = false;
-        testSystems(SYSINDEX).optimoptions.method = 'Planning';
     case 'MixedInteger'
         testSystems(SYSINDEX).optimoptions.MixedInteger = true;
-        testSystems(SYSINDEX).optimoptions.method = 'Planning';
 end
 
 function Horizon_Callback(hObject, eventdata, handles)
@@ -2095,4 +1942,3 @@ function SpinReservePerc_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor','white');
 end
-

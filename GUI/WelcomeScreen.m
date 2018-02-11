@@ -60,12 +60,14 @@ guidata(hObject, handles);
 
 % UIWAIT makes WelcomeScreen wait for user response (see UIRESUME)
 % uiwait(handles.figure1);
-global Model_dir testSystems mainFig
+global Model_dir testSystems mainFig TestData DispatchWaitbar
 if ishandle(mainFig)
     close(mainFig)
 end
 mainFig = gcf;
 testSystems =[];
+TestData = [];
+DispatchWaitbar = [];
 handles.output = hObject;
 guidata(hObject, handles);
 movegui(gcf,'center');
@@ -78,7 +80,7 @@ files = dir(fullfile(Model_dir, 'Model Library','*.mat'));
 list=strrep({files.name},'.mat','');
 set(handles.popupmenuSTRIDES,'string',list,'value',1)
 
-set(gcf,'Name','EAGERS 2017.12.11')
+set(gcf,'Name','EAGERS 2018.2.3')
 
 
 % --- Outputs from this function are returned to the command line.
@@ -92,6 +94,16 @@ function varargout = WelcomeScreen_OutputFcn(hObject, eventdata, handles)
 varargout{1} = handles.output;
 
 
+% --- Executes on selection change in ProjectList.
+function ProjectList_Callback(hObject, eventdata, handles)
+
+% --- Executes during object creation, after setting all properties.
+function ProjectList_CreateFcn(hObject, eventdata, handles)
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+
 % --- Executes on button press in pushbuttonDesign.
 function pushbuttonDesign_Callback(hObject, eventdata, handles)
 % hObject    handle to pushbuttonDesign (see GCBO)
@@ -102,47 +114,10 @@ global Model_dir Plant mainFig
 projList = get(handles.ProjectList,'String');
 projName = projList{get(handles.ProjectList,'Value')};
 load(fullfile(Model_dir,'Projects',projName));
-if ~strcmp(Plant.optimoptions.solver,'NREL')
-    allFieldNames = {'Name';'Data';'Generator';'Building';'Weather';'Network';'Costs';'optimoptions';'subNet';'OpMatA';'OpMatB';'OneStep';'Online';'Design';'Dispatch';'Predicted';'RunData';'Baseline'};
-    fNames = fieldnames(Plant);
-    for i = 1:1:length(allFieldNames)
-        if ~any(strcmp(allFieldNames{i},fNames))
-            Plant.(allFieldNames{i}) = [];
-        end
-    end
-    if isempty(Plant.Weather)
-        load(fullfile(Model_dir,'System Library','Weather','4A.mat'))
-        Plant.Weather = weather;
-    end
-end
+loadTestData
 mainFig = [];
 close
 MainScreen1
-
-% --- Executes on button press in pushbuttonSTRIDES.
-function pushbuttonSTRIDES_Callback(hObject, eventdata, handles)
-% hObject    handle to pushbuttonSTRIDES (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    structure with handles and user data (see GUIDATA)
-% Load file that was selected from the popupmenu
-
-% projList = get(handles.popupmenuSTRIDES,'String');
-% projName = projList{get(handles.popupmenuSTRIDES,'Value')};
-global mainFig
-mainFig = [];
-close
-STRIDES
-
-% --- Executes on button press in pushbuttonDGBEAT.
-function pushbuttonDGBEAT_Callback(hObject, eventdata, handles)
-% hObject    handle to pushbuttonDGBEAT (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    structure with handles and user data (see GUIDATA)
-global Model_dir mainFig
-addpath(fullfile(Model_dir,'GUI','Design','OLD_DG_BEAT'));
-mainFig = [];
-close
-DG_BEAT
 
 % --- Executes on button press in Open.
 function Open_Callback(hObject, eventdata, handles)
@@ -150,45 +125,20 @@ global Model_dir Plant mainFig
 list=get(handles.ProjectList,'string');
 plantSel = list{get(handles.ProjectList,'value')};
 load(fullfile(Model_dir,'Projects',plantSel))
-if ~strcmp(Plant.optimoptions.solver,'NREL')
-    allFieldNames = {'Name';'Data';'Generator';'Building';'Weather';'Network';'Costs';'optimoptions';'subNet';'OpMatA';'OpMatB';'OneStep';'Online';'Design';'Dispatch';'Predicted';'RunData';'Baseline';'Market'};
-    fNames = fieldnames(Plant);
-    for i = 1:1:length(allFieldNames)
-        if ~any(strcmp(allFieldNames{i},fNames))
-            Plant.(allFieldNames{i}) = [];
-        end
-    end
-    if isempty(Plant.Weather)
-        load(fullfile(Model_dir,'System Library','Weather','4A.mat'))
-        Plant.Weather = weather;
-    end
-end
+loadTestData
 mainFig = [];
 close
 %open new GUI
 DISPATCH
 
-% --- Executes on button press in NewProject.
-function NewProject_Callback(hObject, eventdata, handles)
-global Plant mainFig
-Plant = [];
-Plant.Name = char(inputdlg('Specify the project name','Project Name', 1,{'MicroGrid_01'}));
-% hCreate = dialog('Visible','off');
-% CreateNewProject(Plant.Name,hCreate)
-% waitfor(hCreate)
+
+% --- Executes on button press in pushbuttonSTRIDES.
+function pushbuttonSTRIDES_Callback(hObject, eventdata, handles)
+global mainFig
 mainFig = [];
 close
-MainScreen1
+STRIDES
 
-
-% --- Executes on selection change in popupmenuProject.
-function popupmenuProject_Callback(hObject, eventdata, handles)
-
-% --- Executes during object creation, after setting all properties.
-function popupmenuProject_CreateFcn(hObject, eventdata, handles)
-if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
-    set(hObject,'BackgroundColor','white');
-end
 
 % --- Executes on selection change in popupmenuSTRIDES.
 function popupmenuSTRIDES_Callback(hObject, eventdata, handles)
@@ -196,15 +146,6 @@ function popupmenuSTRIDES_Callback(hObject, eventdata, handles)
 
 % --- Executes during object creation, after setting all properties.
 function popupmenuSTRIDES_CreateFcn(hObject, eventdata, handles)
-if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
-    set(hObject,'BackgroundColor','white');
-end
-
-% --- Executes on selection change in ProjectList.
-function ProjectList_Callback(hObject, eventdata, handles)
-
-% --- Executes during object creation, after setting all properties.
-function ProjectList_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor','white');
 end

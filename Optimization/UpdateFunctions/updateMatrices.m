@@ -10,7 +10,11 @@ function QP = updateMatrices(QP,Date,scaleCost,marginCost,Forecast,EC)
 global Plant CurrentState
 QP.solver = Plant.optimoptions.solver;
 nG = length(Plant.Generator);
-nB = length(Plant.Building);
+if isfield(Plant,'Building') && ~isempty(Plant.Building)
+    nB = length(Plant.Building);
+else
+    nB = 0;
+end
 networkNames = fieldnames(Plant.subNet);
 dt = (Date(2:end) - Date(1:end-1))*24;
 nS = length(dt);
@@ -74,14 +78,28 @@ end
 
 %Building inequalities
 for i = 1:1:nB %all Forecasts are vectors of nS steps
+    states = QP.Organize.States{nG+nL+i};
+    T_state = states(1):QP.Organize.t1States:(nS-1)*QP.Organize.t1States + states(1);
+
     r = QP.Organize.Building.r(i):QP.Organize.t1ineq:(nS-1)*QP.Organize.t1ineq + QP.Organize.Building.r(i);
-    QP.b(r) = Plant.Building(i).QPform.UA*Forecast.Building(i).Tset_H - Forecast.Building(i).H0;%heating inequality
-    QP.b(r+1) = -Plant.Building(i).QPform.UA*Forecast.Building(i).Tset_C - Forecast.Building(i).C0;%cooling inequality
-    QP.b(r+2) = (Forecast.Building(i).Tset + Plant.Building(i).VariableStruct.Comfort/2);%upper buffer inequality
-    QP.b(r+3) = -(Forecast.Building(i).Tset - Plant.Building(i).VariableStruct.Comfort/2);%lower buffer inequality
+    QP.b(r) = Plant.Building(i).QPform.UA*Forecast.Building.Tset_H(:,i);%heating inequality
+    QP.b(r+1) = -Plant.Building(i).QPform.UA*Forecast.Building.Tset_C(:,i);%cooling inequality
+    QP.b(r+2) = Forecast.Building.Tmax(:,i);%upper buffer inequality
+    QP.b(r+3) = -Forecast.Building.Tmin(:,i);%lower buffer inequality
     
-    req = QP.Organize.Building.req(i):QP.Organize.t1Balances:(nS-1)*QP.Organize.t1Balances + QP.Organize.Building.req(i);
-    QP.beq(req) = QP.beq(req) + Forecast.Building(i).E0 - Plant.Building(i).QPform.H2E*Forecast.Building(i).H0 - Plant.Building(i).QPform.C2E*Forecast.Building(i).C0;%electric load: %  Generation - (H2E*Heating +C2E*Coling) = E0 - H2E*H0 - C2E*C0
+    req = QP.Organize.Building.Electrical.req(i):QP.Organize.t1Balances:(nS-1)*QP.Organize.t1Balances + QP.Organize.Building.Electrical.req(i);
+    QP.beq(req) = QP.beq(req) + Forecast.Building.E0(:,i);%electric load
+    %% update heating eqn
+    req = QP.Organize.Building.DistrictHeat.req(i):QP.Organize.t1Balances:(nS-1)*QP.Organize.t1Balances + QP.Organize.Building.DistrictHeat.req(i);
+    QP.Organize.Building.H_Offset(:,i) = Plant.Building(i).QPform.UA*(Forecast.Building.Tzone(:,i)-Forecast.Building.Tset_H(:,i)) - Forecast.Building.H0(:,i);
+    QP.beq(req) = QP.beq(req) - QP.Organize.Building.H_Offset(:,i);%Heating load
+    QP.lb(T_state+1) = QP.lb(T_state+1) + QP.Organize.Building.H_Offset(:,i);%Ensures net building heating is greater than zero
+    
+    %% update cooling eqn
+    req = QP.Organize.Building.DistrictCool.req(i):QP.Organize.t1Balances:(nS-1)*QP.Organize.t1Balances + QP.Organize.Building.DistrictCool.req(i);
+    QP.Organize.Building.C_Offset(:,i) = Plant.Building(i).QPform.UA*(Forecast.Building.Tset_C(:,i)-Forecast.Building.Tzone(:,i)) - Forecast.Building.C0(:,i);
+    QP.beq(req) = QP.beq(req) - QP.Organize.Building.C_Offset(:,i);%Cooling load
+    QP.lb(T_state+2) = QP.lb(T_state+2) + QP.Organize.Building.C_Offset(:,i);%Ensures net building cooling is greater than zero
 end
 
 %Adding cost for Line Transfer Penalties to differentiate from spillway flow
@@ -111,9 +129,9 @@ for i = 1:1:nG+nL+nB
         elseif i<=nG+nL %transmission lines and river segments (no longer necessary for hydro)
             QP.beq(QP.Organize.IC(i)) = CurrentState.Lines(i-nG);
             QP.ub(QP.Organize.IC(i)) = CurrentState.Lines(i-nG)+1;%+1 just to help solver find feasible
-        else %all buildings have an initial temperature state
-            QP.beq(QP.Organize.IC(i)) = CurrentState.Buildings(i-nG-nL);
-            QP.ub(QP.Organize.IC(i)) = CurrentState.Buildings(i-nG-nL)+1;%+1 just to help solver find feasible
+        else %all buildings have an initial air zone temperature state
+            QP.beq(QP.Organize.IC(i)) = CurrentState.Buildings(1,i-nG-nL);
+            QP.ub(QP.Organize.IC(i)) = CurrentState.Buildings(1,i-nG-nL)+1;%+1 just to help solver find feasible
         end
     end
 end
@@ -127,7 +145,11 @@ for i = 1:1:nG
         allStates = (0:QP.Organize.t1States:(nS-1)*QP.Organize.t1States)'*ones(1,length(states))+ones(nS,1)*states;
         if strcmp(Plant.Generator(i).Type,'Utility') && strcmp(Plant.Generator(i).Source,'Electricity') && Plant.Generator(i).VariableStruct.SellBackRate>0
             QP.f(allStates(:,1)) = QP.f(allStates(:,1)).*scaleCost(:,i).*dt;
-            QP.f(allStates(:,2)) = min(0.9999*QP.f(allStates(:,1)),Plant.Generator(i).VariableStruct.SellBackRate.*dt); %make sure sellback rate is less than purchase rate
+            if Plant.Generator(i).VariableStruct.SellBackRate == -1
+                QP.f(allStates(:,2)) = QP.f(allStates(:,2)).*scaleCost(:,i).*dt; %sellback is a fixed percent of purchase costs (percent set wehn building matrices)
+            else
+                %constant sellback rate was taken care of when building the matrices
+            end
         elseif ismember(Plant.Generator(i).Type,{'Utility';'Electric Generator';'CHP Generator';'Chiller';'Heater'})%all generators and utilities (without sellback)
             for j = 1:1:length(states)
                 H(allStates(:,j)) = H(allStates(:,j)).*scaleCost(:,i).*dt; 
@@ -146,7 +168,8 @@ for i = 1:1:nG
             StorSize = Plant.Generator(i).QPform.Stor.UsableSize;
             if isfield(Plant.Generator(i).QPform,'U') %has buffer
                 BuffSize = Plant.Generator(i).QPform.U.ub;
-            else BuffSize = 0;
+            else
+                BuffSize = 0;
             end
             if isempty(EC) %full forecast optimization
                 if strcmp(Plant.Generator(i).Source,'Heat')

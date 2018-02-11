@@ -1,4 +1,4 @@
-function [Dispatch,LineLoss,excessHeat,hydroSOC] = sortSingleSolution(x,QP)
+function [Dispatch,LineLoss,excessHeat,excessCool,hydroSOC,Temperature,Heating,Cooling] = sortSingleSolution(x,QP)
 [~,n] = size(QP.organize);
 nG = length(QP.constCost);
 nB = length(QP.Organize.Building.r);
@@ -6,9 +6,12 @@ nL = n-nG-nB;
 nH = nnz(QP.Organize.Hydro);
 hydroSOC = zeros(1,nH);
 excessHeat = zeros(1,nnz(QP.Organize.HeatVented));
+excessCool = zeros(1,nnz(QP.Organize.CoolVented));
 LineFlows = zeros(1,nL);
 LineLoss = zeros(1,nL);
-Buildings = zeros(1,nB);
+Temperature = zeros(1,nB);
+Heating = zeros(1,nB);
+Cooling = zeros(1,nB);
 GenDisp = zeros(1,nG);
 for i = 1:1:nG
     if isfield(QP,'Renewable') && any(QP.Renewable(:,i)~=0)
@@ -37,13 +40,22 @@ for i = 1:1:nL
 end
 
 for i = 1:1:nB
-    Buildings(1,i) = x(QP.organize{1,i+nG+nL},1);
+    Tset = QP.organize{1,i+nG+nL};
+    Temperature(1,i) = x(Tset,1);
+    Heating(1,i) = x(Tset+1,1) - QP.Organize.Building.H_Offset(1,i);
+    Cooling(1,i) = x(Tset+2,1) - QP.Organize.Building.C_Offset(1,i);
 end
-Dispatch = [GenDisp,LineFlows,Buildings];
+Dispatch = [GenDisp,LineFlows,Temperature];
 %pull out any dumped heat
 for i = 1:1:length(QP.Organize.HeatVented)
     if QP.Organize.HeatVented(i)>0
         excessHeat(1,i) = x(QP.Organize.HeatVented(i));
+    end
+end
+%pull out any dumped cooling
+for i = 1:1:length(QP.Organize.CoolVented)
+    if QP.Organize.CoolVented(i)>0
+        excessCool(1,i) = x(QP.Organize.CoolVented(i));
     end
 end
 end%Ends function sortSolution

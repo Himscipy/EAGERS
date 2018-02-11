@@ -15,7 +15,7 @@ end
 if ~exist('SSi','var')
     SSi = [];
 end
-agregateSSmodel(SSi)
+% agregateSSmodel(SSi)
 end%Ends function loadGenerator
 
 function [QPform, dX_dt,SSi] = loadUtility(Gen)
@@ -32,12 +32,12 @@ else
     QPform.X.f = 1;
     QPform.X.lb = util.MinImportThresh;
     QPform.X.ub = inf;% no sellback allowed (only 1 state)
-    if util.MinImportThresh<=0 && (util.SellBackPerc>0 || util.SellBackRate>0) %add sell back state
+    if util.MinImportThresh<=0 && (util.SellBackRate>0  || (util.SellBackRate==-1 && util.SellBackPerc~=1)) %add sell back state
         QPform.states = {'X';'Y'};
-        if util.SellBackPerc>0
+        if util.SellBackRate>0 
+            QPform.Y.f = -util.SellBackRate;%constant sell back rate
+        else
             QPform.Y.f = -min(util.SellBackPerc/100,1-1e-6);%ensure less than 1, so no issues with pass through power
-        elseif util.SellBackRate>0
-            QPform.Y.f = -1;%constant sell back rate
         end
         QPform.Y.H = 0;
         QPform.Y.lb = 0;
@@ -302,13 +302,11 @@ end
 % plot(X3,Y3,'r')
 
 %% ramp rates
-if isfield(Gen.Output,'Electricity')&& Gen.Output.Electricity(end)>0 && isfield(Gen.Output,'Heat')&& Gen.Output.Heat(end)>0
-    H_0 = QPform.output.H(1,end)*LB;
-else H_0 = [];
-end
 if license('test','Control_Toolbox')
-    [dX_dt,SSi] = RampRateCalc(Gen.VariableStruct.StateSpace,LB,UB,H_0);
-else dX_dt = Gen.Size/1; SSi = []; %assume 4 hours from off to peak
+    SSi = ss(Gen.VariableStruct.StateSpace.A,Gen.VariableStruct.StateSpace.B,Gen.VariableStruct.StateSpace.C,Gen.VariableStruct.StateSpace.D,Plant.optimoptions.Tmpc);
+    dX_dt = secondOrderResponse(Gen,[]);
+else
+    dX_dt = Gen.Size/1; SSi = []; %assume 4 hours from off to peak
 end
 dX_dt = dX_dt/Plant.optimoptions.scaletime;  
 QPform.Ramp.b = [dX_dt;dX_dt]; %-output1+output2=ramp up %output1-output2=-rampdown
@@ -415,7 +413,7 @@ end%Ends function loadSolar
 
 function [QPform, dX_dt,SSi] = loadHydroStorage(Gen)
 % this function loads the parameters for a hydroelectric plant.
-global Plant
+global Plant TestData
 SSi =[];
 Eff = Gen.VariableStruct.MaxGenCapacity/(Gen.VariableStruct.MaxGenFlow*Gen.VariableStruct.MaxHead/0.01181);%Power (kW)/ideal power in kW
 QPform.Stor.Size = Gen.Size*Plant.optimoptions.scaletime;
@@ -424,7 +422,7 @@ QPform.Stor.DischEff = 1; %100% effecient
 %Put this at 1/2 full capacity until the MaxHead-MinHead/MaxHead is fixed
 %Currently, with the previous solution, some plants lost a vast majority of usable space
 % QPform.Stor.UsableSize  = QPform.Stor.Size**((Gen.VariableStruct.MaxHead-Gen.VariableStruct.MinHead)/Gen.VariableStruct.MaxHead);
-month = datevec(Plant.Data.Timestamp(1));
+month = datevec(TestData.Timestamp(1));
 month = month(2); %month starting in
 QPform.Stor.UsableSize = QPform.Stor.Size*Gen.VariableStruct.StartingPoint(1,month);
 QPform.Stor.Power2Flow = 1/(Eff*Gen.VariableStruct.MaxHead*84.674);%Power (kW) = efficiency(%) * Flow (1000 ft^3/s) * Head (ft) * 84.674 kJ/ (1000ft^3*ft)

@@ -1,91 +1,61 @@
-function result = FinancialMetric(heat, cool, elec, metric, params)
-%FINANCIALMETRIC Calculate financial metric for given heating, cooling,
-%electric demands.
-% result = FINANCIALMETRIC(heat, cool, elec, metric, params)
-
-bene = params.benefits;
-cost = params.costs;
-rate = params.rate;
-time = 0:1:length(cost)-1;
-
-switch lower(metric)
-    case 'irr'
-        tolerance = params.tolerance;
-        npv = tolerance + 1;
-        lowerBound = 0;
-        upperBound = 1;
-        growthStep = upperBound/2;
-        rGuess = growthStep;
-        boundedMode = false;
-        while abs(npv) > tolerance
-            npv = calc_npv(bene, cost, rGuess, time);
-            if boundedMode
-                % bounded search mode
-                if npv > 0
-                    lowerBound = rGuess;
-                    rGuess = rGuess + (upperBound-rGuess)/2;
-                else
-                    upperBound = rGuess;
-                    rGuess = rGuess + (lowerBound-rGuess)/2;
-                end
-            else
-                % unbounded search mode
-                if npv > 0
-                    lowerBound = rGuess;
-                    rGuess = upperBound;
-                    upperBound = upperBound + growthStep;
-                else
-                    boundedMode = 1;
-                    upperBound = rGuess;
-                    rGuess = rGuess + (lowerBound-rGuess)/2;
-                end
-            end
+function [irr,payback] = FinancialMetric(mC,mCbaseline,rate)
+% Internal Rate of Return
+Years = length(mC)/12;
+npv1 = calc_npv(mCbaseline - mC, 2, (1/12:1/12:Years)');
+npv2 = calc_npv(mCbaseline - mC, -1+1e-8, (1/12:1/12:Years)');
+if npv1>0
+    %likely no solution for irr
+    irr = -1;
+elseif npv2<0
+    %negative rate of return
+    irr = -1;
+else
+    lowerBound = -1+1e-8;
+    upperBound = 1;
+    irr = 0;
+    totalSaved = sum(mCbaseline) - sum(mC);
+    npv = calc_npv(mCbaseline - mC, 0, (1/12:1/12:Years)');
+    while abs(npv)/abs(totalSaved) > 1e-3
+        if npv > 0
+            lowerBound = irr;
+            irr = irr + min(.1,(upperBound-lowerBound)/2);
+        else
+            upperBound = irr;
+            irr = irr - min(.1, (upperBound-lowerBound)/2);
         end
-        result = rGuess;
-    case 'lcoe'
-        result = sum((Ct+Mt)/(1+rate)^time) / sum(Qt/(1+rate)^time);
-    case 'npv'
-        result = sum((Bt-Ct)/(1+rate)^time);
-    case 'pbp'
-        tolerance = params.tolerance;
-        npv = tolerance + 1;
-        lowerBound = 0;
-        upperBound = 2^8;
-        growthStep = upperBound/2;
-        tGuess = 0:1:growthStep-1;
-        boundedMode = false;
-        while abs(npv) > tolerance
-            npv = calc_npv(bene, cost, rate, tGuess);
-            if boundedMode
-                % bounded search mode
-                if npv < 0
-                    lowerBound = tGuess;
-                    tGuess = tGuess + (upperBound-tGuess)/2;
-                else
-                    upperBound = tGuess;
-                    tGuess = tGuess + (lowerBound-tGuess)/2;
-                end
-            else
-                % unbounded search mode
-                if npv < 0
-                    lowerBound = tGuess;
-                    tGuess = upperBound;
-                    upperBound = upperBound + growthStep;
-                else
-                    boundedMode = 1;
-                    upperBound = tGuess;
-                    tGuess = tGuess + (lowerBound-tGuess)/2;
-                end
-            end
+        npv = calc_npv(mCbaseline - mC, irr, (1/12:1/12:Years)');
+    end
+end
+% Payback period
+if irr<=0
+    payback = inf;
+else
+    payback = round(12*Years/2)/12;%round to nearest month
+    best = false;
+    npv = calc_npv(mCbaseline(1:payback*12) - mC(1:payback*12), rate, (1/12:1/12:payback)');
+    while ~best
+        if npv<0
+            payback = payback+1/12;
+        else
+            payback = payback - 1/12;
         end
-        result = tGuess;
+        npv_new = calc_npv(mCbaseline(1:payback*12) - mC(1:payback*12), rate, (1/12:1/12:payback)');
+        if payback == Years
+            best = true;
+            payback = inf;
+        end
+        if abs(npv_new)>npv
+            best = true;
+        end
+    end
 end
-
-end
-
+end%Ends function Financial Metric
 
 %% External functions
 % Calculate net present value
-function npv = calc_npv(b, c, r, t)
-npv = sum((b-c) ./ (1+r) .^ t);
+function npv = calc_npv(npb, r, t)
+% npb: Net Present Benefits = Benefits(t) - Costs(t)
+% r: rate of return
+% t: timestep (usually year)
+npv = sum(npb ./ (1+r) .^ t);
 end

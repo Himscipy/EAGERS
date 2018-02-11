@@ -273,12 +273,14 @@ QP.ub = QP.ub(xkeep);
 
 %% old version just lowers upper bound when locking
 if ~isempty(Locked)
+    index = (0:QP.Organize.t1States:(nS-1)*QP.Organize.t1States)';
     for j = 1:1:nG
-        if any(Locked(:,j)==0) %is generator off at any point
+        if any(~Locked(:,j)) && any(Locked(:,j)) %is generator off at any point, but not always off and eliminated previously
+            Pmin = QP.lb(QP.organize{2,j});
             for t = 1:1:nS
                 if ~Locked(t+1,j)
                     QP.lb(QP.organize{t+1,j}) = 0;%was already zero
-                    QP.ub(QP.organize{t+1,j}) = 0;%need to make into an equality constraint (first change Aeq(:,i) = 0 to remove from energy balance, if more than 2 concurrent locked off steps, remove ramping constraints)
+                    QP.ub(QP.organize{t+1,j}) = 1e-5;%need to make into an equality constraint (first change Aeq(:,i) = 0 to remove from energy balance, if more than 2 concurrent locked off steps, remove ramping constraints)
                     %do this by setting A(:,i)=0 then remove all rows that are all zeros, then rows with 1 value (half a ramping constraint get  a) eliminated and b) converted to an upper bound
                     if isfield(QP.Organize,'SpinReserve')
                         QP.A((t-1)*QP.Organize.t1ineq+QP.Organize.SpinReserve(j),(t-1)*QP.Organize.t1States+QP.Organize.SpinReserveStates(j)) = 0;%%remove from calculation of spinning reserve
@@ -286,28 +288,24 @@ if ~isempty(Locked)
                 end
             end
             %% modify lower bounds if ramp rates are to slow (or steps too small)
-            Pmin = QP.lb(QP.organize{2,j});
             rows = QP.Organize.Ramping(j):QP.Organize.t1ineq:(nS-1)*QP.Organize.t1ineq+QP.Organize.Ramping(j);
             states = QP.Organize.States{j};
-            s = zeros(nS,length(states));
-            for i = 1:1:length(states)
-                s(1:nS,i) = states(i):QP.Organize.t1States:(nS-1)*QP.Organize.t1States+states(i);
-            end
             nt = length(states); %number of states per timestep
+            s = index*ones(1,nt) + ones(nS,1)*states;
             starts = nonzeros((1:nS)'.*((Locked(2:end,j)-Locked(1:nS,j))>0));
             if ~isempty(starts)
                 % example, the 4th index of locked is one and it takes 3 steps to turn on (0, .25LB, .7LB, >LB), then starts(1) = 3, n = 3, e = 3. We only need to change LB at 4 & 5 (33% and 67%), 3 was already set to zero
                 for k = 1:1:length(starts)
                     e = starts(k);
-                    if e<nS %cant change lb after nS, so nothing to do if starting at last step
-                        n = 0;
-                        Pmax = QP.b(rows(e));
-                        for f = 1:1:nt %starting with lb of 1st state in generator, then moving on
-                            while Pmax<sum(Pmin(1:f)) && (e+n)<nS
-                                QP.lb(s(e+n,f)) = Pmax - sum(QP.lb(s(e+n,1:(f-1)))); %lb to ensure that it is off when locked =0
-                                QP.lb(s(e+n,(f+1):nt)) = 0; %other states of this generator during start-up
-                                n= n+1; %# of steps to turn on
-                                Pmax = Pmax+QP.b(rows(e+n-1));
+                    n = 0;
+                    Pmax = QP.b(rows(e));
+                    for f = 1:1:nt %starting with lb of 1st state in generator, then moving on
+                        while Pmax<sum(Pmin(1:f)) && (e+n)<=nS
+                            QP.lb(s(e+n,f)) = Pmax - sum(QP.lb(s(e+n,1:(f-1)))); %lb to ensure that it is off when locked =0
+                            QP.lb(s(e+n,(f+1):nt)) = 0; %other states of this generator during start-up
+                            n= n+1; %# of steps to turn on
+                            if e+n<=nS
+                                Pmax = Pmax+QP.b(rows(e+n));
                             end
                         end
                     end
@@ -318,15 +316,17 @@ if ~isempty(Locked)
                 % example, the 6th index of locked is zero and it takes 3 steps to shut down (LB, .67LB, .33LB, 0), then stops(1) = 5, p = 3, e = 3. We only need to change LB at 4 & 5 (67% and 33%), 6 was already set to zero
                 for k = 1:1:length(stops)
                     e = stops(k);
-                    if e>1 %cant change lb of IC, so nothing to do if shutting down on this step
+                    if e> 1
                         n = 1;
                         Pmax = QP.b(rows(e-1)+1);
                         for f = 1:1:nt %starting with lb of 1st state in generator, then moving on
-                            while Pmax<sum(Pmin(1:f))
-                                QP.lb(s(e-n+1,f)) = Pmax - sum(QP.lb(s(e-n+1,1:(f-1)))); %lb to ensure that it is off when locked =0
-                                QP.lb(s(e-n+1,(f+1):nt)) = 0; %other states of this generator 
-                                Pmax = Pmax+QP.b(rows(e-n-1)+1);
+                            while Pmax<sum(Pmin(1:f)) && e-n>0
+                                QP.lb(s(e-n,f)) = Pmax - sum(QP.lb(s(e-n,1:(f-1)))); %lb to ensure that it is off when locked =0
+                                QP.lb(s(e-n,(f+1):nt)) = 0; %other states of this generator 
                                 n= n+1; %# of steps to turn off
+                                if e-n>0
+                                    Pmax = Pmax+QP.b(rows(e-n)+1);%amount it can ramp down at the previous step
+                                end
                             end
                         end
                     end

@@ -9,7 +9,7 @@ elseif isfield(handles,'legend')%2015 matlab
     delete(handles.legend)
 end
 networkNames = fieldnames(Plant.subNet);
-if ~isempty(Plant.Building)
+if isfield(Plant,'Building') && ~isempty(Plant.Building)
     networkNames(end+1) = {'BuildingTemp'};
 end
 nPlot = length(networkNames);
@@ -68,13 +68,14 @@ for q = 1:1:nPlot
     end
     if tSize==12 || isempty(ForecastTime)
         s0 = 1;
-    else s0 = nnz(Time<=ForecastTime(1));
+    else
+        s0 = nnz(Time<=ForecastTime(1));
     end
     axTick = (ceil(hours(1)):round((hours(end)-hours(1))/12):hours(end));
     axIndex = mod(axTick,24);
     axIndex([false,axIndex(2:end)==0]) = 24;
 
-    OoM = log10(max(sum(Data.(S)(s0:end,:),2)));
+    OoM = max(1,log10(max(sum(Data.(S)(s0:end,:),2))));
     if (OoM-floor(OoM))==0 %count in increments of 1, 10, 100 or 1000 etc
         Yspace = 10^(OoM-1);
         Ymax = 10^OoM;
@@ -89,7 +90,12 @@ for q = 1:1:nPlot
         Ymax = .2*10^ceil(OoM);
     end
     Ymin = 0;
-
+    if strcmp(S,'T')
+        Ymin = 55;
+        Ymax = 85;
+        Yspace = 5;
+        Data.T = Data.T*9/5+32;
+    end
     plot(h,hours(s0:end),Data.(S)(s0:end,:),'k')
     if ~isempty(ActualTime) && ~isempty(ForecastTime)
         plot(h,hours2,Forecast.(S),'b')

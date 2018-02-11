@@ -1,16 +1,17 @@
-function Solution = DispatchLoop(Date,Forecast,LastDispatch)
+function Solution = DispatchLoop(Date,Forecast,LastSolution)
 %% calculate optimal dispatch over the forecast horizon
 global Plant CurrentState %%  loaded by GUI & load generators
 dt = (Date(2:end) - Date(1:end-1))*24;
 nG = length(Plant.Generator);
 nS = length(Date)-1;
 
-scaleCost = updateGeneratorCost(Date(2:end)); %% All feedstock costs were assumed to be 1 when building matrices 
+scaleCost = updateGeneratorCost(Date(2:end),Plant.Generator); %% All feedstock costs were assumed to be 1 when building matrices 
 %% Update IC & matrices (including Make forecast & predict renewables, to create forecasted demands)
-if isempty(LastDispatch)
-    PredictDispatch = ones(length(Date),1)*[CurrentState.Generators, CurrentState.Lines, CurrentState.Buildings];
+if isempty(LastSolution) || isempty(LastSolution.Dispatch)
+    PredictDispatch = ones(length(Date),1)*CurrentState.Generators;
 else
-    PredictDispatch = [CurrentState.Generators, CurrentState.Lines, CurrentState.Buildings; LastDispatch(3:end,:);LastDispatch(end,:)];
+    index = [(3:length(LastSolution.Dispatch(:,1)))';length(LastSolution.Dispatch(:,1));];
+    PredictDispatch = [CurrentState.Generators; LastSolution.Dispatch(index,:)];
 end
 marginCost = updateMarginalCost(PredictDispatch,scaleCost,dt,1);%the dispatch is whatever has been dispatched so far, except for the initial condition.
 
@@ -18,7 +19,7 @@ if strcmp(Plant.optimoptions.solver,'Gurobi')
     pause(10)
     tic
     QP = updateMatrices(Plant.OpMatB,Date,scaleCost,marginCost,Forecast,[]);
-    x = gurobi_opt(QP,dt);
+    x = gurobi_opt(QP);
     Solution = sortSolution(x,QP);
     tsim(1,1) = toc;
 else
@@ -34,22 +35,22 @@ else
     QP = disableGenerators(QP,Locked,[]);%Disable generators here
     [x,Feasible] = callQPsolver(QP);
     if Feasible == 1
-        Solution = sortSolution(x,QP);
+        Solution1 = sortSolution(x,QP);
     end
     tsim(1,1) = toc;
     if any(QP.Organize.Dispatchable) %might be some on/off combinations
         if ~(Feasible==1)%% hopefully not here
             disp('error: initial dispatch was infeasible. Defaulting to previous dispatch');
-            Solution.Dispatch = PredictDispatch;
+            Solution1.Dispatch = PredictDispatch;
         end
         %% Step 2:  dispatch step by step
         if Plant.optimoptions.MixedInteger
             tic
-            OptimalState = StepByStepDispatch(Forecast,scaleCost,dt,'initially constrained',Solution.Dispatch);
+            OptimalState = StepByStepDispatch(Forecast,scaleCost,dt,'initially constrained',Solution1.Dispatch);
             clear mex
             tsim(1,2) = toc;
         else
-            OptimalState = Solution.Dispatch;
+            OptimalState = Solution1.Dispatch;
         end
         %% Start with optimal dispatch, and check if feasible
         tic
@@ -65,13 +66,11 @@ else
         end
         if Feasible==1
             if ~Plant.optimoptions.MixedInteger
-                Solution = FilterGenerators(QP_0,Solution.Dispatch,Locked,Date);
+                Solution = FilterGenerators(QP_0,Solution,Locked,Date);
                 %add something to see if FilterGenerators changed anything
             end
         else
-            if Plant.optimoptions.MixedInteger
-                disp('error: Cannot Find Feasible Dispatch');
-            end
+            disp('error: Cannot Find Feasible Dispatch');
         end
         tsim(1,3) = toc;
     end

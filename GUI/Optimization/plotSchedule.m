@@ -19,6 +19,8 @@ Outs = fieldnames(Plant.Generator(gen).OpMatA.output);
 networkNames = fieldnames(Plant.Network);
 networkNames = networkNames(~strcmp('name',networkNames));
 networkNames = networkNames(~strcmp('Equipment',networkNames));
+networkNames = networkNames(~strcmp('Location',networkNames));
+networkNames = networkNames(~strcmp('Buildings',networkNames));
 nPlot = length(networkNames);
 
 %% Collate history and future data

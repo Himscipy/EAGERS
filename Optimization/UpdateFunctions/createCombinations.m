@@ -1,20 +1,19 @@
 function K = createCombinations(QP,netDemand,IC,dt,t,K_C,K_all)
-global Plant
+global Plant 
 if ~isempty(K_C)
     netDemand = rmfield(netDemand,'C');
 end
 if isfield(netDemand,'E')
     Out = 'E';
-else Out = fieldnames(netDemand); %should only ever be 'C'
+else
+    Out = fieldnames(netDemand); %should only ever be 'C'
     Out = Out{1};
 end
 
 nG = length(Plant.Generator);
 isCHP = false;
-Type = cell(nG,1);
 for i = 1:1:nG
-    Type(i) = {Plant.Generator(i).Type};
-    if strcmp(Type{i},'CHP Generator')
+    if strcmp(Plant.Generator(i).Type,'CHP Generator')
         isCHP = true;
     end
 end
@@ -34,7 +33,7 @@ elseif strcmp(Out,'H')
 end
 inc = false(nG,1);
 for i = 1:1:nG
-    if ismember(Type{i},include) && QP.Organize.Dispatchable(i)
+    if ismember(Plant.Generator(i).Type,include) && QP.Organize.Dispatchable(i)
         inc(i) = true;
     end
 end
@@ -46,7 +45,7 @@ K = zeros(2^n,nG); %K is a matrix of all the possible generator on/off combinati
 
 if ~isempty(ninc)
     for j = 1:1:length(ninc)
-        if ~isempty(K_C) && strcmp(Type{ninc(j)},'Chiller')
+        if ~isempty(K_C) && strcmp(Plant.Generator(ninc(j)).Type,'Chiller')
             if K_C(ninc(j))
                 K(:,ninc(j)) = ninc(j); % Chiller status determined earlier
             end
@@ -94,7 +93,7 @@ if isCHP && strcmp(Out,'E') && ~isempty(K)
         end
     end
 end
-if isempty(K_C) && isfield(Plant.Data,'Demand') && isfield(Plant.Data.Demand,'C') && strcmp(Out,'E') && ~isempty(K)
+if isempty(K_C) && isfield(netDemand,'C') && strcmp(Out,'E') && ~isempty(K)
     req = QP.Organize.Balance.DistrictCool; %rows of Aeq associated with cooling demand
     [K,notFeas] = UpperLowerLimit(K,QP,req,netDemand.C(t),'C',IC,dt);
 end
@@ -120,28 +119,28 @@ for i = 1:1:length(limitL)
         I = find(any(QP.Aeq(req,states)~=0));
         if strcmp(Plant.Generator(i).Type,'Utility')%if it is a utility
             if length(states) ==2
-                limitL(i) = sum(QP.Aeq(req(I),states(2)).*QP.ub(states(2)));%if there is sellback, take 2nd state
-                limitU(i) = sum(QP.Aeq(req(I),states(1)).*QP.ub(states(1)));
+                limitL(i) = sum(QP.Aeq(req(I),states(2))*QP.ub(states(2)));%if there is sellback, take 2nd state
+                limitU(i) = sum(QP.Aeq(req(I),states(1))*QP.ub(states(1)));
             else
-                limitL(i) = sum(QP.Aeq(req(I),states).*QP.lb(states));
-                limitU(i) = sum(QP.Aeq(req(I),states).*QP.ub(states));
+                limitL(i) = sum(QP.Aeq(req(I),states).*QP.lb(states)');
+                limitU(i) = sum(QP.Aeq(req(I),states).*QP.ub(states)');
             end
         elseif any(strcmp(Plant.Generator(i).Type,{'Hydro Storage';'Electric Storage';'Thermal Storage';}))%if it is storage
             s = states(1);
-            limitL(i) = sum(QP.Aeq(req(I),s).*QP.lb(s));
-            limitU(i) = sum(QP.Aeq(req(I),s).*QP.ub(s));
+            limitL(i) = sum(QP.Aeq(req(I),s)*QP.lb(s));
+            limitU(i) = sum(QP.Aeq(req(I),s)*QP.ub(s));
             if ~isempty(IC)%bounds reduced by state of charge
                 limitU(i) = min(IC(i).*QP.Aeq(req,s)/dt,limitU(i));
                 chargingSpace = sum((Plant.Generator(i).QPform.Stor.UsableSize-IC(i)).*QP.Aeq(req,s));
                 limitL(i) = max(-chargingSpace/dt, limitL(i));
             end
         else
-            limitL(i) = sum(QP.Aeq(req(I),states).*QP.lb(states));
-            limitU(i) = sum(QP.Aeq(req(I),states).*QP.ub(states));
+            limitL(i) = sum(QP.Aeq(req(I),states).*QP.lb(states)');
+            limitU(i) = sum(QP.Aeq(req(I),states).*QP.ub(states)');
             if limitU(i)<limitL(i)%if it consumes this demand (i.e. a chiller when examining electrical demand)
                 temp = limitU(i);
                 limitU(i) = limitL(i);
-                limitL(i) = limitU(i);
+                limitL(i) = temp;
             end
         end
         if isfield(Plant.Generator(i).QPform,'constDemand') && isfield(Plant.Generator(i).QPform.constDemand,Out)

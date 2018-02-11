@@ -123,7 +123,11 @@ if length(varargin)==1 % first initialization
     %% initial guess of reforming cooling
     if strcmp(block.Mode,'fuelcell')
         FuelSupply  = sum(Current)/(2*block.F*1000)/(block.Utilization_Flow2*(4*block.Flow2Spec.CH4+block.Flow2Spec.CO+block.Flow2Spec.H2))*block.Cells; % fuel flow rate,  current/(2*F*1000) = kmol H2
-        block.Recirc.Flow2 = anodeRecircHumidification(block.Flow2Spec,FuelSupply,0.7,block.Steam2Carbon,block.Cells*sum(Current)/(2*block.F*1000),0.5);
+        if ~isfield(block,'AnPercEquilib')
+            block.Recirc.Flow2 = 0;
+        else
+            block.Recirc.Flow2 = anodeRecircHumidification(block.Flow2Spec,FuelSupply,0.7,block.Steam2Carbon,block.Cells*sum(Current)/(2*block.F*1000),0.5);
+        end
         switch block.Reformer
             case 'adiabatic'
                 block.ReformT = 823; %an initial guess temperature for adiabatic reforme, or if uncommenting line 873, this is the setpoint
@@ -146,7 +150,11 @@ if length(varargin)==1 % first initialization
                 block.R_WGS =  block.R_CH4*.8;
             case {'direct'}
                 block.Flow2_IC  = sum(Current)/(2*block.F*1000)/(block.Utilization_Flow2*(4*block.Flow2Spec.CH4+block.Flow2Spec.CO+block.Flow2Spec.H2))*block.Cells; % fuel flow rate,  current/(2*F*1000) = kmol H2
-                R1 = block.Flow2Spec.CH4*block.AnPercEquilib*block.Flow2_IC;
+                if isfield(block,'AnPercEquilib')
+                    R1 = block.Flow2Spec.CH4*block.AnPercEquilib*block.Flow2_IC;
+                else
+                    R1 = 0;%no reforming
+                end
                 block.R_CH4 = R1/block.Cells*ones(block.nodes,1)/block.nodes;
                 block.R_WGS =  block.R_CH4*.8;
         end 
