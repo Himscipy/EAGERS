@@ -1,5 +1,5 @@
 % --- Execute to resume a dispatch
-global Model_dir Plant Virtual DispatchWaitbar DateSim mainFig CurrentState 
+global Plant Virtual DispatchWaitbar DateSim mainFig CurrentState 
 %Virtual: Running a simulation only, set to zero when the end of the test data set is reached
 %DateSim: Current time in the simulation.
 %NumSteps: the number of dispatch optimiztions that will occur during the entire simulation
@@ -19,12 +19,6 @@ DateSim = Plant.Dispatch.Timestamp(Si);
 DispatchWaitbar=waitbar(Si/NumSteps,'Running Dispatch','Visible','off');
 Time = buildTimeVector(Plant.optimoptions);%% set up vector of time interval
 timers = zeros(NumSteps,3); % To record times set to zeros(1,3), to not record set to [];
-if isfield(Plant.Predicted,'GenDispcQP')
-    Compare = true; %compare mixed integer to non-mixed integer
-    timers_cQP = zeros(NumSteps,3); % To record times set to zeros(1,3), to not record set to [];
-else
-    Compare = false;
-end
 while Si<NumSteps-1
     Date = DateSim+[0;Time/24];
     if Si>1
@@ -34,18 +28,6 @@ while Si<NumSteps-1
         end 
     end 
     Forecast = updateForecast(Date(2:end));%% function that creates demand vector with time intervals coresponding to those selected
-    if Compare%%If running for comparisson of mixed and non-mixed integer
-        Plant.optimoptions.MixedInteger = false;
-        Solution_cQP = DispatchLoop(Date,Forecast,Solution);
-        timers_cQP(Si,:) = Solution_cQP.timers;
-        Plant.optimoptions.MixedInteger = true;
-        if ~isempty(Plant.Generator)
-            Plant.Predicted.GenDispcQP(:,:,Si) = Solution_cQP.Dispatch(2:end,:);
-        end
-        [C,~,~] = NetCostCalc(Solution_cQP.Dispatch,Date,'Dispatch');
-        Plant.Predicted.CostcQP(Si) = sum(C);
-    end
-
     Solution = DispatchLoop(Date,Forecast,Solution);
     timers(Si,:) = Solution.timers;   
     updateGUIstatus(handles,Solution,Date,Si)

@@ -5,7 +5,6 @@ global Plant DispatchWaitbar DateSim RealTime Virtual
 %Si: Counter for dispatch loop
 %Last24hour: recorded data for the last 24 hours
 %OnOff: the desired generator state from the controller (may differ from actual on/off because it leaves generators on as they ramp down to min power, then shuts them off)
-Compare = false;%true  %compare mixed integer to non-mixed integer
 DateSim = Date;
 if ~isfield(Plant,'subNet') || isempty(Plant.subNet)
     initializeOptimization
@@ -39,17 +38,6 @@ while Si<NumSteps-1
         end 
     end
     Forecast = updateForecast(Date(2:end));%% function that creates demand vector with time intervals coresponding to those selected
-    if Compare%%If running for comparisson of mixed and non-mixed integer
-        Plant.optimoptions.MixedInteger = false;
-        Solution_cQP = DispatchLoop(Date,Forecast,Solution);
-        timers_cQP(Si,:) = Solution_cQP.timers;
-        Plant.optimoptions.MixedInteger = true;
-        if ~isempty(Plant.Generator)
-            Plant.Predicted.GenDispcQP(:,:,Si) = Solution_cQP.Dispatch(2:end,:);
-        end
-        [C,~,~] = NetCostCalc(Solution_cQP.Dispatch,Date,'Dispatch');
-        Plant.Predicted.CostcQP(Si) = sum(C);
-    end
     Solution = DispatchLoop(Date,Forecast,Solution);
     timers(Si,:) = Solution.timers;
     if isempty(DispatchWaitbar)

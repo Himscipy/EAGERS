@@ -23,13 +23,15 @@ elseif T_peak>3.6e4
 else
     Dt = 1;
 end
-SS = ss(Gen.VariableStruct.StateSpace.A,Gen.VariableStruct.StateSpace.B,Gen.VariableStruct.StateSpace.C,Gen.VariableStruct.StateSpace.D);
-SS = c2d(SS,Dt);
+%convert continuous state-space to discrete time state-space
+A = expm(Gen.VariableStruct.StateSpace.A.*Dt);
+B = (Gen.VariableStruct.StateSpace.A)\(expm(Gen.VariableStruct.StateSpace.A.*Dt)-eye(2))*Gen.VariableStruct.StateSpace.B;
+C = Gen.VariableStruct.StateSpace.C;
+D = Gen.VariableStruct.StateSpace.D;
 Time = 5*T_peak;
 dX_dt = [];
 while isempty(dX_dt)
     nS = round(Time/Dt)+1;
-    t = linspace(0, Dt*(nS-1),nS);
     u = UB*linspace(1,1,nS);
     [n,n2] = size(Gen.VariableStruct.StateSpace.C);
     X0 = zeros(n2,1);
@@ -37,11 +39,10 @@ while isempty(dX_dt)
     for i = 1:1:n
         X0(find(Gen.VariableStruct.StateSpace.C(i,:),1,'first'))=x0(i);
     end
-    [y,t] = lsim(SS,u,t,X0);
+    [y,t] = ssSimulateDiscrete(A,B,C,D,X0,u,Dt);
     if any((y(:,1)-y(1,1))>(.95*(u(1)-y(1,1)))) && ~any(abs((y(end-9:end,1)-y(end,1))/y(end,1))>1e-3)
-        nR = min(nonzeros((1:1:nS)'.*((y(:,1)-y(1,1))>(.95*(u(1)-y(1,1))))));
+        nR = min(nonzeros((1:1:nS+1)'.*((y(:,1)-y(1,1))>(.95*(u(1)-y(1,1))))));
         tRise = interp1(y(nR-1:nR,1)-y(1,1),t(nR-1:nR),.95*(u(1)-y(1,1)))/3600; %rise time in hours
-%         tRise = t(find((y(:,1)-y(1,1))>(.95*(u(1)-y(1,1))),1,'first'))/3600; %rise time in hours
         dX_dt = ((UB-LB).*(0.95)./tRise);
     else
         Time = Time*5;
@@ -64,3 +65,17 @@ if ~isempty(handles)
     % set(get(h1,'Ylabel'),'String','Power (kW)')
     legend(h1, Names)
 end
+end%Ends function secondOrderResponse
+
+function [Y,T] = ssSimulateDiscrete(A,B,C,D,X0,u,Dt)
+n = length(u);
+T = (0:Dt:n*Dt)';
+X = zeros(length(X0),n+1);
+X(:,1) = X0;
+Y = zeros(n+1,1);
+Y(1) = C*X0;
+for t = 1:1:n
+    X(:,t+1) = A*X(:,t) + B*u(t);
+    Y(t+1) = C*X(:,t+1) + D*u(t);
+end
+end%Ends function solverFixedStep

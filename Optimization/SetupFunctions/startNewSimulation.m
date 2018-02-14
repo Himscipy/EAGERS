@@ -9,11 +9,6 @@ else
         interpolateData(Plant.optimoptions.Tmpc,Plant.optimoptions.Interval,0.00);%create test data at correct frequency
     end
 end
-if Compare%%If running for comparisson of mixed and non-mixed integer
-    Plant.Predicted.GenDispcQP = zeros(size(Plant.Predicted.GenDisp));
-    Plant.Predicted.CostcQP = zeros(NumSteps,1);
-    timers_cQP = zeros(NumSteps,3);
-end
 Data = GetCurrentData(DateSim);
 Last24hour = [];%re-load the previous 24 hours
 TimeYesterday = linspace(DateSim-1,DateSim,ceil(24/Plant.optimoptions.Resolution)+1)';

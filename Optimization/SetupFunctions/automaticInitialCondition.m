@@ -9,6 +9,7 @@ if isfield(Plant,'Building') && ~isempty(Plant.Building)
     Data_t0.Building = ForecastBuilding(Data_t0.Weather,Data_t0.Timestamp,Data_t0.Building);
 else
     nB = 0;
+    CurrentState.Buildings = zeros(2,nB);
 end
 nL = length(Plant.OpMatA.Organize.IC)-nG-nB;
 CurrentState.Lines = zeros(1,nL);
@@ -20,21 +21,19 @@ for i = 1:1:nG
     end
 end
 IC = StepByStepDispatch(Data_t0,scaleCost,Plant.optimoptions.Resolution,'',[]);
-OnOff = true(1,nG);
+
+LB = zeros(1,nG);
 for i=1:1:nG
-    if ismember(Plant.Generator(i).Type,{'Electric Storage';'Thermal Storage';})
-        IC(i) = 0.5*Plant.Generator(i).QPform.Stor.UsableSize; % IC = halfway charged energy storage
-    elseif Plant.OpMatA.Organize.Dispatchable(i)
+    if Plant.OpMatA.Organize.Dispatchable(i)
         states = Plant.Generator(i).QPform.states(1:nnz(~cellfun('isempty',Plant.Generator(i).QPform.states(:,end))),end);
-        LB = 0;
         for j = 1:1:length(states)
-            LB = LB + Plant.Generator(i).QPform.(states{j}).lb;
+            LB(i) = LB(i) + Plant.Generator(i).QPform.(states{j}).lb(2);
         end
-        if IC(i)<LB
-            OnOff(i) = false;
-        end
+    elseif ismember(Plant.Generator(i).Type,{'Electric Storage';'Thermal Storage';})
+        IC(i) = 0.5*Plant.Generator(i).QPform.Stor.UsableSize; % IC = halfway charged energy storage
     end
-end 
+end
+OnOff = IC>LB;
 
 if isfield(Plant.Network,'Hydro')
     CurrentState.Hydro = zeros(1,nG);%SOC for reserviors,  IC is the initial power production

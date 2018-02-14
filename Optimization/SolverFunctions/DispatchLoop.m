@@ -43,34 +43,30 @@ else
             disp('error: initial dispatch was infeasible. Defaulting to previous dispatch');
             Solution1.Dispatch = PredictDispatch;
         end
-        %% Step 2:  dispatch step by step
         if Plant.optimoptions.MixedInteger
             tic
+            %% Step 2:  dispatch step by step
             OptimalState = StepByStepDispatch(Forecast,scaleCost,dt,'initially constrained',Solution1.Dispatch);
             clear mex
             tsim(1,2) = toc;
-        else
-            OptimalState = Solution1.Dispatch;
-        end
-        %% Start with optimal dispatch, and check if feasible
-        tic
-        marginCost = updateMarginalCost(OptimalState,scaleCost,dt,2);
-        QP_0 = updateMatrices(Plant.OpMatB,Date,scaleCost,marginCost,Forecast,[]); %update fit B matrices
-        Locked = CheckRampRates(QP_0,Locked,OptimalState,dt);
-        QP = disableGenerators(QP_0,Locked,[]);%Disable generators here
-        [x,Feasible] = callQPsolver(QP);%this is the dispatch with fit B
-        if Feasible == 1
-            Solution = sortSolution(x,QP);
-        else 
-            [Solution, Feasible] = FindFeasible(QP_0,Locked);
-        end
-        if Feasible==1
-            if ~Plant.optimoptions.MixedInteger
-                Solution = FilterGenerators(QP_0,Solution,Locked,Date);
-                %add something to see if FilterGenerators changed anything
+            tic
+            %% Step 3:  2nd complete optimization
+            marginCost = updateMarginalCost(OptimalState,scaleCost,dt,2);
+            QP_0 = updateMatrices(Plant.OpMatB,Date,scaleCost,marginCost,Forecast,[]); %update fit B matrices
+            Locked = CheckRampRates(QP_0,Locked,OptimalState,dt);
+            QP = disableGenerators(QP_0,Locked,[]);%Disable generators here
+            [x,Feasible] = callQPsolver(QP);%this is the dispatch with fit B
+            if Feasible == 1
+                Solution = sortSolution(x,QP);
+            else 
+                [Solution, Feasible] = FindFeasible(QP_0,Locked);
+            end
+            if Feasible~=1
+                disp('error: Cannot Find Feasible Dispatch');
             end
         else
-            disp('error: Cannot Find Feasible Dispatch');
+            tic
+            Solution = cQP_Feasibility(Solution1.Dispatch,Forecast,scaleCost,Date);
         end
         tsim(1,3) = toc;
     end
