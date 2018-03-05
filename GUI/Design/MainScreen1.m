@@ -304,7 +304,7 @@ end
 list = {};
 for i = 1:1:(nG+nB)
     if i<=nG
-        if ~strcmp(testSystems(SYSINDEX).Generator(i).Type,'Utility')
+        if ~strcmp(testSystems(SYSINDEX).Generator(i).Type,'Utility') && ~strcmp(testSystems(SYSINDEX).Generator(i).Type,'AC_DC')
             list(end+1,1:2) = {testSystems(SYSINDEX).Generator(i).Name, num2str(i)};
         end
     else
@@ -1070,6 +1070,8 @@ global testSystems SYSINDEX GENINDEX
 Gen = testSystems(SYSINDEX).Generator(GENINDEX);
 if strcmp(Gen.Type,'Utility')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.SumRates(1,1) = str2double(get(hObject,'String'));
+elseif strcmp(Gen.Type,'AC_DC')
+    testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.AC_to_DC_eff = str2double(get(hObject,'String'));
 elseif ismember(Gen.Type,{'CHP Generator';'Electric Generator';'Heater';'Chiller'}) 
     handles = guihandles;
     testSystems(SYSINDEX).Generator(GENINDEX) = updateComponentSpec(testSystems(SYSINDEX).Generator(GENINDEX),'UB',str2double(get(hObject,'String')));
@@ -1091,6 +1093,8 @@ global testSystems SYSINDEX GENINDEX
 Gen = testSystems(SYSINDEX).Generator(GENINDEX);
 if strcmp(Gen.Type,'Utility')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.SumRates(1,2) = str2double(get(hObject,'String'));
+elseif strcmp(Gen.Type,'AC_DC')
+    testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.DC_to_AC_eff = str2double(get(hObject,'String'));
 elseif ismember(Gen.Type,{'CHP Generator';'Electric Generator';'Heater';'Chiller'}) 
     handles = guihandles;
     testSystems(SYSINDEX).Generator(GENINDEX) = updateComponentSpec(testSystems(SYSINDEX).Generator(GENINDEX),'LB',str2double(get(hObject,'String')));
@@ -1114,6 +1118,8 @@ global testSystems SYSINDEX GENINDEX
 Gen = testSystems(SYSINDEX).Generator(GENINDEX);
 if strcmp(Gen.Type,'Utility')
     testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.SumRates(2,1) = str2double(get(hObject,'String'));
+elseif strcmp(Gen.Type,'AC_DC')
+    testSystems(SYSINDEX).Generator(GENINDEX).VariableStruct.Capacity = str2double(get(hObject,'String'));
 elseif ismember(Gen.Type,{'CHP Generator';'Electric Generator';'Heater';'Chiller'})
     handles = guihandles;
     testSystems(SYSINDEX).Generator(GENINDEX) = updateComponentSpec(testSystems(SYSINDEX).Generator(GENINDEX),'dX_dt',str2double(get(hObject,'String')));

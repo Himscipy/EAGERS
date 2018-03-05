@@ -5,15 +5,20 @@ nG = length(Plant.Generator);
 nB = length(Plant.Building);
 nL = length(Plant.OpMatA.Organize.IC)-nG-nB;
 list = {};
+list2 = {};
 sizes = {};
 Index =[];
 IC = zeros(1,nG+nL);
 CurrentState.Generators = zeros(1,nG);
-CurrentState.Lines = zeros(1,nL);
 CurrentState.Buildings = zeros(2,nB)+17.4;
-include = {'CHP Generator', 'Electric Generator', 'Chiller','Heater'};
+include = {'CHP Generator', 'Electric Generator','Chiller','Heater','Hydro Storage'};
 for i = 1:1:length(Plant.Generator)
-    if isfield(Plant.Generator(i).OpMatA,'Stor')
+    if strcmp(Plant.Generator(i).Type,'Hydro Storage')
+        list(end+1) = {strcat(Plant.Generator(i).Name,' --- Electric Output')};
+        list2(end+1) = {strcat(Plant.Generator(i).Name,' --- % of max capacity')};
+        sizes(end+1) = {'50'};
+        Index(end+1) = i;
+    elseif isfield(Plant.Generator(i).OpMatA,'Stor')
         list(end+1) = {strcat(Plant.Generator(i).Name,' --- % of max capacity')};
         sizes(end+1) = {'50'};
         Index(end+1) = i;
@@ -27,9 +32,12 @@ for i = 1:1:length(Plant.Generator)
         %utility
      end
 end
-IC(Index) = str2double(inputdlg(list,'Specify Initial Condition (kW) or State of Charge (%)',1,sizes));
+list = [list,list2];
+sizes = [sizes,50*ones(1,length(list2))];
+Input = str2double(inputdlg(list,'Specify Initial Condition (kW) or State of Charge (%)',1,sizes));
+IC(Index) = Input(1:length(Index));
 for i=1:1:nG
-    if isfield(Plant.Generator(i).OpMatA,'Stor')
+    if isfield(Plant.Generator(i).OpMatA,'Stor') && ~strcmp(Plant.Generator(i).Type,'Hydro Storage')
         IC(i) = IC(i)/100*Plant.Generator(i).OpMatA.Stor.UsableSize; % IC = halfway charged energy storage
     end
 end
@@ -37,16 +45,9 @@ end
 networkNames = fieldnames(Plant.subNet);
 if any(strcmp('Hydro',networkNames))
     for n = 1:1:length(Plant.subNet.Hydro.nodes) 
-        name = Plant.subNet.Hydro.lineNames{n};
-        r = strfind(name,'_');
-        name = name(1:r(1)-1);
-        IC(nG+Plant.subNet.Hydro.lineNumber(n)) = str2double(inputdlg(name,'Specify Initial Flow (1000 ft^3/s)',1,0));
-        equip = Plant.subNet.Hydro.Equipment{n};
-        for k = 1:1:length(equip)
-            i = equip(k);
-            if strcmp(Plant.Generator(i).Type,'Hydro Storage')
-                CurrentState.Hydro(i) =  str2double(inputdlg(Plant.Generator(i).Name,'Specify Initial State of Charge (%)',1,0));
-            end
+        i = Plant.subNet.Hydro.Equipment{n};
+        if strcmp(Plant.Generator(i).Type,'Hydro Storage')
+            CurrentState.Hydro(n) =  Input(length(Index)+n);
         end
     end
 end
@@ -64,6 +65,5 @@ for i = 1:1:nG
     end
 end
 CurrentState.Generators=IC(1:nG);
-CurrentState.Lines= IC(nG+1:nG+nL); %do we need this anymore?
-CurrentState.Buildings(:,1:nB) = 17.4; %initial temperature guess
+CurrentState.Buildings(:,1:nB) = 20; %initial temperature guess
 end%Ends function manualInitialCondition

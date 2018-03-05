@@ -69,7 +69,7 @@ nP = nnz(feasible==true);
 K = K(I(1:nP),:); %the n best combinations
 
 Alt.Binary{t} = K>0;
-Alt.Disp{t} = Dispatch(I(1:nP),:);
+Alt.Disp{t} = Dispatch(I(1:nP),1:nG);
 Alt.Cost{t} = Cost(1:nP)-Cost(1);
 Alt.Generators{t} = Dispatch(I(1:nP),1:nG);
 Alt.LineFlows{t} = Dispatch(I(1:nP),nG+1:nG+nL);

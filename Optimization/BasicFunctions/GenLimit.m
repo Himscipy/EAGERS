@@ -20,15 +20,17 @@ for i = 1:1:nG
         UB(i) = Plant.Generator(i).Size;
     end
 end
-S= {'E';'H';'C'};
-S2 = {{'CHP Generator';'Electric Generator';};{'Heater'};{'Chiller';}};
+S= {'E';'H';'C';'Hy'};
+S2 = {{'CHP Generator';'Electric Generator';};{'Heater'};{'Chiller';};{'Electrolyzer';'Hydrogen Generator';}};
 for k = 1:1:length(S)
     spareGen = zeros(nS,1);
     spareGenCumulative.(S{k}) = zeros(nS,1);
     MaxOut.(S{k}) = zeros(nS+1,nG);
     inc = false(nG,1);
+    Type = cell(nG,1);
     for i = 1:1:nG
-        if ismember(Plant.Generator(i).Type,S2{k})
+        Type{i} = Plant.Generator(i).Type;
+        if any(strcmp(Plant.Generator(i).Type,S2{k}))
             inc(i) = true;
         end
     end
@@ -94,9 +96,28 @@ for k = 1:1:length(S)
             end
             spareGen = spareGen + (MaxOut.(S{k})(2:end,i) - heatOutput(2:end));
         end
-    end
+        if strcmp(Plant.Generator(i).Type,'Utility') && isfield(Plant.Generator(i).QPform.output,S{k})
+            MaxOut.(S{k})(2:end,i) = Plant.Generator(i).QPform.X.ub; GenOutput(2:end,i);
+            spareGen = spareGen + Plant.Generator(i).QPform.X.ub - GenOutput(2:end,i);
+        end
+    end    
     for t = 1:1:nS
         spareGenCumulative.(S{k})(t) = sum(spareGen(1:t).*dt(1:t));
+    end
+    if strcmp(S{k},'E') && any(strcmp('AC_DC',Type))
+        acdc = nonzeros((1:1:nG)'.*strcmp('AC_DC',Type));
+        MaxOut.DC = zeros(nS+1,nG);
+        spareGenCumulative.DC = spareGenCumulative.E;
+        for i = 1:1:nG
+            if inc(i) 
+                if isfield(Plant.Generator(i).QPform.output,'DC')
+                    MaxOut.DC(:,i) = MaxOut.E(:,i);
+                    MaxOut.E(:,acdc) = MaxOut.E(:,acdc) + MaxOut.E(:,i)*Plant.Generator(acdc).VariableStruct.DC_to_AC_eff;
+                else
+                    MaxOut.DC(:,i) = MaxOut.E(:,i)*Plant.Generator(acdc).VariableStruct.AC_to_DC_eff;
+                end
+            end
+        end
     end
 end
 end%ends function GenLimit

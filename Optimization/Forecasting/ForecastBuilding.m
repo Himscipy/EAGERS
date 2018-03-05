@@ -9,6 +9,9 @@ Weather = varargin{1};
 Date = varargin{2};
 nS = length(Date);
 Building = varargin{3};%forecast with actual loads from TestData
+if ~isfield(CurrentState,'Buildings') || abs(round(864000*(CurrentState.Buildings(3,1)+Plant.optimoptions.Resolution/24))/864000 - Date(1))>1e-5
+    BuildingWarmUp(Date,6);%%Need warm-up period if not currently running the model
+end
 Building.E0 = zeros(nS,nB);
 Building.C0 = zeros(nS,nB);
 Building.H0 = zeros(nS,nB);
@@ -23,22 +26,6 @@ Building.Twall = zeros(nS,nB);
 Building.Damper = zeros(nS,nB);
 for i = 1:1:nB
     Build = Plant.Building(i);
-    Location = Plant.subNet.Electrical.Location(Build.QPform.Electrical.subnetNode);
-    %%Need warm-up period if not currently running the model
-    if ~isfield(CurrentState,'Buildings') || round(864000*(CurrentState.Buildings(3,i)+Plant.optimoptions.Resolution/24))/864000 ~= Date(1)
-        days = 6;
-        Tzone = 20;
-        Twall = 20;
-        wuDate = linspace(Date(1),Date(1)+1 - Plant.optimoptions.Resolution/24,24)';
-        wuWeather = WeatherForecast(wuDate);
-        [wuInternalGains,wuExternalGains,~,~,~,~] = BuildingLoads(Build,wuWeather.irradDireNorm,wuWeather.irradDiffHorz,Location,wuDate);
-        for d = 1:1:days
-            [~,~,~,Tzone,Twall,~] = BuildingProfile(Build,wuDate,wuInternalGains,wuExternalGains,wuWeather.Tdb,wuWeather.RH,Tzone(end,1),Twall(end,1));
-        end
-        CurrentState.Buildings(1,i) = Tzone(end);
-        CurrentState.Buildings(2,i) = Twall(end);
-        CurrentState.Buildings(3,i) = Date(1); 
-    end
     Tzone = CurrentState.Buildings(1,i);
     Twall = CurrentState.Buildings(2,i);
     [Cooling, Heating, Fan_Power,Tzone,Twall,Damper] = BuildingProfile(Build,Date,Building.InternalGains(:,i),Building.ExternalGains(:,i),Weather.Tdb,Weather.RH,Tzone,Twall);

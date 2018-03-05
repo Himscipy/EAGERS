@@ -1,7 +1,7 @@
 function Solution = sortSolution(x,QP)
 [m,n] = size(QP.organize);
 nS = m-1;
-nG = length(QP.constCost);
+nG = length(QP.constCost(1,:));
 nB = length(QP.Organize.Building.r);
 nL = n-nG-nB;
 nH = nnz(QP.Organize.Hydro);
@@ -26,17 +26,16 @@ for i = 1:1:nG
                 for j = 1:1:length(states)
                     P = P + Out_vs_State(j)*x(states(j)); %record this combination of outputs (SOC for storage)
                 end
-                if P>2e-4%added this to avoid rounding errors in optimization. When generator is locked off, the UB is set to 1e-5
+                if abs(P)>2e-4%added this to avoid rounding errors in optimization. When generator is locked off, the UB is set to 1e-5
                     Solution.Dispatch(t,i) = P;
                 end
             end
         end
     end
-    if QP.Organize.Hydro(i)
-        for t = 1:1:nS
-            %Get SOC of each generator into a matrix for all time steps
-            Solution.hydroSOC(t,i) = x(QP.organize{t+1,i}+1,1);
-        end
+end
+for i = 1:1:length(QP.Organize.Hydro)%Get SOC of each generator into a matrix for all time steps
+    for t = 1:1:nS
+        Solution.hydroSOC(t,i) = x(QP.organize{t+1,QP.Organize.Hydro(i)}+1,1)+QP.Organize.hydroSOCoffset(i);
     end
 end
 for i = 1:1:nL

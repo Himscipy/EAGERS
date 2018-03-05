@@ -31,16 +31,15 @@ end
 for net = 1:1:length(networkNames)
     inc = false(nG,1);
     stor = false(nG,1);
-    if strcmp(networkNames{net},'Electrical')
-        out = 'E';
-    elseif strcmp(networkNames{net},'DistrictHeat')
-        out = 'H';
-    elseif strcmp(networkNames{net},'DistrictCool')
-        out = 'C';
-    end
+    util = [];
+    out = Plant.subNet.(networkNames{net}).abbreviation;
     for i = 1:1:nG
-        if strcmp(Plant.Generator(i).Type,'Utility')  || strcmp(Plant.Generator(i).Type,'Solar') 
+        if strcmp(Plant.Generator(i).Type,'Solar') 
             %%don't include
+        elseif strcmp(Plant.Generator(i).Type,'Utility')
+            if isfield(Plant.Generator(i).QPform.output,out) || (strcmp(out,'DC') && isfield(Plant.Generator(i).QPform.output,'E'))
+                util = i;
+            end
         elseif ismember(Plant.Generator(i).Type,{'Thermal Storage';'Electric Storage';}) 
             if isfield(Plant.Generator(i).QPform.output,out)
                 stor(i) = true;
@@ -56,7 +55,7 @@ for net = 1:1:length(networkNames)
     if any(stor) %&& any(StoredEnergy>0)
         Locked = checkStorageCapacity(QP,OptimalState,stor,Locked,inc,out,dt);
     else
-        Locked = turnSomethingOn(QP,OptimalState,Locked,out,networkNames{net},inc,dt);
+        Locked = turnSomethingOn(QP,OptimalState,Locked,out,networkNames{net},inc,util,dt);
     end
 end
 end%ends function CheckRampRates
@@ -159,7 +158,8 @@ for i = 1:1:nG
             nextOn = starts(starts>stops(k));
             if isempty(nextOn)
                 nextOn = nS;
-            else nextOn = nextOn(1);
+            else
+                nextOn = nextOn(1);
             end
             t_startDown = 1;
             while Disp(t_startDown+1,i)<MaxOut.(out)(t_startDown+1,i) && t_startDown<stops(k)
@@ -215,7 +215,7 @@ end
 end%Ends function checkStorageCapacity
 
 
-function [Locked,feas] = turnSomethingOn(QP,OptimalState,Locked,out,net,inc,dt)
+function [Locked,feas] = turnSomethingOn(QP,OptimalState,Locked,out,net,inc,util,dt)
 global Plant
 nG = length(Plant.Generator);
 nS = length(dt);
@@ -266,7 +266,11 @@ while ~feas
     if strcmp(out,'H') %overwrite electric dispatch setting with what the heat dispatch is for CHP generators
         [~,NetDemand] = heatDisp(OptimalState,Locked,QP,dt);
     end
-    if all(sum(MaxOut.(out)(2:end,inc),2)>=(NetDemand-1e-9))%fix due to rounding errors
+    constrainedGen = sum(MaxOut.(out)(2:end,inc),2);
+    if ~isempty(util)
+        constrainedGen = constrainedGen + MaxOut.(out)(2:end,util);
+    end
+    if all(constrainedGen>=(NetDemand-1e-9))%fix due to rounding errors
         feas = true;
     else
         feas = false;
@@ -281,9 +285,11 @@ while ~feas
                 if inc(i)
                     if Constraint(t,i)>0 && Constraint(t,i)<nS+1
                         diff(i) = abs(Constraint(t,i)-t);
-                    else diff(i) = nS+1;
+                    else
+                        diff(i) = nS+1;
                     end
-                else diff(i) = inf;
+                else
+                    diff(i) = inf;
                 end
             end
             [~,I] = min(diff);

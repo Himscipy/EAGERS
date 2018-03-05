@@ -1,5 +1,6 @@
 function Forecast = SNIWPEForecast(Date)
 global Last24hour
+Forecast.Timestamp = Date;
 %% initialize
 alpha = .85;
 beta = 0.9; % Take this out after training is added!

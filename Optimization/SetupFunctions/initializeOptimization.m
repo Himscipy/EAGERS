@@ -80,9 +80,12 @@ elseif ~isfield(Plant.Data,'HistProf') || isempty(Plant.Data.HistProf)
 end
 
 %% Load generators, & build QP matrices
+checkACDC('control');%just in case planning tool didn't updateSystemRep
 loadGenerator % Loads generators stored in Plant.Generator
 loadBuilding %Loads any buildings into QPform
-build_subNet
+[Plant.subNet, Plant.Generator] = build_subNet(Plant.Network,Plant.Generator);
+locateBuildings
+maxUtilitySellback
 findbuffer %need to wait until everything else has been loaded to load the buffer, because it is reliant on how quickly everything else can charge the system
 Time = buildTimeVector(Plant.optimoptions);%% set up dt vector of time interval length
 dt = Time - [0; Time(1:end-1)];
@@ -100,4 +103,3 @@ if strcmp(Plant.optimoptions.method,'Control')
         Plant.Online(t) = buildMatrices('OpMatB',dt2(t:end)); %build the matrix for the onlineOptimLoop using FitB
     end
 end
-

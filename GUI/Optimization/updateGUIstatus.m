@@ -54,7 +54,8 @@ if ~isempty(handles)
                     eff = Plant.Generator(GENINDEX).Output.Heat;    
                 elseif strcmp(Plant.Generator(GENINDEX).Type,'Hydro')
                     skip = true;
-                else skip = true;
+                else
+                    skip = true;
                 end
                 if ~skip
                     Efficiency = interp1(cap,eff,GenDisp(2,GENINDEX))*100;

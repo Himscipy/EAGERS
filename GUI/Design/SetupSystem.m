@@ -7,7 +7,6 @@ handles = guihandles;
 % Put Plant.Generator information into lists
 nG = length(testSystems(SYSINDEX).Generator);
 isType = zeros(nG,1);
-isFC = zeros(nG,1);
 type = cell(nG,1);
 name = cell(nG,1);
 source = cell(nG,1);
@@ -15,44 +14,41 @@ for i = 1:nG
     type(i) = {testSystems(SYSINDEX).Generator(i).Type};
     name(i) = {testSystems(SYSINDEX).Generator(i).Name};
     source(i) = {testSystems(SYSINDEX).Generator(i).Source};
-    if (strcmp(type(i),'CHP Generator') || strcmp(type(i),'Electric Generator')) && testSystems(SYSINDEX).Generator(i).VariableStruct.isFuelCell
-        isFC(i) = 1;
-    end
 end
 
 % Find indices of relevant components
 switch str
-    case {'Fuel Cell';'ICE / mGT'}
-        if strcmp(str,'Fuel Cell')
-            isType = strcmp('CHP Generator',type).*isFC + strcmp('Electric Generator',type).*isFC;
-        else
-            isType = strcmp('CHP Generator',type).*(~isFC) + strcmp('Electric Generator',type).*(~isFC);
+    case 'DCgen' 
+        isType = strcmp('CHP Generator',type) + strcmp('Electric Generator',type);
+        for i = 1:nG
+            if isType(i) && ~isfield(testSystems(SYSINDEX).Generator(i).Output,'DirectCurrent')
+                isType(i) = false;
+            end
+        end
+    case 'ACgen'
+        isType = strcmp('CHP Generator',type) + strcmp('Electric Generator',type);
+        for i = 1:nG
+            if isType(i) && ~isfield(testSystems(SYSINDEX).Generator(i).Output,'Electricity')
+                isType(i) = false;
+            end
         end
     case 'Utility'
         isType = strcmp('Utility',type);
     case 'Solar PV'
         isType = strcmp('Solar',type);
-    case 'Air Heater'
+    case 'Heater'
         isType = strcmp('Heater',type);
-    case 'TES 2' % feeds Hot Water Demands
+    case 'TES_Hot' 
         isType = strcmp('Thermal Storage',type).*strcmp('Heat',source);
-    case 'TES 3' % feeds Cooling Demands
+    case 'TES_Cold' 
         isType = strcmp('Thermal Storage',type).*strcmp('Cooling',source);
     case 'Battery'
         isType = strcmp('Electric Storage',type);
     case 'Chiller'
-        isType = strcmp('Chiller',type);
-    case 'Water Heater'
-        isType = strcmp('Boiler',type);
-%     Following buttons don't work until we decided what they display
-%     case 'Heating Demands'
-%         GENINDEX = -1;
-%     case 'Hot Water Demands'
-%         GENINDEX = -2;
-%     case 'Cooling Demands'
-%         GENINDEX = -3;
-%     case 'AC / DC Conversion'
-%         GENINDEX = -4;
+        isType = strcmp('Chiller',type).*strcmp('Elecicity',source);
+    case 'Ab Chiller'
+        isType = strcmp('Chiller',type).*strcmp('Heat',source);
+
 end
 isType = nonzeros(linspace(1,nG,nG)'.*isType);
 

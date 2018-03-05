@@ -1,28 +1,68 @@
 function loadGenerator% Loads generators for economic dispatch
 %% this function identifies the values that will be used to represent each generator in the quadratic optimizations
+%% Network names, their corresponding abbreviation, what they represent
+% Electrical --- E  --- standard 480V AC electrical network 
+% DistrictHeat --- H --- standard 80C supply heating bus
+% DistrictCool --- C --- standard 4C supply cooling bus
+% Hydro        --- W --- River network with reservoirs and dams
+% DirectCurrent --- DC --- 48V DC electrical network
+% CoolingWater --- CW --- Water circulated between chillers and cooling towers
+% Transmission1 --- E1 --- 230kV electric transmission (E2, E3, etc can be additional voltage levels
+% Hydrogen     --- Hy --- Gaseous hydrogen stream
+% LiqHydrogen  --- LH2 --- Liquid hydrogen
+% Heating2     --- H2 --- Heat a different temperature than DistrictHeat (H3, H4... as needed)
+%%-----%%%
 global Plant
 nG = length(Plant.Generator);
+n = 5; % # of segments in piecewise quadratic fits
 for i = 1:1:nG
-    Plant.Generator(i).QPform = {}; %delete this line when you begin using the gui again
-    if isempty(Plant.Generator(i).QPform)%only load generators that have not been loaded yet. New run, new generator, or edited generator
-        typeNoSpace = char(Plant.Generator(i).Type(~isspace(char(Plant.Generator(i).Type))));
-        [Plant.Generator(i).QPform, Plant.Generator(i).VariableStruct.dX_dt,SS] = eval(strcat('load',typeNoSpace,'(Plant.Generator(i))'));
-        if ~isempty(SS)
-            SSi(i) = SS;
-        end
+    switch Plant.Generator(i).Type
+        case 'Utility'
+            Plant.Generator(i).VariableStruct.dX_dt = inf;
+            Plant.Generator(i).QPform = loadUtility(Plant.Generator(i).VariableStruct,Plant.Generator(i).Source);
+        case {'Electric Generator';'CHP Generator';'Chiller';'Heater';'Cooling Tower';'Electrolyzer';'Hydrogen Generator'}
+            Plant.Generator(i).QPform = loadPiecewise(Plant.Generator(i),n);
+            Plant.Generator(i).VariableStruct.dX_dt = secondOrderResponse(Plant.Generator(i),[])/Plant.optimoptions.scaletime;
+            Plant.Generator(i).QPform.Ramp.b = Plant.Generator(i).VariableStruct.dX_dt*[1;1]; %-output1+output2=ramp up %output1-output2=-rampdown
+        case {'Solar';'Wind'}
+            Plant.Generator(i).QPform.output.E = 1;%there are no states or outputs for solar because renewable outputs are handled on the demand side
+            Plant.Generator(i).QPform.states = [];
+        case {'Electric Storage'}
+            [Plant.Generator(i).QPform,Plant.Generator(i).VariableStruct.dX_dt] = Storage(Plant.Generator(i),Plant.optimoptions.scaletime);
+            if ~isfield(Plant.Network,'DirectCurrent')
+                Plant.Generator(i).QPform.output = [];
+                Plant.Generator(i).QPform.output.E = 1; 
+            end
+        case {'Thermal Storage';'Hydrogen Storage'}
+            [Plant.Generator(i).QPform,Plant.Generator(i).VariableStruct.dX_dt] = Storage(Plant.Generator(i),Plant.optimoptions.scaletime);
+        case 'Hydro Storage'
+            Plant.Generator(i).QPform = loadHydroStorage(Plant.Generator(i),Plant.optimoptions.scaletime);
+            Plant.Generator(i).VariableStruct.dX_dt = Plant.Generator(i).VariableStruct.RampUp/Plant.optimoptions.scaletime;
+        case 'AC_DC'
+            Plant.Generator(i).QPform = loadACDC(Plant.Generator(i));
     end
 end 
-if ~exist('SSi','var')
-    SSi = [];
-end
-% agregateSSmodel(SSi)
 end%Ends function loadGenerator
 
-function [QPform, dX_dt,SSi] = loadUtility(Gen)
-util = Gen.VariableStruct;
-dX_dt = inf;
-SSi =[];
-if any(strcmp(Gen.Source, {'NG';'Diesel';}))%if it is a fuel utility
+function QPform = loadACDC(Gen)
+QPform.states = {'A';'B'};%first state is AC power transfered to DC power, second state is DC power to AC power
+if Gen.VariableStruct.DC_to_AC_eff == 1 && Gen.VariableStruct.AC_to_DC_eff==1
+    Gen.VariableStruct.AC_to_DC_eff = 1-1e-4;%prevent infinite back/forward transfer in ideal AC_DC
+end
+QPform.output.E = [-1;Gen.VariableStruct.DC_to_AC_eff];
+QPform.output.DC = [Gen.VariableStruct.AC_to_DC_eff;-1];
+QPform.A.ub = Gen.VariableStruct.Capacity;
+QPform.A.lb = 0;
+QPform.B.ub = Gen.VariableStruct.Capacity;
+QPform.B.lb = 0;
+QPform.A.H = 0;
+QPform.A.f = 0;
+QPform.B.H = 0;
+QPform.B.f = 0;
+end%ends load ACDC
+
+function QPform = loadUtility(util,Source)
+if any(strcmp(Source, {'NG';'Diesel';}))%if it is a fuel utility
     QPform = [];
     QPform.output = [];
     QPform.states = [];
@@ -43,52 +83,28 @@ else
         QPform.Y.lb = 0;
         QPform.Y.ub = inf;
         QPform.X.lb = 0;
-        if strcmp(Gen.Source, 'Electricity')
+        if strcmp(Source, 'Electricity')
             QPform.output.E = [1;-1];
-        elseif strcmp(Gen.Source, 'Heat')%loads the parameters for a distric heating supply. 
+        elseif strcmp(Source, 'Heat')%loads the parameters for a distric heating supply. 
             QPform.output.H = [1;-1];
-        elseif strcmp(Gen.Source, 'Cooling')%loads the parameters for a distric cooling supply. 
+        elseif strcmp(Source, 'Cooling')%loads the parameters for a distric cooling supply. 
             QPform.output.C = [1;-1];
         else 
         end
     else
-        if strcmp(Gen.Source, 'Electricity')
+        if strcmp(Source, 'Electricity')
             QPform.output.E = 1;
-        elseif strcmp(Gen.Source, 'Heat')%loads the parameters for a distric heating supply. 
+        elseif strcmp(Source, 'Heat')%loads the parameters for a distric heating supply. 
             QPform.output.H = 1;
-        elseif strcmp(Gen.Source, 'Cooling')%loads the parameters for a distric cooling supply. 
+        elseif strcmp(Source, 'Cooling')%loads the parameters for a distric cooling supply. 
             QPform.output.C = 1;
         else 
         end
     end
-    
 end
 end%Ends function loadUtility
 
-function [QPform, dX_dt,SSi] = loadElectricGenerator(Gen)
-% this function loads the parameters for an electric generator generators
-n = 5; %%need to select n based on how good the fit is.
-[QPform,dX_dt,SSi] = loadPiecewise(Gen,n);
-end%Ends function loadElectricGenerator
-
-function [QPform, dX_dt,SSi] = loadCHPGenerator(Gen)
-% this function loads the parameters for an electric generator generators
-n = 5; %%need to select n based on how good the fit is.
-[QPform,dX_dt,SSi] = loadPiecewise(Gen,n);
-end%Ends function loadCHPGenerator
-
-function [QPform,dX_dt,SSi] = loadChiller(Gen)
-% global Plant
-n = 5; %%need to select n based on how good the fit is.
-[QPform,dX_dt,SSi] = loadPiecewise(Gen,n);
-end%Ends function loadChiller
-
-function [QPform,dX_dt,SSi] = loadHeater(Gen)
-n = 5; %%need to select n based on how good the fit is.
-[QPform,dX_dt,SSi] = loadPiecewise(Gen,n);
-end%Ends function loadHeater
-
-function [QPform,dX_dt,SSi] = loadPiecewise(Gen,n)
+function QPform = loadPiecewise(Gen,n)
 % this function loads the parameters for a combined heat and power
 % generator, regular electric generator, or chiller
 % n is number of segments
@@ -98,33 +114,42 @@ function [QPform,dX_dt,SSi] = loadPiecewise(Gen,n)
 % if order is 1 it solves for linear coefficients 
 % of C = c_0 + a_1*x_1 + a_2*x_2 + ... a_n*X_n
 %subject to  a_i> a_(i-1)
-global Plant
 UB = Gen.Size;
 order = 2;
-if isfield(Gen.Output,'Cooling')&& Gen.Output.Cooling(end)>0
-    order = 1;
-    LB = Gen.VariableStruct.Startup.Cooling(end); %chiller
-    QPform.output.C = 1;
-    out = 'Cooling';
-elseif isfield(Gen.Output,'Electricity')&& Gen.Output.Electricity(end)>0
-    LB = Gen.VariableStruct.Startup.Electricity(end); %electric or CHP generator 
-    QPform.output.E = 1;
-    out = 'Electricity';
-elseif isfield(Gen.Output,'Heat')&& Gen.Output.Heat(end)>0
+capacity = Gen.Output.Capacity;
+if strcmp(Gen.Type,'CHP Generator') || strcmp(Gen.Type,'Electric Generator') || strcmp(Gen.Type,'Hydrogen Generator')
+    if isfield(Gen.VariableStruct.Startup,'Electricity')
+        LB = Gen.VariableStruct.Startup.Electricity(end);
+        efficiency = Gen.Output.Electricity;
+        QPform.output.E = 1;
+    elseif isfield(Gen.VariableStruct.Startup,'DirectCurrent')
+        LB = Gen.VariableStruct.Startup.DirectCurrent(end);
+        efficiency = Gen.Output.DirectCurrent;
+        QPform.output.DC = 1;
+    end
+elseif strcmp(Gen.Type,'Electrolyzer')
+    LB = Gen.VariableStruct.Startup.Hydrogen(end);
+    QPform.output.Hy = 1;
+    efficiency = Gen.Output.Hydrogen;
+elseif strcmp(Gen.Type,'Heater')
     LB = Gen.VariableStruct.Startup.Heat(end);
     QPform.output.H = 1;
-    out = 'Heat';
+    efficiency = Gen.Output.Heat;
+elseif strcmp(Gen.Type,'Chiller')
+    order = 1;
+    LB = Gen.VariableStruct.Startup.Cooling(end);
+    QPform.output.C = 1;
+    efficiency = Gen.Output.Cooling;
 end
 % in Fit A: c_0 = 0
-capacity = Gen.Output.Capacity;
-efficiency = Gen.Output.(out);
 operationRange = find(capacity>=LB/UB);
 [P,I] = sort(capacity(operationRange));
 eff = efficiency(operationRange);
 Y = P./eff(I); %cost of generator in terms of input at outputs P
 Y(isnan(Y)) = 0;
 
-if n ==2 && (isfield(Gen.Output,'Electricity') || isfield(Gen.Output,'Cooling'))
+if n ==2 && (isfield(Gen.Output,'Electricity') || isfield(Gen.Output,'DirectCurrent') || isfield(Gen.Output,'Cooling'))
+    %Find optimal segment break point when there are only 2 segments
     n2 = 10;
     costA = zeros(n2,1);
     costB = zeros(n2,1);
@@ -155,8 +180,12 @@ if order == 2
     B(n+1:2*n) = B(n+1:2*n)/UB;
 end
 
-if isfield(Gen.Output,'Electricity')&& Gen.Output.Electricity(end)>0 && isfield(Gen.Output,'Heat')&& Gen.Output.Heat(end)>0
-    Hratio_0 = Gen.Output.Heat(I)./Gen.Output.Electricity(I);
+if strcmp(Gen.Type,'CHP Generator')
+    if isfield(Gen.Output,'Electricity')
+        Hratio_0 = Gen.Output.Heat(I)./Gen.Output.Electricity(I);
+    elseif isfield(Gen.Output,'DirectCurrent')
+        Hratio_0 = Gen.Output.Heat(I)./Gen.Output.DirectCurrent(I);
+    end
     Hratio_0(isinf(Hratio_0)) = 0;
     QPform.output.H(1,1) = interp1(cap,Hratio_0,min(x_max(1),mean([LB,x_max(1)])));
     for i = 2:1:n
@@ -228,7 +257,7 @@ letters = {'A';'B';'C';'D';'E';'F';'G';'H';'I';'J';'K';'L';'M';'N';'O';'P';};
 QPform.states = cell(n,2);
 QPform.states(1:n_A,1) = letters(1:n_A);
 QPform.states(1:n_B,2) = letters(1:n_B);
-if strcmp(out,'Cooling')
+if strcmp(Gen.Type,'Chiller')
     if strcmp(Gen.Source,'Electricity')
         source = 'E';
     else
@@ -239,7 +268,7 @@ if strcmp(out,'Cooling')
     QPform.constDemand.(source) = c_0;
     A = A*0;
     B = B*0;
-elseif strcmp(out,'Electricity') || strcmp(out,'Heat')
+else
     QPform.constCost = c_0;
 end
 
@@ -300,37 +329,15 @@ end
 %     end
 % end
 % plot(X3,Y3,'r')
-
-%% ramp rates
-if license('test','Control_Toolbox')
-    SSi = ss(Gen.VariableStruct.StateSpace.A,Gen.VariableStruct.StateSpace.B,Gen.VariableStruct.StateSpace.C,Gen.VariableStruct.StateSpace.D,Plant.optimoptions.Tmpc);
-    dX_dt = secondOrderResponse(Gen,[]);
-else
-    dX_dt = Gen.Size/1; SSi = []; %assume 4 hours from off to peak
-end
-dX_dt = dX_dt/Plant.optimoptions.scaletime;  
-QPform.Ramp.b = [dX_dt;dX_dt]; %-output1+output2=ramp up %output1-output2=-rampdown
 end%Ends function loadPiecewise
 
-function [QPform,dX_dt,SSi] = loadElectricStorage(Gen)
-%this function loads all the parameters needed for electric storage
-[QPform,dX_dt,SSi] = Storage(Gen);
-end%Ends function loadElectricStorage
-
-function [QPform,dX_dt,SSi] = loadThermalStorage(Gen)
-%loads all types of thermal storage
-[QPform,dX_dt,SSi] = Storage(Gen);
-end%Ends function loadThermalStorage
-
-function [QPform,dX_dt,SSi] = Storage(Gen)
+function [QPform,dX_dt] = Storage(Gen,scale)
 %this function just directs to either hot or cold thermal storage
 %if we can get rid of the CS, HS structures then this function can be
 %eliminated, because all storage can be handled the same way.
-global Plant
-SSi =[];
-Stor.Size = Gen.Size*Plant.optimoptions.scaletime;
+Stor.Size = Gen.Size*scale;
 Stor.SelfDischarge  = Gen.VariableStruct.SelfDischarge;% SelfDischarge per hour (fraction of total charge)
-if isfield(Gen.VariableStruct, 'EnStoreType') %if its thermal storage
+if isfield(Gen.VariableStruct, 'EnStoreType') %if its thermal/hydrogen storage
     Stor.PeakDisch = (Gen.VariableStruct.DischRatePerc/100*Gen.Size); %Thermal kW out
     Stor.PeakCharge = (Gen.VariableStruct.FillRatePerc/100*Gen.Size); %Thermal kW in
     Stor.ChargeEff = Gen.VariableStruct.ChargeEff;
@@ -340,12 +347,12 @@ if isfield(Gen.VariableStruct, 'EnStoreType') %if its thermal storage
         QPform.output.C = 1; 
     elseif strcmp(Gen.VariableStruct.EnStoreType, 'HotTES')
         QPform.output.H = 1;
-        Stor.ChargeEff = 1; %set to ideal 
-        Stor.DischEff = 1;
+    elseif strcmp(Gen.VariableStruct.EnStoreType, 'Hydrogen')
+        QPform.output.Hy = 1;
     end
     
 else %electric battery
-    QPform.output.E = 1; 
+    QPform.output.DC = 1; 
     Stor.Voltage = Gen.VariableStruct.Voltage;
     DischCurrent = Gen.VariableStruct.PeakDisch.*Gen.Size/Stor.Voltage*1000;
     Stor.DischResistScaled = (100/DischCurrent)*Gen.VariableStruct.DischResist*(1/1000); %Scale so the loss of power is equivelant to that specified at 100Amps
@@ -403,31 +410,16 @@ if isfield(Gen.VariableStruct,'Buffer') && Gen.VariableStruct.Buffer ~= 0 %buffe
 end
 end%Ends function Storage
 
-function [QPform,dX_dt,SSi] = loadSolar(Gen)
-%PV solar
-QPform.output.E = 1;%there are no states or outputs for solar because renewable outputs are handled on the demand side
-QPform.states = [];
-dX_dt = inf;
-SSi = [];
-end%Ends function loadSolar
-
-function [QPform, dX_dt,SSi] = loadHydroStorage(Gen)
+function QPform = loadHydroStorage(Gen,scale)
 % this function loads the parameters for a hydroelectric plant.
-global Plant TestData
-SSi =[];
 Eff = Gen.VariableStruct.MaxGenCapacity/(Gen.VariableStruct.MaxGenFlow*Gen.VariableStruct.MaxHead/0.01181);%Power (kW)/ideal power in kW
-QPform.Stor.Size = Gen.Size*Plant.optimoptions.scaletime;
+QPform.Stor.Size = Gen.Size*scale;
 QPform.Stor.SelfDischarge  = 0; %needs to be evaporative losses
-QPform.Stor.DischEff = 1; %100% effecient
-%Put this at 1/2 full capacity until the MaxHead-MinHead/MaxHead is fixed
-%Currently, with the previous solution, some plants lost a vast majority of usable space
-% QPform.Stor.UsableSize  = QPform.Stor.Size**((Gen.VariableStruct.MaxHead-Gen.VariableStruct.MinHead)/Gen.VariableStruct.MaxHead);
-month = datevec(TestData.Timestamp(1));
-month = month(2); %month starting in
-QPform.Stor.UsableSize = QPform.Stor.Size*Gen.VariableStruct.StartingPoint(1,month);
+QPform.Stor.DischEff = 1; %100% efficient
+QPform.Stor.UsableSize = QPform.Stor.Size*Gen.VariableStruct.MinHead/Gen.VariableStruct.MaxHead;
 QPform.Stor.Power2Flow = 1/(Eff*Gen.VariableStruct.MaxHead*84.674);%Power (kW) = efficiency(%) * Flow (1000 ft^3/s) * Head (ft) * 84.674 kJ/ (1000ft^3*ft)
-QPform.output.E = [1;0;];
 QPform.output.W = 0;
+QPform.output.E = [1;0;];
 
 QPform.states = {'X';'Y'}; %Power and state of charge
 QPform.X.lb = 0;
@@ -479,7 +471,6 @@ if isfield(Gen.VariableStruct,'Buffer') && Gen.VariableStruct.Buffer ~= 0 %buffe
     QPform.L.H = 0;
     QPform.L.f = 0;
 end
-dX_dt = Gen.VariableStruct.RampUp;
 end%Ends function loadHydroStorage
 
 function [cost,A,c_0,x_max] = fitfcn(P,Y,ub,n,order,intercept)

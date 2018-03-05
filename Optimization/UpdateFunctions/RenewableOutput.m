@@ -9,8 +9,11 @@ Power = zeros(nS,nG);
 for i = 1:1:nG
     if strcmp(Plant.Generator(i).Source,'Renewable') && Plant.Generator(i).Enabled
         Gen = Plant.Generator(i).VariableStruct;
-        Enode = Plant.Generator(i).QPform.Electrical.subnetNode;
-        Location = Plant.subNet.Electrical.Location(Enode);
+        if isfield(Plant.Generator(i),'QPform')
+            Location = Plant.subNet.Electrical.Location(Plant.Generator(i).QPform.Electrical.subnetNode);
+        else
+            Location = struct('Latitude',40, 'Longitude',-105, 'TimeZone',-7);
+        end
         if strcmp(Gen.Type,'Solar') 
             [~,~,Azimuth,Zenith] = SolarCalc(Location.Longitude,Location.Latitude, Location.TimeZone,Date);
             if strcmp(Gen.Tracking,'fixed')

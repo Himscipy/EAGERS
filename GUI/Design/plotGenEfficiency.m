@@ -10,6 +10,14 @@ if isfield(Gen.Output,'Electricity') && nnz(Gen.Output.Electricity) > 0
     set(H1,'Color','k','LineStyle','-','LineWidth',2,'Marker','o')
     str(end+1) = {'Electric'};
 end
+if isfield(Gen.Output,'DirectCurrent') && nnz(Gen.Output.DirectCurrent) > 0
+    c = Gen.Output.Capacity./Gen.Output.DirectCurrent;
+    [AX, H1, H2] = plotyy(Gen.Output.Capacity,Gen.Output.DirectCurrent, ...
+        Gen.Output.Capacity(2:end),c(2:end));
+    hold on
+    set(H1,'Color','k','LineStyle','-','LineWidth',2,'Marker','o')
+    str(end+1) = {'DirectCurrent'};
+end
 if isfield(Gen.Output,'Heat') && nnz(Gen.Output.Heat) > 0
     if strcmp(Gen.Type,'CHP Generator')
        plot(AX(1),Gen.Output.Capacity,Gen.Output.Heat,'r-o');

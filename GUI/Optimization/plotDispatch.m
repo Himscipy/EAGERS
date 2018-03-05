@@ -17,7 +17,7 @@ stor = [];
 Names = cell(nG+nB,1);
 for i = 1:1:nG
     Names(i) = {Plant.Generator(i).Name};
-    if ismember(Plant.Generator(i).Type,{'Electric Storage';'Thermal Storage';'Hydro Storage';}) && Plant.Generator(i).Enabled
+    if isfield(Plant.Generator(i).QPform,'Stor') && Plant.Generator(i).Enabled
         stor(end+1) = i;
     end
 end
@@ -32,8 +32,13 @@ if isempty(History.Dispatch)
     Time = ForecastTime*24;
 else
     backSteps = length(History.Dispatch(:,1));
-    Data = [History.Dispatch;Solution.Dispatch(2:end,:)];
-    Time = [HistoryTime;ForecastTime(2:end)]*24;
+    if abs(ForecastTime(1) - HistoryTime(end))<1e-6
+        Data = [History.Dispatch;Solution.Dispatch(2:end,:)];
+        Time = [HistoryTime;ForecastTime(2:end)]*24;
+    else
+        Data = [History.Dispatch;Solution.Dispatch];
+        Time = [HistoryTime;ForecastTime]*24;
+    end
 end
 D = datevec(Time(1)/24);
 hours = D(4)+D(5)/60+D(6)/3600+(Time - Time(1));
@@ -71,7 +76,7 @@ if nnz(Dtimestamp>datenum([Dnext(1),Dnext(2),Dnext(3)]))>0.3*length(hours) %more
 else
     dateText2 = strcat(dateText2,{'                                '});
 end
-
+dateText = {dateText;dateText2;};
 %% convert the saved SOC to power
 StoragePower = 0*Data;
 StorageState = 0*Data;
@@ -84,7 +89,7 @@ for i = 1:1:nG
         else
             StorageState(:,i) = [History.hydroSOC(:,i);Solution.hydroSOC(:,i);];
         end
-    elseif ismember(Plant.Generator(i).Type,{'Electric Storage';'Thermal Storage';})
+    elseif ismember(Plant.Generator(i).Type,{'Electric Storage';'Thermal Storage';'Hydrogen Storage'})
         StorageState(:,i) = Data(:,i);
         if isfield(Plant.Generator(i).VariableStruct,'MaxDOD')
             StorageState(:,i) = Data(:,i)+ Plant.Generator(i).Size*(1-Plant.Generator(i).VariableStruct.MaxDOD/100); %add the unusable charge
@@ -117,30 +122,7 @@ while isfield(handles,strcat('ResultPlot',num2str(nPlot+1)))
             tSize = 9;
         end
         S = get(handles.(strcat('ResultName',num2str(nPlot))),'String');
-        if strcmp(S,'Electrical')
-            S = 'E';
-            ylab = 'Electrical Generation (kW)';
-        elseif strcmp(S,'DistrictHeat')
-            S = 'H';
-            ylab = 'Heating Generation (kW)';
-        elseif strcmp(S,'DistrictCool')
-            S = 'C';
-            ylab = 'Cooling Generation (kW)';
-        elseif strcmp(S,'Hydro')
-            S = 'W';
-            ylab = 'Withdrawls (1000cfs)';
-            for i = 1:1:length(Plant.Generator)
-                if strcmp(Plant.Generator(i).Type,'Hydro Storage')%% plot the downriver flow
-                    n = Plant.Generator(i).QPform.DownRiverSegment;
-                    if isempty(History.LineFlows)
-                        Data(1,i) = 0;
-                        Data(2:end,i) = Solution.LineFlows(:,n);%Outflow is after Power Produced
-                    else
-                        Data(:,i) = [History.LineFlows(:,n);Solution.LineFlows(:,n)];%Outflow is after Power Produced
-                    end
-                end
-            end
-        elseif strcmp(S,'BuildingTemp')
+        if strcmp(S,'BuildingTemp')
             name = cell(nB,1);
             storNames ={};
             stor =[];
@@ -152,64 +134,48 @@ while isfield(handles,strcat('ResultPlot',num2str(nPlot+1)))
             else
                 Data = [History.Buildings;Solution.Buildings.Temperature]*9/5+32;
             end
-            dataPlot(h,true,Data,hours,dt,s1,name,Names,colorsPlot,tSize)
+            dataPlot(h,nPlot,true,Data,hours,dt,s1,name,Names,colorsPlot,tSize,S,dateText)
             ylim(h,[55,80])
             set(h2,'xtick',[],'xticklabel',[],'YTick',[],'YTickLabel',[])
             ylabel(h2,[]);
             xlabel(h,dateText2,'Color','k','FontSize',tSize)
             ylabel(h,'Building Temperature Setpoint (F)','Color','k','FontSize',tSize)
             Data2 = [];
-        elseif strcmp(S,'Steam')
-            S = 'S';
-            ylab = 'Steam Generation (1000 lbs/hr)';
-        end
-        if ~isfield(Plant.Generator(i),'QPform')%NREL case
-            name = {'Elec Utility1';'fuel cell';'Battery';};
-            stor = 5;
-            Data2 = [Data(:,1),Data(:,3),Data(:,5)];
-            storNames = {'Battery'};
-        end
-        if ~strcmp(S,'BuildingTemp') && isfield(Plant.Generator(i),'QPform')
-            [name,stor,Data2,storNames] = sortForPlot(S,Data);
-        end
-        %% Storage
-        if length(stor)>2
-            if strcmp(get(handles.(strcat('ResultStorageSelect',num2str(nPlot))),'Visible'),'off')
-                set(handles.(strcat('ResultStorageSelect',num2str(nPlot))),'Visible','on','value',1,'string',storNames)
-            end
-            storNum = get(handles.(strcat('ResultStorageSelect',num2str(nPlot))),'value');%select only 1 storage at a time
-            storRmv = storNames(storNum~=stor);
-            stor = stor(storNum); 
-            storNames = storNames(storNum);
-            I = 1:length(name);
-            for r = 1:1:length(name)
-                if any(strcmp(name(r),storRmv))
-                    I(r) = 0;
+        elseif strcmp(S,'Hydro')
+            stor = [];
+            storNames ={};
+            for i = 1:1:length(Plant.Generator)
+                if strcmp(Plant.Generator(i).Type,'Hydro Storage')%% plot the downriver flow
+                    n = Plant.Generator(i).QPform.DownRiverSegment;
+                    if isempty(History.LineFlows)
+                        Data2(1,i) = 0;
+                        Data2(2:end,i) = Solution.LineFlows(:,n);%Outflow is after Power Produced
+                    else
+                        Data2(:,i) = [History.LineFlows(:,n);Solution.LineFlows(:,n)];%Outflow is after Power Produced
+                    end
+                    stor(end+1) = i;
+                    storNames(end+1) = {Plant.Generator(i).Name};
                 end
             end
-            I = nonzeros(I);
-            name = name(I);
-            Data2 = Data2(:,I);
         else
-            if strcmp(get(handles.(strcat('ResultStorageSelect',num2str(nPlot))),'Visible'),'on')
-                set(handles.(strcat('ResultStorageSelect',num2str(nPlot))),'Visible','off')
+            if ~isfield(Plant.Generator(i),'QPform')%NREL case
+                name = {'Elec Utility1';'fuel cell';'Battery';};
+                stor = 5;
+                Data2 = [Data(:,1),Data(:,3),Data(:,5)];
+                storNames = {'Battery'};
+            else 
+                [name,stor,Data2,storNames] = sortForPlot(S,Data);
             end
         end
         %% Plot    
         if ~isempty(Data2)
-            dataPlot(h,LINE,Data2,hours,dt,s1,name,Names,colorsPlot,tSize)
             if ~isempty(stor) && ~LINE
-                addStorage2Plot(h,h2,StorageState(:,stor),hours(end-length(StorageState(:,1))+1:end,:),s1,colorsPlot,storNames,Names,tSize,handles.(strcat('ResultName',num2str(nPlot))))
+                PlotWithStorage(Data2,StorageState(:,stor),dt,hours(end-length(StorageState(:,1))+1:end,:),s1,colorsPlot,storNames,Names,tSize,stor,name,nPlot,handles,S,dateText)
             else
+                dataPlot(h,nPlot,LINE,Data2,hours,dt,s1,name,Names,colorsPlot,tSize,S,dateText)
                 set(h2,'xtick',[],'xticklabel',[],'YTick',[],'YTickLabel',[])
                 ylabel(h2,[]);
             end
-            if nPlot==1
-                xlabel(h,dateText,'Color','k','FontSize',tSize)
-            else
-                xlabel(h,dateText2,'Color','k','FontSize',tSize)
-            end
-            ylabel(h,ylab,'Color','k','FontSize',tSize)
         end
     end
 end
@@ -217,9 +183,14 @@ Solution.ForecastTime = ForecastTime;
 Solution.HistoryTime = HistoryTime;
 Solution.History = History;
 set(handles.ResultPlot1,'UserData',Solution);
+end%Ends function plotDispatch
 
 function [name,stor,Data2,storNames] = sortForPlot(S,Data)
 global Plant
+nnList = {'Electrical';'DistrictHeat';'DistrictCool';'Hydro';'DirectCurrent';'CoolingWater';'Transmission1';'Hydrogen';'LiqHydrogen';'Heating2';};
+nnAbrev = {'E';'H';'C';'W';'DC';'CW';'E1';'Hy';'LH2';'H2';};
+index = nonzeros((1:10)'.*strcmp(S,nnList));
+S = nnAbrev{index};
 name = {};
 storNames ={};
 stor =[];
@@ -246,8 +217,13 @@ for i = 1:1:length(Plant.Generator)
         end
     end
 end
+end%Ends function sortForPlot
 
-function dataPlot(h,LINE,Data2,hours,dt,s1,name,Names,colorsPlot,tSize)
+function dataPlot(h,nPlot,LINE,Data2,hours,dt,s1,name,Names,colorsPlot,tSize,S,dateText)
+nnList = {'Electrical';'DistrictHeat';'DistrictCool';'Hydro';'DirectCurrent';'CoolingWater';'Transmission1';'Hydrogen';'LiqHydrogen';'Heating2';'BuildingTemp'};
+LabelYaxis = {'Electrical Generation ';'Heating Generation ';'Cooling Generation ';'Withdrawls ';'DC Electrical Generation ';'CoolingWater Temperature ';'230kV Transmission';'Hydrogen ';'Liquid H2 ';'Steam ';'Temperature'};
+index = nonzeros((1:11)'.*strcmp(S,nnList));
+
 if tSize==12
     s0 = 1;
 else
@@ -263,38 +239,44 @@ plotTime(2:2:2*length(hours(s0:end))-2) = hours(s0+1:end);
 Data3 = zeros(length(Data2(s0:end,1))*2-2,length(Data2(1,:)));
 Data3(1:2:end,:) = Data2(s0+1:end,:);
 Data3(2:2:end,:) = Data2(s0+1:end,:);
-if LINE
-    str2 = 'Color';
-    h1 = plot(h,plotTime,Data3,'LineWidth',3);
-    negBars = [];
-else
-    str2 = 'FaceColor';
-    posBars = max(0,Data3);
-    negBars = min(0,Data3);
-    Ikeep = any(negBars<0);
-    negBars = negBars(:,Ikeep);
-    negBarNames = name(Ikeep);
-    h1 = area(h,plotTime,posBars,'Linestyle','none');
-    if ~isempty(negBars)
-        L = area(h,plotTime,negBars,'Linestyle','none');
-        for c = 1:1:length(L)
-            set(L(c),str2,colorsPlot(strcmp(negBarNames(c),Names),:));
-        end
-    end
-end
-for c = 1:1:length(h1)
-    set(h1(c),str2,colorsPlot(strcmp(name(c),Names),:));
-end
 
-if ~isempty(negBars)
-    OoM = max(1,log10(max(sum(Data2(s0:end-1,:),2)-sum(negBars(1:2:end,:),2))));
+if ~LINE && any(any(Data3<0))
+    pos = sum(max(Data2(s0:end-1,:),0),2);
+    neg = sum(min(0,Data2(s0:end-1,:)),2);
+    OoM = max(1,.2+log10(max(pos)-min(neg)));
 else
-    OoM = max(1,log10(max(sum(Data2(s0:end,:),2))));
+    OoM = max(1,.2+log10(max(sum(Data2(s0:end,:),2))));
+end
+ylab = LabelYaxis{index};
+if OoM>6.30103
+    if index == 4
+        units = '1e9 cfs';
+    else
+        units = 'GW';
+    end
+    OoM = OoM-6;
+    Data3 = Data3/1e6;
+elseif OoM>3.30103
+    if index == 4
+        units = '1e6 cfs';
+    else
+        units = 'MW';
+    end
+    OoM = OoM-3;
+    Data3 = Data3/1000;
+else
+    if index == 4
+        units = '1000 cfs';
+    elseif index == 6 || index == 11
+        units = 'F';
+    else
+        units = 'kW';
+    end
 end
 if (OoM-floor(OoM))==0 %count in increments of 1, 10, 100 or 1000 etc
     Yspace = 10^(OoM-1);
     Ymax = 10^OoM;
-elseif (OoM-floor(OoM))> 0.6990 %count in increments of 1, 10, 100 or 1000 etc
+elseif (OoM-floor(OoM))> 0.6990 
     Yspace = 10^floor(OoM);
     Ymax = 10^ceil(OoM);
 elseif (OoM-floor(OoM))> 0.30103 %count in increments of 5, 50, 500 or 5000 etc
@@ -314,6 +296,30 @@ Ymin = Yspace*negTicks;
 if isempty(Ymin)
     Ymin = 0;
 end
+
+if LINE
+    str2 = 'Color';
+    h1 = plot(h,plotTime,Data3,'LineWidth',3);
+else
+    posBars = max(0,Data3);
+    negBars = min(0,Data3);
+    Ikeep = any(negBars<0);
+    negBars = negBars(:,Ikeep);
+    negBarNames = name(Ikeep);
+
+    str2 = 'FaceColor';
+    h1 = area(h,plotTime,posBars,'Linestyle','none');
+    if ~isempty(negBars)
+        L = area(h,plotTime,negBars,'Linestyle','none');
+        for c = 1:1:length(L)
+            set(L(c),str2,colorsPlot(strcmp(negBarNames(c),Names),:));
+        end
+    end
+end
+for c = 1:1:length(h1)
+    set(h1(c),str2,colorsPlot(strcmp(name(c),Names),:));
+end
+
 if tSize==12 && s1>1
     plot(h,[hours(s1),hours(s1)],[Ymin,Ymax],'c--')   
 end
@@ -322,14 +328,42 @@ ylim(h,[Ymin,Ymax])
 axTickY = Ymin:Yspace:Ymax;
 set(h,'YTick',axTickY,'YTickLabel', {axTickY},'FontSize',tSize-2)
 set(h,'XTick',axTick,'XTickLabel', {axIndex})
+if nPlot==1
+    xlabel(h,dateText{1},'Color','k','FontSize',tSize)
+else
+    xlabel(h,dateText{2},'Color','k','FontSize',tSize)
+end
+ylabel(h,strcat(ylab,{'  ('},units,')'),'Color','k','FontSize',tSize)
+end%Ends function dataPlot
 
-function addStorage2Plot(h,h2,StorageState,hours,s1,colorsPlot,storNames,Names,tSize,hName)
+function PlotWithStorage(Data,StorageState,dt,hours,s1,colorsPlot,storNames,Names,tSize,stor,name,nPlot,handles,S,dateText)
 if tSize==12
     s0 = 1;
 else
     s0 = s1;
 end
-
+hName = handles.(strcat('ResultName',num2str(nPlot)));
+h = handles.(strcat('ResultPlot',num2str(nPlot)));
+h2 = handles.(strcat('ResultPlot',num2str(nPlot),'b'));
+if length(stor)>2
+    if strcmp(get(handles.(strcat('ResultStorageSelect',num2str(nPlot))),'Visible'),'off')
+        set(handles.(strcat('ResultStorageSelect',num2str(nPlot))),'Visible','on','value',1,'string',storNames)
+    end
+    I = true(1,length(Data(1,:)));
+    I(stor) = false;
+    storNum = get(handles.(strcat('ResultStorageSelect',num2str(nPlot))),'value');%select only 1 storage at a time
+    stor = stor(storNum);
+    I(stor) = true;
+    storNames = storNames(storNum);
+    name = name(I);
+    Data = Data(:,I);
+    StorageState = StorageState(:,I);
+else
+    if strcmp(get(handles.(strcat('ResultStorageSelect',num2str(nPlot))),'Visible'),'on')
+        set(handles.(strcat('ResultStorageSelect',num2str(nPlot))),'Visible','off')
+    end
+end
+dataPlot(h,nPlot,false,Data,hours,dt,s1,name,Names,colorsPlot,tSize,S,dateText)
 L = plot(h2,hours(s0:end),StorageState(s0:end,:));
 for c = 1:1:length(L)
     set(L(c),'Color',colorsPlot(strcmp(storNames(c),Names),:),'LineStyle','-','LineWidth',2,'Marker','x','MarkerEdgeColor','k','MarkerSize',5)
@@ -363,3 +397,4 @@ end
 if ~isempty(storNames)
     legend(h2,storNames,'Fontsize',tSize-1,'Orientation','Horizontal','Location','North','Box','off','color','none');%,'Xcolor',[1 1 1],'Ycolor',[1 1 1])
 end
+end%Ends function PlotWithStorage

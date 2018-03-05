@@ -60,7 +60,7 @@ guidata(hObject, handles);
 
 % UIWAIT makes WelcomeScreen wait for user response (see UIRESUME)
 % uiwait(handles.figure1);
-global Model_dir testSystems mainFig TestData DispatchWaitbar
+global Model_dir testSystems mainFig TestData DispatchWaitbar CurrentState
 if ishandle(mainFig)
     close(mainFig)
 end
@@ -68,6 +68,7 @@ mainFig = gcf;
 testSystems =[];
 TestData = [];
 DispatchWaitbar = [];
+CurrentState = [];
 handles.output = hObject;
 guidata(hObject, handles);
 movegui(gcf,'center');

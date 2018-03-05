@@ -8,7 +8,11 @@ function QP = updateMatrices(QP,Date,scaleCost,marginCost,Forecast,EC)
 % Renewable is the forecasted uncontrollable generation
 % EC is the end condition for the threshold optimization
 global Plant CurrentState
-QP.solver = Plant.optimoptions.solver;
+if strcmp(Plant.optimoptions.solver,'ANN')
+    QP.solver = 'quadprog';
+else
+    QP.solver = Plant.optimoptions.solver;
+end
 nG = length(Plant.Generator);
 if isfield(Plant,'Building') && ~isempty(Plant.Building)
     nB = length(Plant.Building);
@@ -18,24 +22,17 @@ end
 networkNames = fieldnames(Plant.subNet);
 dt = (Date(2:end) - Date(1:end-1))*24;
 nS = length(dt);
-QP.Renewable = zeros(nS,nG);
-for net = 1:1:length(networkNames)
-    nLinet(net) = length(Plant.subNet.(networkNames{net}).lineNames);
-end
-nL = sum(nLinet);
+nL = length(QP.Organize.IC)-nG-nB;
 %% update demands and storage self-discharge
 for net = 1:1:length(networkNames)
+    out = Plant.subNet.(networkNames{net}).abbreviation;
     if strcmp(networkNames{net},'Electrical')
-        out = 'E';
         if Plant.optimoptions.SpinReserve
             QP.b(QP.Organize.SpinReserve) = -Forecast.SRtarget;% -shortfall + SRancillary - SR generators - SR storage <= -SR target
         end
-    elseif strcmp(networkNames{net},'DistrictHeat')
-        out = 'H';
-    elseif strcmp(networkNames{net},'DistrictCool')
-        out = 'C';
-    elseif strcmp(networkNames{net},'Hydro')
-        out = 'W';
+        if isfield(Forecast,'Renewable')
+            QP.Renewable = Forecast.Renewable;
+        end
     end
     QP.constDemand.(out).req = zeros(length(Plant.subNet.(networkNames{net}).nodes)*nS,1);
     QP.constDemand.(out).load = zeros(length(Plant.subNet.(networkNames{net}).nodes)*nS,nG);
@@ -47,12 +44,18 @@ for net = 1:1:length(networkNames)
         if ~isempty(load) %need this in case there is no field Forecast.Demand
             QP.beq(req) = sum(Forecast.Demand.(out)(:,load),2); %multiple demands can be at the same node, or none
         end
+        if isfield(Forecast,'Renewable')% subtract renewable generation 
+            for k = 1:1:length(equip)
+                i = equip(k);
+                if strcmp(Plant.Generator(i).Source,'Renewable')
+                    if strcmp(Plant.Generator(i).Type,'Solar') && strcmp(networkNames{net},'DirectCurrent')
+                        QP.beq(req) = QP.beq(req) - Forecast.Renewable(:,i); %put renewable generation into energy balance at correct node
+                    end
+                end
+            end
+        end
         for j = 1:1:length(equip)
             k = equip(j);
-            if strcmp(networkNames{net},'Electrical')% subtract renewable generation 
-                QP.beq(req) = QP.beq(req) - Forecast.Renewable(:,k); %put renewable generation into energy balance at correct node
-                QP.Renewable(:,k) = Forecast.Renewable(:,k);
-            end
             if ~isempty(strfind(Plant.Generator(k).Type,'Storage'))
                 if isfield(Plant.Generator(k).QPform.output,out)
                     loss = (Plant.Generator(k).QPform.Stor.SelfDischarge*Plant.Generator(k).QPform.Stor.UsableSize*Plant.Generator(k).QPform.Stor.DischEff);
@@ -102,6 +105,28 @@ for i = 1:1:nB %all Forecasts are vectors of nS steps
     QP.lb(T_state+2) = QP.lb(T_state+2) + QP.Organize.Building.C_Offset(:,i);%Ensures net building cooling is greater than zero
 end
 
+%Updating lower and upper bound for Hydro resevoir SOC
+if isfield(Plant.subNet,'Hydro')
+    QP.Organize.hydroSOCoffset = zeros(1,length(Plant.subNet.Hydro.nodes));
+    for i = 1:1:nG %Make sure bounds are between 0 and the maximum usable size for each generator
+        if ismember(Plant.Generator(i).Type,{'Hydro Storage'})
+            n = Plant.Generator(i).QPform.Hydro.subnetNode;%dam #
+            if isfield(Plant,'WYForecast') && Date(end)<Plant.WYForecast{end}.Timestamp(end)
+                QP.Organize.hydroSOCoffset(n) = interp1(Plant.WYForecast{end}.Timestamp,Plant.WYForecast{end}.hydroSOC(:,n),Date(end));% re-center so zero is actual where this target is
+                states = QP.Organize.States{i}; %States for Reservoirs
+                SOCstates = states(2):QP.Organize.t1States:(nS-1)*QP.Organize.t1States + states(2); %All time steps for resevoir SOC
+                range = max(0.1*Plant.Generator(i).QPform.Stor.UsableSize,1+abs(CurrentState.Hydro(i)-QP.Organize.hydroSOCoffset(n)));
+                QP.ub(SOCstates) = min(range,Plant.Generator(i).QPform.Stor.UsableSize-QP.Organize.hydroSOCoffset(n));
+                QP.lb(SOCstates) = max(-range,-QP.Organize.hydroSOCoffset(n));
+            end
+            SOCnow = CurrentState.Hydro(i)-QP.Organize.hydroSOCoffset(n);
+            QP.beq(QP.Organize.IC(i)+1) = SOCnow;%SOC in reservior (2nd ic for dam)
+            QP.ub(QP.Organize.IC(i)+1) = SOCnow+1;%+1 just to help solver find feasible
+            QP.lb(QP.Organize.IC(i)+1) = SOCnow-1;%-1 just to help solver find feasible
+        end
+    end
+end
+
 %Adding cost for Line Transfer Penalties to differentiate from spillway flow
 if ismember('Hydro',networkNames) && ~isempty(Plant.subNet.Electrical.lineNames)
     for k = 1:1:length(Plant.subNet.Electrical.lineNames)
@@ -122,13 +147,6 @@ for i = 1:1:nG+nL+nB
         if i<=nG %generators and storage devices
             QP.beq(QP.Organize.IC(i)) = CurrentState.Generators(i);
             QP.ub(QP.Organize.IC(i)) = CurrentState.Generators(i)+1;%+1 just to help solver find feasible
-            if ismember(Plant.Generator(i).Type,{'Hydro Storage'})
-                QP.beq(QP.Organize.IC(i)+1) = CurrentState.Hydro(i);%SOC in reservior (2nd ic for dam)
-                QP.ub(QP.Organize.IC(i)+1) = CurrentState.Hydro(i)+1;%+1 just to help solver find feasible
-            end
-        elseif i<=nG+nL %transmission lines and river segments (no longer necessary for hydro)
-            QP.beq(QP.Organize.IC(i)) = CurrentState.Lines(i-nG);
-            QP.ub(QP.Organize.IC(i)) = CurrentState.Lines(i-nG)+1;%+1 just to help solver find feasible
         else %all buildings have an initial air zone temperature state
             QP.beq(QP.Organize.IC(i)) = CurrentState.Buildings(1,i-nG-nL);
             QP.ub(QP.Organize.IC(i)) = CurrentState.Buildings(1,i-nG-nL)+1;%+1 just to help solver find feasible
@@ -150,12 +168,12 @@ for i = 1:1:nG
             else
                 %constant sellback rate was taken care of when building the matrices
             end
-        elseif ismember(Plant.Generator(i).Type,{'Utility';'Electric Generator';'CHP Generator';'Chiller';'Heater'})%all generators and utilities (without sellback)
+        elseif ismember(Plant.Generator(i).Type,{'Utility';'Electric Generator';'CHP Generator';'Chiller';'Heater';'Hydrogen Generator';'Cooling Tower';'Electrolyzer'})%all generators and utilities (without sellback)
             for j = 1:1:length(states)
                 H(allStates(:,j)) = H(allStates(:,j)).*scaleCost(:,i).*dt; 
                 QP.f(allStates(:,j)) = QP.f(allStates(:,j)).*scaleCost(:,i).*dt; 
             end          
-        else % storage systems
+        elseif isfield(Plant.Generator(i).QPform,'Stor') % storage systems
             if strcmp(Plant.Generator(i).Type,'Hydro Storage')
                 s_end = (nS-1)*QP.Organize.t1States + states(2); %SOC is second state
             else
@@ -172,19 +190,9 @@ for i = 1:1:nG
                 BuffSize = 0;
             end
             if isempty(EC) %full forecast optimization
-                if strcmp(Plant.Generator(i).Source,'Heat')
-                    Max = 1.05*marginCost.H.Max;
-                    Min = 0.5*marginCost.H.Min;
-                elseif strcmp(Plant.Generator(i).Source,'Electricity')
-                    Max = 1.05*marginCost.E.Max;
-                    Min = 0.5*marginCost.E.Min;
-                elseif strcmp(Plant.Generator(i).Source,'Cooling')
-                    Max = 1.05*marginCost.C.Max;
-                    Min = 0.5*marginCost.C.Min;
-                elseif strcmp(Plant.Generator(i).Source,'Water')
-                    Max = 1.05*marginCost.W.Max;
-                    Min = 0.5*marginCost.W.Min;
-                end
+                S = fieldnames(Plant.Generator(i).QPform.output);
+                Max = 1.05*marginCost.(S{1}).Max;
+                Min = 0.75*marginCost.(S{1}).Min;
                 a1 = -Max; % fitting C = a1*SOC + 0.5*a2*SOC^2 so that dC/dSOC @ 0 = -max & dC/dSOC @ UB = -min
                 a2 = (Max - Min)/(StorSize);
                 H(s_end) = a2;%quadratic final value term loaded into SOC(t=nS)  %quadprog its solving C = 0.5*x'*H*x + f'*x

@@ -31,12 +31,6 @@ DispatchWaitbar=waitbar(0,'Running Dispatch','Visible','off');
 Time = buildTimeVector(Plant.optimoptions);%% set up vector of time interval
 while Si<NumSteps-1
     Date = DateSim+[0;Time/24];
-    if Si>1
-        D = datevec(Date(end));
-        if (D(2) == 10) && (D(3) == 1) && (D(4)<Plant.optimoptions.Resolution) %if october 1st,Run a yearly forecast for hydrology
-            WYHydroForecast(Date(end));
-        end 
-    end
     Forecast = updateForecast(Date(2:end));%% function that creates demand vector with time intervals coresponding to those selected
     Solution = DispatchLoop(Date,Forecast,Solution);
     timers(Si,:) = Solution.timers;
@@ -49,12 +43,12 @@ while Si<NumSteps-1
     updateGUIstatus(handles,Solution,Date,Si-1)
     waitbar(Si/NumSteps,DispatchWaitbar,strcat('Running Dispatch'));
 end
-% HeatRecovery = CalcHeatRecovery(Plant.Dispatch.GeneratorState(2:end,:));
 if strcmp(Plant.optimoptions.method,'Dispatch')
     Plant.Cost.Dispatch = NetCostCalc(Plant.Dispatch.GeneratorState,Plant.Dispatch.Timestamp,'Dispatch');
 elseif strcmp(Plant.optimoptions.method,'Control')
     Plant.Cost.RunData = NetCostCalc(Plant.RunData.GeneratorInput,Plant.RunData.Timestamp,'Input');
 end
+
 if RealTime
     closePorts;
 end

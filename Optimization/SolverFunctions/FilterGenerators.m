@@ -14,7 +14,9 @@ for i = 1:1:nG
             UB(i) = UB(i) + Plant.Generator(i).QPform.(states{j}).ub(end);
         end
     end
-    dX(:,i) = dt*Plant.Generator(i).VariableStruct.dX_dt;
+    if isfield(Plant.Generator(i).VariableStruct,'dX_dt')
+        dX(:,i) = dt*Plant.Generator(i).VariableStruct.dX_dt;
+    end
 end
 %% current best guess
 FirstDisp = Solution.Dispatch;

@@ -1,12 +1,18 @@
 function dX_dt = secondOrderResponse(Gen,handles)
 UB = Gen.Size;
-if strcmp(Gen.Type,'CHP Generator') 
+if any(strcmp(Gen.Type,{'CHP Generator';'Electric Generator';'Hydrogen Generator';})) 
     Names = {'Electricity';};
-%     Names = {'Electricity';'Heat';};
-    LB = Gen.VariableStruct.Startup.Electricity(end);
-elseif strcmp(Gen.Type,'Electric Generator')
-    Names = {'Electricity';};
-    LB = Gen.VariableStruct.Startup.Electricity(end);
+    if isfield(Gen.VariableStruct.Startup,'Electricity')
+        LB = Gen.VariableStruct.Startup.Electricity(end);
+    elseif isfield(Gen.VariableStruct.Startup,'DirectCurrent')
+        LB = Gen.VariableStruct.Startup.DirectCurrent(end);
+    end
+%     if strcmp(Gen.Type,'CHP Generator')
+%        Names = {'Electricity';'Heat';}; 
+%     end
+elseif strcmp(Gen.Type,'Electrolyzer')
+    Names = {'Hydrogen';};
+    LB = Gen.VariableStruct.Startup.Hydrogen(end);
 elseif strcmp(Gen.Type,'Heater')
     Names = {'Heat'};
     LB = Gen.VariableStruct.Startup.Heat(end);

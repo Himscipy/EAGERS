@@ -1,5 +1,5 @@
 %% comparison for paper
-global Plant CurrentState DateSim Last24hour TestData OnOff
+global Plant CurrentState DateSim TestData OnOff
 load('CampusRan_2_10_18.mat');
 MIPlant = Plant;
 DateSim = Plant.Dispatch.Timestamp(1);
@@ -10,9 +10,7 @@ interpolateData(Plant.optimoptions.Resolution*3600,Plant.optimoptions.Interval,0
 Plant.optimoptions.MixedInteger = false;
 NumSteps = nnz(Plant.Dispatch.Timestamp)-1;
 timers = zeros(NumSteps,3); % To record times set to zeros(1,3), to not record set to [];
-Last24hour = [];%re-load the previous 24 hours
-TimeYesterday = linspace(DateSim-1,DateSim,ceil(24/Plant.optimoptions.Resolution)+1)';
-Last24hour = GetHistoricalData(TimeYesterday);
+reloadLast24hour(DateSim,Plant.optimoptions.Resolution)%re-load the previous 24 hours
 nG = length(Plant.Generator);
 LB = zeros(1,nG);
 for i=1:1:nG
@@ -25,7 +23,6 @@ for i=1:1:nG
 end
 Time = buildTimeVector(Plant.optimoptions);%% set up vector of time interval
 CurrentState.Buildings = zeros(2,0);
-CurrentState.Lines = zeros(1,0);
 Solution.Dispatch = [];
 Si = 1;
 DispatchWaitbar=waitbar(0,'Running Dispatch','Visible','on');

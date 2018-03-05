@@ -10,13 +10,37 @@ if strcmp(method,'Dispatch')
         skip = false;
         if ~isempty(Plant.Generator(i).Output)
             cap = Plant.Generator(i).Output.Capacity*Plant.Generator(i).Size;
+            cap(end) = cap(end)+1e-10; %prevent Nan's during interpolation
         end
-        if strcmp(Plant.Generator(i).Type,'Electric Generator') || strcmp(Plant.Generator(i).Type,'CHP Generator')
-            eff = Plant.Generator(i).Output.Electricity;
+        if strcmp(Plant.Generator(i).Type,'Electric Generator')
+            if isfield(Plant.Generator(i).Output,'Electricity')
+                eff = Plant.Generator(i).Output.Electricity;
+            elseif isfield(Plant.Generator(i).Output,'DirectCurrent')
+                eff = Plant.Generator(i).Output.DirectCurrent;
+            end
+        elseif strcmp(Plant.Generator(i).Type,'CHP Generator')
+            if isfield(Plant.Generator(i).Output,'Electricity')
+                eff = Plant.Generator(i).Output.Electricity;
+            elseif isfield(Plant.Generator(i).Output,'DirectCurrent')
+                eff = Plant.Generator(i).Output.DirectCurrent;
+            end
+            heat = Plant.Generator(i).Output.Heat;
+            CHP = interp1(cap,heat,Dispatch(:,i));
+            Heat = Dispatch(:,i)./interp1(cap,eff,Dispatch(:,i)).*CHP;
+            H_gen = -Plant.Generator(i).QPform.constDemand.H*(Dispatch(:,i)>0);
+            Output = Dispatch(:,i);
+            n = Dispatch(:,i)>0;
+            for j = 1:1:nnz(~cellfun('isempty',Plant.Generator(i).QPform.states(:,end)))
+                H_gen = H_gen + min(Output,Plant.Generator(i).QPform.(letters{j}).ub(end))*Plant.Generator(i).QPform.output.H(j,end);
+                Output = max(0,Output - min(Output,Plant.Generator(i).QPform.(letters{j}).ub(end)));
+            end
+            Himbalance(n) = Himbalance(n) + (Heat(n) - H_gen(n));
         elseif strcmp(Plant.Generator(i).Type,'Chiller') 
             eff = Plant.Generator(i).Output.Cooling;
             COP = interp1(cap,eff,Dispatch(:,i));
+            COP(isnan(COP)) = 1;
             skip = true;
+            n = Dispatch(:,i)>0;
             if strcmp(Plant.Generator(i).Source,'Electricity')
                 E_use = Plant.Generator(i).QPform.constDemand.E*(Dispatch(:,i)>0);
                 Output = Dispatch(:,i);
@@ -24,7 +48,7 @@ if strcmp(method,'Dispatch')
                     E_use = E_use - min(Output,Plant.Generator(i).QPform.(letters{j}).ub(end))*Plant.Generator(i).QPform.output.E(j,end);
                     Output = max(0,Output - min(Output,Plant.Generator(i).QPform.(letters{j}).ub(end)));
                 end
-                Eimbalance = Eimbalance + (Dispatch(:,i)./COP - E_use);
+                Eimbalance(n) = Eimbalance(n) + (Dispatch(n,i)./COP(n) - E_use(n));
             elseif strcmp(Plant.Generator(i).Source,'Heat')
                 H_use = Plant.Generator(i).QPform.constDemand.H*(Dispatch(:,i)>0);
                 Output = Dispatch(:,i);
@@ -32,11 +56,12 @@ if strcmp(method,'Dispatch')
                     H_use = H_use - min(Output,Plant.Generator(i).QPform.(letters{j}).ub(end))*Plant.Generator(i).QPform.output.H(j,end);
                     Output = max(0,Output - min(Output,Plant.Generator(i).QPform.(letters{j}).ub(end)));
                 end
-                Himbalance = Himbalance + (Dispatch(:,i)./COP - H_use);
+                Himbalance(n) = Himbalance(n) + (Dispatch(n,i)./COP(n) - H_use(n));
             end
         elseif strcmp(Plant.Generator(i).Type,'Heater')
             eff = Plant.Generator(i).Output.Heat;  
-        else skip = true;
+        else
+            skip = true;
         end
         if ~skip %dont add the cost of a chiller if you ran E and C simultaneously, or you will double count the chiller demand
             Input(:,i) = Dispatch(:,i)./interp1(cap,eff,Dispatch(:,i));

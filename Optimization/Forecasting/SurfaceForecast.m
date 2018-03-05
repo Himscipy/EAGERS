@@ -1,5 +1,6 @@
 function Forecast = SurfaceForecast(Date,Tforecast)
 global Plant Last24hour
+Forecast.Timestamp = Date;
 dSim = Last24hour.Timestamp(end);
 Days = ceil(Date(end)-floor(dSim)); %this says that you may need to use surface fits for multiple days.
 s12hour = nnz(Date<(dSim+.5)); %steps in next 12 hours

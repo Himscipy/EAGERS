@@ -1,5 +1,6 @@
 function Forecast = ARIMAForecast(Date)
 global Plant Last24hour
+Forecast.Timestamp = Date;
 S = fieldnames(Last24hour.Demand);
 a = 60.9/100;
 b= 45.3/100;

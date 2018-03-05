@@ -25,9 +25,10 @@ for i = 1:1:nG
             end
         end
     end
-    if QP.Organize.Hydro(i) == 1
-        hydroSOC(1,i) = x(QP.organize{1,i}+1,1);
-    end
+    
+end
+for i = 1:1:length(QP.Organize.Hydro)
+    hydroSOC(1,i) = x(QP.organize{1,QP.Organize.Hydro(i)}+1,1);
 end
 GenDisp(abs(GenDisp)<1e-3) = 0; %remove tiny outputs because they are most likely rounding errors
 

@@ -16,31 +16,27 @@ set(handles.uipanelGenSpec,'Visible','on');
 set(handles.Library,'Visible','on');
 set(handles.saveSystem,'Visible','on');
 set(handles.pushbuttonRemove,'Visible','on');
-if GENINDEX > 0
+% if GENINDEX > 0
     Gen = testSystems(SYSINDEX).Generator(GENINDEX);
-else
-    switch GENINDEX
-        case 0
-            Gen = struct('Type', 'None', ...
-                'Name', 'None');
-        case -1
-            Gen = struct('Type', 'Heating Demands', ...
-                'Name', 'Heating Demands', ...
-                'Demand', 100);
-        case -2
-            Gen = struct('Type', 'Hot Water Demands', ...
-                'Name', 'Hot Water Demands', ...
-                'Demand', 100);
-        case -3
-            Gen = struct('Type', 'Cooling Demands', ...
-                'Name', 'Cooling Demands', ...
-                'Demand', 100);
-        case -4
-            Gen = struct('Type', 'AC/DC Conversion', ...
-                'Name', 'AC/DC Conversion', ...
-                'Efficiency', 0.5);
-    end
-end
+% else
+%     switch GENINDEX
+%         case 0
+%             Gen = struct('Type', 'None', ...
+%                 'Name', 'None');
+%         case -1
+%             Gen = struct('Type', 'Heating Demands', ...
+%                 'Name', 'Heating Demands', ...
+%                 'Demand', 100);
+%         case -2
+%             Gen = struct('Type', 'Hot Water Demands', ...
+%                 'Name', 'Hot Water Demands', ...
+%                 'Demand', 100);
+%         case -3
+%             Gen = struct('Type', 'Cooling Demands', ...
+%                 'Name', 'Cooling Demands', ...
+%                 'Demand', 100);
+%     end
+% end
 handlesC=get(handles.uipanelGenSpec,'Children');
 for i= 1:length(handlesC)
     delete(handlesC(i));
@@ -102,6 +98,15 @@ switch Gen.Type
             createText(handles,'Fuel Rate ($/MMBTU)',[60 32 30 1.75],'textEdit1',12,'normal');
             createTextEdit(handles,num2str(Gen.VariableStruct.Rate(1)),[90 32 15 1.75],'compText1',10,'normal');
         end
+    case 'AC_DC'
+        createText(handles,'AC to DC (%)',[70 32 20 1.75],'textEdit1',12,'normal')
+        createText(handles,'DC to AC (%)',[70 30 30 1.75],'textEdit2',12,'normal')
+        createText(handles,'Capacity',[70 28 30 1.75],'textEdit3',12,'normal')
+        
+        createTextEdit(handles,num2str(Gen.VariableStruct.AC_to_DC_eff),[90 32 15 1.75],'compText1',10,'normal')
+        createTextEdit(handles,num2str(Gen.VariableStruct.DC_to_AC_eff),[90 30 15 1.75],'compText2',10,'normal')
+        createTextEdit(handles,num2str(Gen.VariableStruct.Capacity),[90 28 15 1.75],'compText3',10,'normal')
+        
     case {'CHP Generator';'Electric Generator';'Heater';'Chiller';}
         if strcmp(Gen.Type,'Heater')
             OutNames = {'Capacity';'Heat';};
@@ -116,13 +121,23 @@ switch Gen.Type
         elseif strcmp(Gen.Type,'Electric Generator')
             OutNames = {'Capacity';'Electricity';};
             pos = [10 3 20 16];
-            Data = [Gen.Output.Capacity,Gen.Output.Electricity;];
-            LB = Gen.VariableStruct.Startup.Electricity(end);
+            if isfield(Gen.Output,'Electricity')
+                Data = [Gen.Output.Capacity,Gen.Output.Electricity;];
+                LB = Gen.VariableStruct.Startup.Electricity(end);
+            elseif isfield(Gen.Output,'DirectCurrent')
+                Data = [Gen.Output.Capacity,Gen.Output.DirectCurrent;];
+                LB = Gen.VariableStruct.Startup.DirectCurrent(end);
+            end
         elseif strcmp(Gen.Type,'CHP Generator') 
             pos = [8 3 30 16];
-            Data = [Gen.Output.Capacity,Gen.Output.Electricity,Gen.Output.Heat;];
+            if isfield(Gen.Output,'Electricity')
+                Data = [Gen.Output.Capacity,Gen.Output.Electricity,Gen.Output.Heat;];
+                LB = Gen.VariableStruct.Startup.Electricity(end);
+            elseif isfield(Gen.Output,'DirectCurrent')
+                Data = [Gen.Output.Capacity,Gen.Output.DirectCurrent,Gen.Output.Heat;];
+                LB = Gen.VariableStruct.Startup.DirectCurrent(end);
+            end
             OutNames = {'Capacity';'Electricity';'Heat';};
-            LB = Gen.VariableStruct.Startup.Electricity(end);
         end
         createTable(handles,Data,OutNames,'auto',{},pos,'uitableEffCurve',true(1,length(Data(1,:))))
         

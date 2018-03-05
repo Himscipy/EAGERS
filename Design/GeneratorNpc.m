@@ -1,6 +1,6 @@
 function npc = GeneratorNpc(scale,Gen0,DesignDay,Years)
 %NPCSIMULATE Calculate a Net Present Cost value for a given generator size.
-global TestData Last24hour testSystems Plant DateSim GENINDEX SYSINDEX
+global TestData testSystems Plant DateSim GENINDEX SYSINDEX
 Plant.Costs.Equipment(GENINDEX).Cost = testSystems(SYSINDEX).Costs.Equipment(GENINDEX).Cost*scale;
 Plant.Costs.Equipment(GENINDEX).OandM = testSystems(SYSINDEX).Costs.Equipment(GENINDEX).OandM*scale;
 GenNew = updateComponentSpec(Gen0,'UB',Gen0.Size*scale);
@@ -24,9 +24,7 @@ if DesignDay% If design days option is selected, optimize the 1st day of the mon
     interpolateData(Plant.optimoptions.Resolution*3600,Plant.optimoptions.Interval,0.00);% create test data at correct frequency
     STR = 'Optimizing Design Day Dispatch';
     DispatchWaitbar = waitbar(0, STR, 'Visible', 'on');
-    Last24hour = [];% re-load the previous 24 hours
-    TimeYesterday = linspace(DateSim-1, DateSim, ceil(24/Plant.optimoptions.Resolution)+1)';
-    Last24hour = GetHistoricalData(TimeYesterday);
+    reloadLast24hour(DateSim,Plant.optimoptions.Resolution)%re-load the previous 24 hours
     automaticInitialCondition(GetCurrentData(DateSim));% set the initial conditions
     Plant.Design.Timestamp(1) = DateSim;
     ForecastTime = DateSim + [0; buildTimeVector(Plant.optimoptions)/24];

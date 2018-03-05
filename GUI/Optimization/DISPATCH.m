@@ -22,7 +22,7 @@ function varargout = DISPATCH(varargin)
  
 % Edit the above text to modify the response to help DISPATCH
  
-% Last Modified by GUIDE v2.5 03-Feb-2018 13:27:52
+% Last Modified by GUIDE v2.5 28-Feb-2018 00:23:43
  
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -81,7 +81,7 @@ for i = 1:length(TabText)
     end
 end
 set(handles.GenList,'Position',[1,16,40,27])
-nG = length(Plant.Generator);
+nG = checkACDC('control');
 if isfield(Plant,'Building') && ~isempty(Plant.Building)
     nB = length(Plant.Building);
 else
@@ -241,8 +241,12 @@ else
     set(handles.scaletime, 'string', Plant.optimoptions.scaletime);
     set(handles.excessHeat, 'value', Plant.optimoptions.excessHeat);
     set(handles.excessCool, 'value', Plant.optimoptions.excessCool);
-    set(handles.NoMixedInteger, 'value', ~Plant.optimoptions.MixedInteger);
-    set(handles.MixedInteger, 'value', Plant.optimoptions.MixedInteger);
+    if strcmp(Plant.optimoptions.solver,'ANN')
+        set(handles.ANNradiobutton, 'value', true);
+    else
+        set(handles.NoMixedInteger, 'value', ~Plant.optimoptions.MixedInteger);
+        set(handles.MixedInteger, 'value', Plant.optimoptions.MixedInteger);
+    end
     set(handles.SpinReserve, 'value', Plant.optimoptions.SpinReserve);
     set(handles.SpinReservePerc, 'string', Plant.optimoptions.SpinReservePerc);
     set(handles.Topt, 'string', Plant.optimoptions.Topt);
@@ -305,11 +309,28 @@ function handles = PlotAxes_Setup(hObject, eventdata, handles,networkNames,tab)
 nPlot = length(networkNames);
 if nPlot ==1 %1 very large plot
     Pos = [52 6 150 30];
-else %1 large plot and n-1 smaller plots
+    vis = {'on'};
+elseif nPlot<=4 %1 large plot and n-1 smaller plots
     Pos = [52 10 80 26;];
+    vis = {'on'};
     for j = 2:nPlot
         Pos(j,:) = [153 3+(j-2)*40/(nPlot-1) 50 min(20,(40/(nPlot-1)-6))];
+        vis(end+1) = {'on'};
     end
+else%plot three at a time
+    Pos = [52 10 80 26;153 3 50 14;153 23 50 14];
+    vis = {'on';'on';'on';};
+    for j = 4:1:nPlot
+        Pos(end+1,:) = [153 3+20*rem(j,2) 50 14];
+        vis(end+1) = {'off'};
+    end
+end
+if nPlot>4
+    set(handles.NextPlot,'Visible','on','UserData',1)
+    set(handles.PrevPlot,'Visible','on','UserData',1)
+else
+    set(handles.NextPlot,'Visible','off')
+    set(handles.PrevPlot,'Visible','off')
 end
 if tab==1
     name = 'Result';
@@ -323,14 +344,14 @@ for i = 1:1:nPlot
         'Position', Pos(i,:),'NextPlot','add',...
         'Tag', strcat(name,'Plot',num2str(i)),...
         'Parent', handles.(strcat('uipanelMain',num2str(tab))),...
-        'Visible','on');
+        'Visible',vis{i});
     %secondary axes (y-label on right)
     handles.(strcat(name,'Plot',num2str(i),'b')) = axes('Units','characters',...
         'Position', Pos(i,:),'NextPlot','add','color','none',...
         'Tag', strcat(name,'Plot',num2str(i),'b'),...
         'Parent', handles.(strcat('uipanelMain',num2str(tab))),...
         'YAxisLocation','right',...
-        'Visible','on');
+        'Visible',vis{i});
     callback = strcat('@(hObject,eventdata)DISPATCH(',quote,'PlotSwitch',quote,',hObject)');
     handles.(strcat(name,'Name',num2str(i))) = uicontrol('Style', 'pushbutton', 'String', networkNames{i},...
         'Units','characters',...
@@ -342,7 +363,7 @@ for i = 1:1:nPlot
         'FontWeight','bold',...
         'Parent', handles.(strcat('uipanelMain',num2str(tab))),...
         'Callback',eval(callback),...
-        'Visible','on',...
+        'Visible',vis{i},...
         'UserData',i);
     if tab==1
         handles.(strcat(name,'StorageSelect',num2str(i))) = uicontrol('Style', 'popupmenu', 'String', networkNames{i},...
@@ -385,6 +406,77 @@ if netI == plotI %graph is currently in its default position (move to primary)
         set(handles.(strcat(screen,'Name',num2str(netI))),'String',networkNames{1});
     end
 end
+if strcmp(screen,'Forecast')
+    ForecastPlot
+elseif strcmp(screen,'Result')
+    A = get(handles.ResultPlot1,'UserData');
+    plotDispatch(handles,A.ForecastTime,A,A.HistoryTime,A.History)
+end
+
+
+% --- Executes on button press in PrevPlot.
+function PrevPlot_Callback(hObject, eventdata, handles)
+global Plant
+handles = guihandles;
+networkNames = fieldnames(Plant.subNet);
+nPlot = length(networkNames);
+if strcmp(get(handles.uipanelMain1,'Visible'),'on')
+    screen = 'Result';
+elseif strcmp(get(handles.uipanelMain3,'Visible'),'on')
+    screen = 'Forecast';
+end
+net = get(handles.(strcat(screen,'Name2')),'String');
+netI = find(strcmp(net,networkNames));
+if netI == 1
+    netI = nPlot;
+else
+    netI = netI - 1;
+end
+set(handles.(strcat(screen,'Name2')),'String',networkNames{netI});
+
+net = get(handles.(strcat(screen,'Name3')),'String');
+netI = find(strcmp(net,networkNames));
+if netI == 1
+    netI = nPlot;
+else
+    netI = netI - 1;
+end
+set(handles.(strcat(screen,'Name3')),'String',networkNames{netI});
+if strcmp(screen,'Forecast')
+    ForecastPlot
+elseif strcmp(screen,'Result')
+    A = get(handles.ResultPlot1,'UserData');
+    plotDispatch(handles,A.ForecastTime,A,A.HistoryTime,A.History)
+end
+
+% --- Executes on button press in NextPlot.
+function NextPlot_Callback(hObject, eventdata, handles)
+global Plant
+handles = guihandles;
+networkNames = fieldnames(Plant.subNet);
+nPlot = length(networkNames);
+if strcmp(get(handles.uipanelMain1,'Visible'),'on')
+    screen = 'Result';
+elseif strcmp(get(handles.uipanelMain3,'Visible'),'on')
+    screen = 'Forecast';
+end
+net = get(handles.(strcat(screen,'Name2')),'String');
+netI = find(strcmp(net,networkNames));
+if netI == nPlot
+    netI = 1;
+else
+    netI = netI + 1;
+end
+set(handles.(strcat(screen,'Name2')),'String',networkNames{netI});
+
+net = get(handles.(strcat(screen,'Name3')),'String');
+netI = find(strcmp(net,networkNames));
+if netI == nPlot
+    netI = 1;
+else
+    netI = netI + 1;
+end
+set(handles.(strcat(screen,'Name3')),'String',networkNames{netI});
 if strcmp(screen,'Forecast')
     ForecastPlot
 elseif strcmp(screen,'Result')
@@ -642,14 +734,19 @@ function sliderStartDate_Callback(hObject, eventdata, handles)
 global Plant TestData
 handles = guihandles;
 Date = TestData.Timestamp(1) + get(handles.sliderStartDate,'Value');
-WYHydroForecast(Date); %Water Year Forecast for Hydro
 if strcmp(Plant.optimoptions.solver,'NREL')
     [ForecastTime,Dispatch,HistoryTime,History] = SingleOptimizationNREL(Date);
     plotNREL(handles,ForecastTime,Dispatch,HistoryTime,History)
 else
     if ~isfield(Plant,'Dispatch') || isempty(Plant.Dispatch) || ~isfield(Plant.Dispatch,'Timestamp') || isempty(Plant.Dispatch.Timestamp) || min(abs(Plant.Dispatch.Timestamp-Date))>=Plant.optimoptions.Resolution/24
         ForecastTime = Date+[0;buildTimeVector(Plant.optimoptions)/24];
-        Solution = SingleOptimization(ForecastTime,[]);
+        if strcmp(Plant.optimoptions.solver,'ANN')
+            Plant.optimoptions.solver = 'quadprog';
+            Solution = SingleOptimization(ForecastTime,[]);
+            Plant.optimoptions.solver = 'ANN';
+        else
+            Solution = SingleOptimization(ForecastTime,[]);
+        end
         History.Dispatch = [];
         History.LineFlows = [];
         History.Buildings = [];
@@ -659,6 +756,8 @@ else
         Si = max((1:1:length(Plant.Dispatch.Timestamp))'.*(Plant.Dispatch.Timestamp<=Date & Plant.Dispatch.Timestamp>0)); %index preceeding current step
         if (Plant.Dispatch.Timestamp(Si+1)>0 && (Plant.Dispatch.Timestamp(Si+1)-Date)<(Date-Plant.Dispatch.Timestamp(Si)))
             Si = Si+1; %The next time step is actually closer
+        elseif Plant.Predicted.Timestamp(1,Si)==0
+            Si = Si - 1;
         end
         ForecastTime = Plant.Predicted.Timestamp(:,Si);
         Solution.Dispatch = Plant.Predicted.GenDisp(:,:,Si);
@@ -701,6 +800,7 @@ end
 mainFig = gcf;
 set(handles.Start,'Value',1);%reset start button
 set(handles.Stop,'Value',0);%reset stop button
+
 handles = guihandles;
 Date = TestData.Timestamp(1) + get(handles.sliderStartDate,'Value');
 if isfield(Plant.optimoptions,'CoSim') && Plant.optimoptions.CoSim
@@ -1054,6 +1154,7 @@ end
 Plant.subNet = [];
 
 % --- Executes when selected object is changed in uipanelSolverMethod.
+function ANNradiobutton_Callback(hObject, eventdata, handles)
 function NoMixedInteger_Callback(hObject, eventdata, handles)
 function MixedInteger_Callback(hObject, eventdata, handles)
 function uipanelSolverMethod_SelectionChangedFcn(hObject, eventdata, handles)
@@ -1065,6 +1166,9 @@ switch get(eventdata.NewValue,'Tag')
     case 'MixedInteger'
         Plant.optimoptions.MixedInteger = true;
         Plant.optimoptions.solver = 'quadprog';
+    case 'ANNradiobutton'
+        Plant.optimoptions.MixedInteger = false;
+        Plant.optimoptions.solver = 'ANN';
 end
 
 % --- Executes when selected object is changed in SpinningReserve.
@@ -1219,7 +1323,7 @@ list = get(handles.uipanelMain1,'UserData');
 i = nonzeros((1:(nG+nB))'*strcmp(click,list));
 if i<=nG
     Comm.OnOff = str2double(get(handles.editCommandOnOff,'String'));
-    Com.Set = str2double(get(handles.editCommandSet,'String'));
+    Comm.Set = str2double(get(handles.editCommandSet,'String'));
 
     Measure.OnOff = str2double(get(handles.editMeasureOnOff,'String'));
     Measure.Input = str2double(get(handles.editMeasureInput,'String'));

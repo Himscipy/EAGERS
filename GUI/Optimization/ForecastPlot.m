@@ -1,11 +1,9 @@
 function ForecastPlot
-global Plant DateSim GENINDEX Last24hour TestData
+global Plant DateSim GENINDEX TestData
 handles = guihandles;
 %find the current date
 DateSim = TestData.Timestamp(1) + get(handles.sliderDate,'Value');
-Last24hour = [];%re-load the previous 24 hours
-TimeYesterday = linspace(DateSim-1,DateSim,ceil(24/Plant.optimoptions.Resolution)+1)';
-Last24hour = GetHistoricalData(TimeYesterday);
+reloadLast24hour(DateSim,Plant.optimoptions.Resolution)%re-load the previous 24 hours
       
 if isempty(GENINDEX)%plot demands
     set(handles.sliderZoom,'Visible','on')

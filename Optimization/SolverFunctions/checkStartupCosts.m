@@ -13,7 +13,6 @@ function GenOutput = checkStartupCosts(GenOutput,StorPower,Alt,StartCost,dt,incl
 global Plant
 nS = length(Alt.Disp);
 nG = length(Plant.Generator);
-InitialOutput = GenOutput;
 SkipOn = [];
 SkipOff = [];
 Dispatchable = logical(Plant.OneStep.Organize.Dispatchable);
@@ -29,25 +28,14 @@ for i = 1:1:nG
 end
 I = ones(length(dt),1);
 for t = 1:1:nS
-    B = Binary(t+1,inc);
-    i = find(ismember(Alt.Binary{t}(:,inc),B,'rows'));
-    if length(i)>1
-        I(t) = i(1);
-        disp('Multiple binary options in checkStartupCosts')
-    elseif ~isempty(i)
-        I(t) = i;
-    else
-        disp('No binary options in checkStartupCosts')
-    end
+    I(t) = nonzeros((1:length(Alt.Binary{t}(:,1)))'.*(sum(Binary(t+1,inc)==Alt.Binary{t}(:,inc),2)==length(Binary(t+1,inc))));%find the rows that match the same included generators
 end
 %find I(t), index that results in lowest cost once start-up is considered.
 seg = 1;
 onSeg = 1;
 while ~isempty(onSeg) && seg<n
-    %%Try and remove the shortest generator on segment
+    %%Try and remove the shortest generator on segment, and if equal lengths, highest start cost, if same generator then first segment
     [onSeg, offSeg] = segmentLength(Binary,StartCost,dt,SkipOn,SkipOff,inc);
-    %% need to sort segments by length, StartCost and operating cost
-    
     if isempty(onSeg) && isempty(offSeg)
         break %no  segments to check
     elseif ~isempty(onSeg)
@@ -89,7 +77,6 @@ while ~isempty(onSeg) && seg<n
     end 
     seg = seg+1;
 end
-diff = GenOutput - InitialOutput;
 end% Ends function checkStartupCosts
 
 function GenOutput = updateStorageState(GenOutput,Alt,I,StorPower,dt)
@@ -134,38 +121,49 @@ nS = length(Alt.Disp);
 nG = length(GenOutput(1,:));
 mustReplace = true;
 inc = false(1,nG);
+cap = Plant.Generator(k).Output.Capacity*Plant.Generator(k).Size;
+[UsefulStoredEnergy,~,stor] = StorState(GenOutput,dt);
+out = [];
 if strcmp(Plant.Generator(k).Type,'Chiller')
     include = {'Chiller'};
     out = 'C';
-    output = 'Cooling';
+    eff = Plant.Generator(k).Output.Cooling;
 elseif strcmp(Plant.Generator(k).Type,'Heater')
     include = {'Heater'};
     out = 'H';
-    output = 'Heating';
+    eff = Plant.Generator(k).Output.Heat;
 elseif ismember(Plant.Generator(k).Type,{'CHP Generator';'Electric Generator';})
     include = {'CHP Generator';'Electric Generator';};
-    out = 'E';
-    output = 'Electricity';
+    if isfield(Plant.Generator(k).Output,'Electricity')
+        eff = Plant.Generator(k).Output.Electricity;
+    else
+        eff = Plant.Generator(k).Output.DirectCurrent;
+    end
+    if isfield(stor,'DC')
+        out = 'DC';
+    elseif isfield(stor,'E')
+        out = 'E';
+    end
 end
 for i = 1:1:nG
     if ismember(Plant.Generator(i).Type,include) 
         inc(i) = true;
     end
 end
-[UsefulStoredEnergy,~,stor] = StorState(GenOutput,dt);
+
 Time = buildTimeVector(Plant.optimoptions);%% set up dt vector of time interval length
 Date = [DateSim; DateSim+Time/24];
 dt = Time - [0; Time(1:end-1)];
 scaleCost = updateGeneratorCost(Date,Plant.Generator); 
 [~,~,spareGenCumulative] = GenLimit(GenOutput,Binary,dt);
 rmvCost = 0;
-if any(UsefulStoredEnergy.(out))>0
+if isfield(stor,out) && any(UsefulStoredEnergy.(out))>0
     MarginCost = MarginalCapacityCost(GenOutput,Date);
     remGen = zeros(nS,1);
     remHeat = zeros(nS,1);
     for t = t1:1:t2-1
         remGen(t:end) = remGen(t:end) + GenOutput(t+1,k)*dt(t);%need to replace this energy in the storage by the end, and replace enough early so that UsefulStoredEnergy - remStor + makeup does not go negative
-        rmvCost = rmvCost + scaleCost(t+1,k)*GenOutput(t+1,k)./interp1(Plant.Generator(k).Output.Capacity*Plant.Generator(k).Size,Plant.Generator(k).Output.(output),GenOutput(t+1,k))*dt(t);
+        rmvCost = rmvCost + scaleCost(t+1,k)*GenOutput(t+1,k)./interp1(cap,eff,GenOutput(t+1,k))*dt(t);
         if isfield(Plant.Generator(k).QPform,'constCost')
             rmvCost = rmvCost + Plant.Generator(k).QPform.constCost*scaleCost(t+1,k)*dt(t);
         end
@@ -188,9 +186,21 @@ if any(UsefulStoredEnergy.(out))>0
             end
         end
     end
-    if all(remGen-spareGenCumulative.(out)<UsefulStoredEnergy.(out)) && spareGenCumulative.(out)(end)>=remGen(end) && (~strcmp(Plant.Generator(k).Type,'CHP Generator') || (all(remHeat-spareGenCumulative.H<UsefulStoredEnergy.H) && spareGenCumulative.H(end)>=remHeat(end)))
-        if any(remGen>UsefulStoredEnergy.(out))%Need to make up generation before storage would go negative
-            t_limit = min(nonzeros((1:nS)'.*(remGen>UsefulStoredEnergy.(out))));
+    useful = UsefulStoredEnergy.(out);
+    if strcmp(Plant.Generator(k).Type,'CHP Generator') && ~isfield(stor,'H')
+        useful2 = 0;
+    elseif strcmp(Plant.Generator(k).Type,'CHP Generator')
+        useful2 = UsefulStoredEnergy.H;
+    end
+    possible2avoid = false;
+    if spareGenCumulative.(out)(end)>=remGen(end) && all(remGen-spareGenCumulative.(out)<useful)
+        if ~strcmp(Plant.Generator(k).Type,'CHP Generator') || (all(remHeat-spareGenCumulative.H<useful2) && spareGenCumulative.H(end)>=remHeat(end))
+            possible2avoid = true;
+        end
+    end
+    if possible2avoid%all(remGen-spareGenCumulative.(out)<UsefulStoredEnergy.(out)) && spareGenCumulative.(out)(end)>=remGen(end) && (~strcmp(Plant.Generator(k).Type,'CHP Generator') || (all(remHeat-spareGenCumulative.H<UsefulStoredEnergy.H) && spareGenCumulative.H(end)>=remHeat(end)))
+        if any(remGen>useful)%Need to make up generation before storage would go negative
+            t_limit = min(nonzeros((1:nS)'.*(remGen>useful)));
         else
             t_limit = nS;
         end
@@ -232,8 +242,13 @@ end%Ends function avoidGeneration
 function [Alt,I,Binary,cantMove] = moveGeneration(I,k,t1,t2,Alt,GenOutput,Binary,inc,dt)
 %need to re-do this for variable time steps
 global Plant
+[UsefulStoredEnergy,~,~,SpareStorCap,~] = StorState(GenOutput,dt);
 if ismember(Plant.Generator(k).Type,{'CHP Generator';'Electric Generator';})
-    out = 'E';
+    if isfield(UsefulStoredEnergy,'DC')
+        out = 'DC';
+    elseif isfield(UsefulStoredEnergy,'DC')
+        out = 'E';
+    end
 elseif strcmp(Plant.Generator(k).Type,'Chiller')
     out = 'C';
 elseif strcmp(Plant.Generator(k).Type,'Heater')
@@ -242,8 +257,8 @@ end
 nS = length(Alt.Disp);
 cantMove = true;
 Ialt = I;
-[UsefulStoredEnergy,~,~,SpareStorCap,~] = StorState(GenOutput,dt);
-if any(UsefulStoredEnergy.(out))>0
+
+if isfield(UsefulStoredEnergy,out) && any(UsefulStoredEnergy.(out))>0
     addStor = zeros(nS,1);
     remStor = zeros(nS,1);
     stops = nonzeros((1:nS)'.*(~Binary(2:end,k) & Binary(1:nS,k)));
@@ -311,6 +326,7 @@ end%Ends function moveGeneration
 
 function [I,Binary,NoAlt] = altGeneration(I,k,t1,t2,StartCost,Alt,GenOutput,Binary,dt)
 global Plant
+[UsefulStoredEnergy,StorGenAvail,~] = StorState(GenOutput,dt);
 NoAlt = true;
 nS = length(Alt.Disp);
 nG = length(StartCost);
@@ -330,19 +346,19 @@ for i = 1:1:nG
             inc(i) = true;
         end
     end
-    if strcmp(Plant.Generator(k).Type,'CHP Generator')
-        out = 'E';
+    if strcmp(Plant.Generator(k).Type,'CHP Generator') || strcmp(Plant.Generator(k).Type,'Electric Generator')
+        if isfield(UsefulStoredEnergy,'DC')
+            out = 'DC';
+        elseif isfield(UsefulStoredEnergy,'E')
+            out = 'E';
+        end
         include = {'CHP Generator';'Electric Generator';};
         dHeat = zeros(t2-t1,1);
         spareHeat = zeros(t2-t1,1);
-        if strcmp(Plant.Generator(i).Type,'Heater') || strcmp(Plant.Generator(i).Type,'CHP Generator') || strcmp(Plant.Generator(i).Type,'Electric Generator') || strcmp(Plant.Generator(i).Type,'Electric Storage') || (strcmp(Plant.Generator(i).Type,'Thermal Storage') && strcmp(Plant.Generator(i).Source,'Heat'))
+        if strcmp(Plant.Generator(i).Type,'CHP Generator') || strcmp(Plant.Generator(i).Type,'Electric Generator') || strcmp(Plant.Generator(i).Type,'Electric Storage')
             inc(i) = true;
         end
-    end
-    if strcmp(Plant.Generator(k).Type,'Electric Generator')
-        out = 'E';
-        include = {'CHP Generator';'Electric Generator';};
-        if strcmp(Plant.Generator(i).Type,'Electric Generator') || strcmp(Plant.Generator(i).Type,'CHP Generator')  || strcmp(Plant.Generator(i).Type,'Electric Storage')
+        if strcmp(Plant.Generator(k).Type,'CHP Generator') && (strcmp(Plant.Generator(i).Type,'Heater') || (strcmp(Plant.Generator(i).Type,'Thermal Storage') && strcmp(Plant.Generator(i).Source,'Heat')))
             inc(i) = true;
         end
     end
@@ -350,7 +366,6 @@ end
 Ialt = I;
 dCost = zeros(t2-t1,1);
 dGen = zeros(t2-t1,1);
-[UsefulStoredEnergy,StorGenAvail,~] = StorState(GenOutput,dt);
 AltBinary = Binary;
 for t = t1:1:t2-1
     Opt = Alt.Binary{t}; %all feasible options tested at this time
@@ -416,8 +431,22 @@ for i = 1:1:nG
         end
     end
 end
-if sum(dCost)<StartCost(k) && all(dGen<(spareGen+StorGenAvail.(out)(t1:t2-1)./dt(t1:t2-1))) && sum(dGen-spareGen)<min(UsefulStoredEnergy.(out)(t1:end)) %sum of the marginal increase in cost is less than the start-up cost, there is spare capacity in the other generators & storage, and the cumulative loss of generation does not deplete the storage
-    if ~strcmp(Plant.Generator(k).Type,'CHP Generator') || (all(dHeat<(spareHeat+StorGenAvail.H(t1:t2-1)./dt(t1:t2-1))) && sum(dHeat-spareHeat)<min(UsefulStoredEnergy.H(t1:end)))
+useful1 = 0;
+useful2 = 0;
+if isfield(UsefulStoredEnergy,out)
+    useful1 = StorGenAvail.(out)(t1:t2-1);
+    useful2 = min(UsefulStoredEnergy.(out)(t1:end));    
+end
+if sum(dCost)<StartCost(k) && all(dGen<(spareGen+useful1./dt(t1:t2-1))) && sum(dGen-spareGen)<useful2 %sum of the marginal increase in cost is less than the start-up cost, there is spare capacity in the other generators & storage, and the cumulative loss of generation does not deplete the storage
+    if strcmp(Plant.Generator(k).Type,'CHP Generator')
+        useful3 = 0;
+        useful4 = 0;
+        if isfield(UsefulStoredEnergy,'H')
+            useful3 = StorGenAvail.H(t1:t2-1);
+            useful4 = min(UsefulStoredEnergy.H(t1:end));  
+        end
+    end
+    if ~strcmp(Plant.Generator(k).Type,'CHP Generator') || (all(dHeat<(spareHeat+useful3./dt(t1:t2-1))) && sum(dHeat-spareHeat)<useful4)
         I = Ialt; %use the alternative index
         for t = t1:1:t2-1
             Binary(t+1,inc) = Alt.Binary{t}(I(t),inc); %best alternative option tested at this time
@@ -430,8 +459,13 @@ end%Ends function altGeneration
 function [I,Binary,CantKeepOn] = leaveGenOn(I,k,t1,t2,StartCost,Alt,GenOutput,Binary,inc,dt)
 %% Find the cheapest feasible alternative dispatch that keeps this generator on (only use generators that were on previously or will be on)
 global Plant
-if ismember(Plant.Generator(k).Type,{'CHP Generator';'Electric Generator';})
-    out = 'E';
+[~,~,~,SpareStorCap,StorSlackAvail] = StorState(GenOutput,dt);
+if ismember(Plant.Generator(k).Type,{'CHP Generator';'Electric Generator';'Hydrogen Generator';})
+    if isfield(SpareStorCap,'DC')
+        out = 'DC';
+    elseif isfield(SpareStorCap,'E')
+        out = 'E';
+    end
 elseif strcmp(Plant.Generator(k).Type,'Chiller')
     out = 'C';
 elseif strcmp(Plant.Generator(k).Type,'Heater')
@@ -445,7 +479,6 @@ Ialt = I;
 dCost = zeros(t2-t1,1);
 dGen = zeros(t2-t1,1);
 slackGen = zeros(t2-t1,1);
-[~,~,~,SpareStorCap,StorSlackAvail] = StorState(GenOutput,dt);
 if t1 == 1
     Prev = GenOutput(1,:);
 else
@@ -469,7 +502,13 @@ for t = t1:1:t2-1
         break
     end
 end
-if sum(dCost)<StartCost(k) && all(dGen<(slackGen+StorSlackAvail.(out)(t1:t2-1)./dt(t1:t2-1))) && sum(dGen-slackGen)<min(SpareStorCap.(out)(t1:end)) %sum of the marginal increase in cost is less than the start-up cost, there is spare capacity in the other generators & storage, and the cumulative loss of generation does not deplete the storage
+useful1 = 0;
+useful2 = 0;
+if isfield(SpareStorCap,out)
+    useful1 = StorSlackAvail.(out)(t1:t2-1);
+    useful2 = min(SpareStorCap.(out)(t1:end));
+end
+if sum(dCost)<StartCost(k) && all(dGen<(slackGen+useful1./dt(t1:t2-1))) && sum(dGen-slackGen)<useful2 %sum of the marginal increase in cost is less than the start-up cost, there is spare capacity in the other generators & storage, and the cumulative loss of generation does not deplete the storage
     I = Ialt; %use the alternative index
     for t = t1:1:t2-1
         Binary(t+1,:) = Alt.Binary{t}(I(t),:); %best alternative option tested at this time
@@ -549,41 +588,37 @@ function [StoredEnergy,StorGenAvail,stor,SpareStorCap,StorSlackAvail] = StorStat
 global Plant
 nG = length(Plant.Generator);
 nS = length(GenOutput(2:end,1));
-StoredEnergy.E = zeros(nS,1);
-StoredEnergy.H = zeros(nS,1);
-StoredEnergy.C = zeros(nS,1);
-StorGenAvail = StoredEnergy;
-SpareStorCap = StoredEnergy;
-StorSlackAvail = StoredEnergy;
-stor.E = [];
-stor.H = [];
-stor.C = [];
+StoredEnergy =[];
+% acdc = false;
 for i = 1:1:nG
-    if strcmp(Plant.Generator(i).Type,'Thermal Storage') && strcmp(Plant.Generator(i).Source,'Cooling')
+    if isfield(Plant.Generator(i).QPform,'Stor') && ~strcmp(Plant.Generator(i).Type,'Hydro Storage')
+        out = char(fieldnames(Plant.Generator(i).QPform.output));
+        if ~isfield(StoredEnergy,out)
+            StoredEnergy.(out) = zeros(nS,1);
+            StorGenAvail.(out) = zeros(nS,1);
+            SpareStorCap.(out) = zeros(nS,1);
+            StorSlackAvail.(out) = zeros(nS,1);
+            stor.(out) = [];
+        end
         buff = Plant.Generator(i).QPform.Stor.UsableSize*(Plant.Generator(i).VariableStruct.Buffer/100);
-        StoredEnergy.C = StoredEnergy.C + (GenOutput(2:end,i)-buff)*Plant.Generator(i).QPform.Stor.DischEff;
-        StorGenAvail.C = StorGenAvail.C +  min((GenOutput(2:end,i)-buff)*Plant.Generator(i).QPform.Stor.DischEff./dt,Plant.Generator(i).QPform.Stor.PeakDisch);
-        SpareStorCap.C = SpareStorCap.C + (Plant.Generator(i).QPform.Stor.UsableSize - buff - GenOutput(2:end,i))/Plant.Generator(i).QPform.Stor.ChargeEff;
-        StorSlackAvail.C = StorSlackAvail.C +  min((Plant.Generator(i).QPform.Stor.UsableSize-buff-GenOutput(2:end,i))/Plant.Generator(i).QPform.Stor.ChargeEff./dt,Plant.Generator(i).QPform.Stor.PeakCharge);
-        stor.C(end+1) = i;
+        StoredEnergy.(out) = StoredEnergy.(out) + (GenOutput(2:end,i)-buff)*Plant.Generator(i).QPform.Stor.DischEff;
+        StorGenAvail.(out) = StorGenAvail.(out) +  min((GenOutput(2:end,i)-buff)*Plant.Generator(i).QPform.Stor.DischEff./dt,Plant.Generator(i).QPform.Stor.PeakDisch);
+        SpareStorCap.(out) = SpareStorCap.(out) + (Plant.Generator(i).QPform.Stor.UsableSize - buff - GenOutput(2:end,i))/Plant.Generator(i).QPform.Stor.ChargeEff;
+        StorSlackAvail.(out) = StorSlackAvail.(out) +  min((Plant.Generator(i).QPform.Stor.UsableSize-buff-GenOutput(2:end,i))/Plant.Generator(i).QPform.Stor.ChargeEff./dt,Plant.Generator(i).QPform.Stor.PeakCharge);
+        stor.(out)(end+1) = i;
     end
-    if strcmp(Plant.Generator(i).Type,'Thermal Storage') && strcmp(Plant.Generator(i).Source,'Heat')
-        buff = Plant.Generator(i).QPform.Stor.UsableSize*(Plant.Generator(i).VariableStruct.Buffer/100);
-        StoredEnergy.H = StoredEnergy.H + (GenOutput(2:end,i)-buff)*Plant.Generator(i).QPform.Stor.DischEff;
-        StorGenAvail.H = StorGenAvail.H +  min((GenOutput(2:end,i)-buff)*Plant.Generator(i).QPform.Stor.DischEff./dt,Plant.Generator(i).QPform.Stor.PeakDisch);
-        SpareStorCap.H = SpareStorCap.H + (Plant.Generator(i).QPform.Stor.UsableSize - buff - GenOutput(2:end,i))/Plant.Generator(i).QPform.Stor.ChargeEff;
-        StorSlackAvail.H = StorSlackAvail.H +  min((Plant.Generator(i).QPform.Stor.UsableSize-buff-GenOutput(2:end,i))/Plant.Generator(i).QPform.Stor.ChargeEff./dt,Plant.Generator(i).QPform.Stor.PeakCharge);
-        stor.H(end+1) = i;
-    end
-    if  strcmp(Plant.Generator(i).Type,'Electric Storage')
-        buff = Plant.Generator(i).QPform.Stor.UsableSize*(Plant.Generator(i).VariableStruct.Buffer/100);
-        StoredEnergy.E = StoredEnergy.E + (GenOutput(2:end,i)-buff)*Plant.Generator(i).QPform.Stor.DischEff;
-        StorGenAvail.E = StorGenAvail.E +  min((GenOutput(2:end,i)-buff)*Plant.Generator(i).QPform.Stor.DischEff./dt,Plant.Generator(i).QPform.Stor.PeakDisch);
-        SpareStorCap.E = SpareStorCap.E + (Plant.Generator(i).QPform.Stor.UsableSize - buff - GenOutput(2:end,i))/Plant.Generator(i).QPform.Stor.ChargeEff;
-        StorSlackAvail.E = StorSlackAvail.E +  min((Plant.Generator(i).QPform.Stor.UsableSize-buff-GenOutput(2:end,i))/Plant.Generator(i).QPform.Stor.ChargeEff./dt,Plant.Generator(i).QPform.Stor.PeakCharge);
-        stor.E(end+1) = i;
-    end
+%     if strcmp(Plant.Generator(i).Type,'AC_DC')
+%         acdc = true;
+%     end
 end
+% %%temporary fix because other sections are set up for 'E' instead of 'DC'
+% if acdc && isfield(StoredEnergy,'DC')
+%     StoredEnergy.E = StoredEnergy.DC;
+%     StorGenAvail.E = StorGenAvail.DC;
+%     SpareStorCap.E = SpareStorCap.DC;
+%     StorSlackAvail.E = StorSlackAvail.DC;
+%     stor.E = stor.DC;
+% end
 end%Ends function StorState
 
 

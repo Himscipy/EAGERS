@@ -7,8 +7,15 @@ nG = length(testSystems(k).Generator);
 electricUtility = [];
 for i = 1:1:nG
     skip = false;
-    if strcmp(testSystems(k).Generator(i).Type,'Electric Generator') || strcmp(testSystems(k).Generator(i).Type,'CHP Generator')
-        eff = testSystems(k).Generator(i).Output.Electricity;
+    if strcmp(testSystems(k).Generator(i).Type,'Electric Generator') || strcmp(testSystems(k).Generator(i).Type,'CHP Generator') || strcmp(testSystems(k).Generator(i).Type,'Hydrogen Generator')
+        if isfield(testSystems(k).Generator(i).Output,'Electricity')
+            eff = testSystems(k).Generator(i).Output.Electricity;
+        elseif isfield(testSystems(k).Generator(i).Output,'DirectCurrent')
+            eff = testSystems(k).Generator(i).Output.DirectCurrent;
+        end
+        cap = testSystems(k).Generator(i).Output.Capacity*testSystems(k).Generator(i).Size;
+    elseif strcmp(testSystems(k).Generator(i).Type,'Electrolyzer')
+        eff = testSystems(k).Generator(i).Output.Hydrogen; 
         cap = testSystems(k).Generator(i).Output.Capacity*testSystems(k).Generator(i).Size;
     elseif strcmp(testSystems(k).Generator(i).Type,'Heater')
         eff = testSystems(k).Generator(i).Output.Heat; 

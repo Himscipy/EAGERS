@@ -19,7 +19,7 @@ Organize.IC = zeros(nG+nL+nB,1);
 Organize.States=cell(1,nG+nL+nB);
 Organize.Dispatchable = zeros(1,nG);
 Organize.Transmission = zeros(nL,1);
-Organize.Hydro = false(1,nG);
+Organize.Hydro = [];
 Organize.Building.r = zeros(nB,1);
 Organize.Building.req = zeros(nB,1);
 Organize.dt = dt;
@@ -86,7 +86,7 @@ for i = 1:1:nG
         Organize.IC(i) = ic;
     end
     if strcmp(Plant.Generator(i).Type,'Hydro Storage')
-        Organize.Hydro(i) = true;
+        Organize.Hydro(end+1) = i;
         ic = ic+1; %second IC for the SOC of the reservior (1st was for Power output)
     end
 end
@@ -122,13 +122,15 @@ for i = 1:1:nG
         QP.organize{2,i} = xL+1:xL+s; %output is sum of multiple states at each time step
         if strcmp(Plant.Generator(i).Type,'Utility') && strcmp(Plant.Generator(i).Source,'Electricity') && s ==2
             Organize.Out_vs_State{1,i} = [1,-1];
-        elseif ismember(Plant.Generator(i).Type,{'Electric Storage';'Thermal Storage';'Hydro Storage';})
+        elseif strcmp(Plant.Generator(i).Type,'AC_DC')
+            Organize.Out_vs_State{1,i} = [1,-1];%Value is thus the total transfer from AC to DC
+        elseif isfield(Plant.Generator(i).QPform,'Stor')
             QP.organize{2,i} = xL+1; %output state for storage is only SOC (Power in the case of Hydro)
             Organize.Out_vs_State{1,i} = 1;
         else
             Organize.Out_vs_State{1,i} = ones(1,s);
         end
-        if ismember(Plant.Generator(i).Type,{'Electric Generator';'CHP Generator';'Heater';'Chiller';'Absorption Chiller';})
+        if ismember(Plant.Generator(i).Type,{'Electric Generator';'CHP Generator';'Heater';'Chiller';'Cooling Tower';'Electrolyzer';'Hydrogen Generator';})
             if isfield(Plant.Generator(i).QPform,'constCost') 
                  QP.constCost(i) = Plant.Generator(i).QPform.constCost;
             end
@@ -185,7 +187,7 @@ global Plant
 lb = [];
 ub = [];
 if Plant.optimoptions.SpinReserve
-    include = {'Electric Generator';'CHP Generator';'Hydro Storage';'Electric Storage';};
+    include = {'Electric Generator';'CHP Generator';'Hydro Storage';'Electric Storage';'Hydrogen Generator';};
     if ismember(Plant.Generator(i).Type,include)
         if strcmp(Plant.Generator(i).Type,'Hydro Storage')
             lb(end+1,1) = 0;
@@ -204,6 +206,7 @@ end%Ends function spinReserve
 function [QP,Organize,xL,lb,ub] = countTransLines(QP,Organize,xL,lb,ub)
 %states for transmission lines
 global Plant
+nG = length(Plant.Generator);
 networkNames = fieldnames(Plant.subNet);
 for net = 1:1:length(networkNames)
     if ~isempty(Plant.subNet.(networkNames{net}).lineNames)
@@ -236,7 +239,6 @@ end
 end%Ends function countTransLines
 
 function [Organize,ec] = equaltiyConstraints(Organize,ic,nG)
-global Plant
 %% Equality Constraints
 % IC for each generator and storage device
 % Electric energy balance @ each Electric subNet node  at t = 1, including transmission lines
@@ -244,6 +246,7 @@ global Plant
 % Cooling balance @ each DistrictCool subNet node at t = 1
 % Any generator link equalities (linking states within a generator)
 % Repeat power balance equalities and link equalities at t = 2:nS
+global Plant
 networkNames = fieldnames(Plant.subNet);
 req = ic; % row index of the Aeq matrix and beq vector
 
@@ -278,7 +281,7 @@ end
 ec = [];
 if isfield(Plant.optimoptions,'endSOC') && ~strcmp(Plant.optimoptions.endSOC,'Flexible')
     for i = 1:1:nG
-        if strcmp(Plant.Generator(i).Type,'Electric Storage') || strcmp(Plant.Generator(i).Type,'Thermal Storage') || strcmp(Plant.Generator(i).Type,'Hydro Storage')
+        if isfield(Plant.Generator(i).QPform,'Stor')
             ec(end+1) = i;
         end
     end
@@ -302,7 +305,7 @@ networkNames = fieldnames(Plant.subNet);
 if ismember('Electrical',fieldnames(Plant.subNet)) && Plant.optimoptions.SpinReserve
     Organize.SpinReserve = r+1;
     r = r+1; %inequality for net spinning reserve (total of all idividual generator spinning reserves
-    include = {'Electric Generator';'CHP Generator';'Electric Storage';'Hydro Storage';};
+    include = {'Electric Generator';'CHP Generator';'Electric Storage';'Hydro Storage';'Hydrogen Generator';};
 end
     
 %Ramping & Generator Inequalities
@@ -358,13 +361,7 @@ t1Balances = Organize.t1Balances;
 t1States = Organize.t1States;
 networkNames = fieldnames(Plant.subNet);
 for net = 1:1:length(networkNames)
-    if strcmp(networkNames{net},'Electrical')
-        out = 'E';
-    elseif strcmp(networkNames{net},'DistrictHeat')
-        out = 'H';
-    elseif strcmp(networkNames{net},'DistrictCool')
-        out = 'C';
-    end
+    out = Plant.subNet.(networkNames{net}).abbreviation;
     if strcmp(networkNames{net},'Hydro')
         Aeq = HydroEqualities(Aeq,Organize,dt);
     else
@@ -385,7 +382,7 @@ for net = 1:1:length(networkNames)
                         beq((T-1)*t1Balances+req2+(j-1)) = Gen.link.beq(j);
                     end
                 end
-                if ismember(Plant.Generator(equip(k)).Type,{'Electric Storage';'Thermal Storage';})
+                if isfield(Plant.Generator(equip(k)).QPform,'Stor') && ~strcmp(Plant.Generator(equip(k)).Type,'Hydro Storage')
                     eff = Gen.Stor.DischEff;
                     for t = 1:1:nS
                         Aeq((t-1)*t1Balances+req,(t-1)*t1States+states(1)) = -eff/dt(t); %SOC at t
@@ -462,7 +459,8 @@ for i = 1:1:nG
         if any(strcmp(Plant.subNet.Hydro.nodes{n}(1),downriver))
             Plant.subNet.Hydro.UpRiverNodes(n) = {nodeIndex(strcmp(Plant.subNet.Hydro.nodes{n}(1),downriver))};%upstream nodes
             K = Plant.subNet.Hydro.lineNumber(Plant.subNet.Hydro.UpRiverNodes{n});
-        else K = []; %no upstream nodes
+        else
+            K = []; %no upstream nodes
         end
         req2 = Organize.Equalities(i,1); %equality for converting power to flow (adding spill flow) = outflow
         for t = 1:1:nS
@@ -568,7 +566,7 @@ for i = 1:1:nG
     %Ramping 
     if Organize.Ramping(i)>0
         %%if storage, ramping only affects 1st state
-        if ismember(Plant.Generator(i).Type,{'Electric Storage';'Thermal Storage';'Hydro Storage'})
+        if isfield(Plant.Generator(i).QPform,'Stor')
             rampStates = states(1);
         else
             rampStates = states;
@@ -593,7 +591,7 @@ for i = 1:1:nG
         ineqRow = Organize.Inequalities(i,1);
         for t = 1:1:nS
             for k = 1:1:Organize.Inequalities(i,2)
-                if k == 1 && ismember(Plant.Generator(i).Type,{'Electric Storage';'Thermal Storage'}) && ismember('Y',Plant.Generator(i).QPform.states)
+                if k == 1 && isfield(Plant.Generator(i).QPform,'Stor') && ~strcmp(Plant.Generator(i).Type,'Hydro Storage') && ismember('Y',Plant.Generator(i).QPform.states)
                     A((t-1)*t1ineq+ineqRow,(t-1)*t1States+states(1)) = Plant.Generator(i).QPform.link.ineq(1,1);  % SOC at t  
                     A((t-1)*t1ineq+ineqRow,(t-1)*t1States+states(2)) = Plant.Generator(i).QPform.link.ineq(1,2);  % charging state at t (-1)
                     if t ==1 %SOC change from IC
@@ -657,7 +655,7 @@ if ismember('Electrical',fieldnames(Plant.subNet)) && Plant.optimoptions.SpinRes
         A((t-1)*t1ineq+Organize.SpinReserve,(t-1)*t1States+SRancillary) = 1; %Inequality for spinning reserve shortfall:  -(shortfall) - sum(SR(i)) + SR ancillary <= -SR target
     end
     %individual spinning reserve at each time step (limited by ramp rate and peak gen capacity)
-    include = {'Electric Generator';'CHP Generator';'Hydro Storage';};
+    include = {'Electric Generator';'CHP Generator';'Hydro Storage';'Hydrogen Generator'};
     for i = 1:1:nG
         if ismember(Plant.Generator(i).Type,include)
             SRstate = Organize.SpinReserveStates(i);
@@ -740,20 +738,20 @@ t1States = Organize.t1States;
 for i = 1:1:nB
     states = Organize.States{nG+nL+i};
     %Electric equality
-    req = Organize.Balance.Electrical(Plant.Building(i).QPform.nodeE);
+    req = Organize.Balance.Electrical(Plant.Building(i).QPform.Electrical.subnetNode);
     Organize.Building.Electrical.req(i) = req;
     for t = 1:1:nS
         Aeq((t-1)*t1Balances+req,(t-1)*t1States+states(2)) = -Plant.Building(i).QPform.H2E;% Electricity = E0 + H2E*(Heating-H0) + C2E*(Cooling-C0)
         Aeq((t-1)*t1Balances+req,(t-1)*t1States+states(3)) = -Plant.Building(i).QPform.C2E;% Electricity = E0 + H2E*(Heating-H0) + C2E*(Cooling-C0)
     end
     %Heating equality
-    req = Organize.Balance.DistrictHeat(Plant.Building(i).QPform.nodeH);
+    req = Organize.Balance.DistrictHeat(Plant.Building(i).QPform.DistrictHeat.subnetNode);
     Organize.Building.DistrictHeat.req(i) = req;
     for t = 1:1:nS
         Aeq((t-1)*t1Balances+req,(t-1)*t1States+states(2)) = -1;%subtract building heating needs from heating energy balance
     end
     %Cooling equality
-    req = Organize.Balance.DistrictCool(Plant.Building(i).QPform.nodeC);
+    req = Organize.Balance.DistrictCool(Plant.Building(i).QPform.DistrictCool.subnetNode);
     Organize.Building.DistrictCool.req(i) = req;
     for t = 1:1:nS
         Aeq((t-1)*t1Balances+req,(t-1)*t1States+states(3)) = -1;%subtract building cooling needs from cooling energy balance

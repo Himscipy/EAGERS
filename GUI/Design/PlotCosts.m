@@ -37,7 +37,7 @@ for i = 1:1:length(testSystems)
     Name(i) = {testSystems(i).Name};
     %savebuilding color and figure out spacing/width
     bar(h1,Xpos(:,i),Data,'stacked','BarWidth',0.8/nShow)
-%     set(h1,'ColorOrderIndex',1);
+    set(h1,'ColorOrderIndex',1);
 end
 legend(h1,{'Financing Charges';'O & M Charges';'Re-start Charges';'Demand Charges';'Electric Use Charges';'Fuel Charges';})
 xlim(h1,[0,n])

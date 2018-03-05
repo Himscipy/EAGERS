@@ -19,17 +19,22 @@ if ~isfield(QP,'Organize') %calculating generator cost fits
             QP.A*x <= QP.b;
     cvx_end
 else %solving mixed-integer generator dispatch
+    nG = length(Plant.Generator);
     nS = length(QP.organize(:,1))-1;
     ic = nnz(QP.Organize.IC);
     totalStates = nS*QP.Organize.t1States+ic;
     disp = find(QP.Organize.Dispatchable>0);
-    boolVar = nS*length(disp);
-    H = diag(QP.H);
+    nDG = length(disp);
+    boolVar = nS*nDG;
+    D = zeros(1,boolVar);
+    for k = 1:1:nDG
+        D(1,k:nDG:boolVar) = QP.constCost(:,disp(k))';
+    end
+    H = full(QP.H);
     f = QP.f;
     F = fieldnames(QP.constDemand);
     %organize constant demands
-    constDem = zeros(length(QP.beq),length(disp));
-    constDem_t = zeros(length(QP.beq),1);
+    constDem = zeros(length(QP.beq),boolVar);
     for i = 1:1:length(F)
         if strcmp(F{i},'E')
             net = 'Electrical';
@@ -39,74 +44,62 @@ else %solving mixed-integer generator dispatch
             net = 'DistrictCool';
         end
         for n = 1:1:length(Plant.subNet.(net).nodes) %run through all the nodes in this network
-            for t = 1:1:nS
-                if QP.constDemand.(F{i}).req((n-1)*nS+t)>0
-                    for k = 1:1:length(disp)
-                        constDem(QP.constDemand.(F{i}).req((n-1)*nS+t),k) = QP.constDemand.(F{i}).load((n-1)*nS+t,disp(k));
-                        constDem_t(QP.constDemand.(F{i}).req((n-1)*nS+t),1) = t;
+            equip = Plant.subNet.(net).Equipment{n}; %equipment at this node
+            req = QP.constDemand.(F{i}).req((n-1)*nS+1);
+            for j = 1:1:length(equip)
+                if any(equip(j)==disp)
+                    k = equip(j);
+                    if isfield(Plant.Generator(k).QPform,'constDemand')  && isfield(Plant.Generator(k).QPform.constDemand,F{i})
+                        boolIndex = min(nonzeros((1:1:nDG).*(equip(j)==disp)));
+                        for t = 1:1:nS
+                            constDem(req+(t-1)*QP.Organize.t1Balances,boolIndex+(t-1)*nDG) = Plant.Generator(k).QPform.constDemand.(F{i});
+                        end
                     end
                 end
             end
         end
     end
     %organize which states are dispatchable
-    dispStates = zeros(totalStates,1);
-    k = 1;
-    for i = 1:1:length(disp)
-        j = disp(i);
-        states = QP.Organize.States{j};
-        for t = 1:1:nS
-            dispStates(states+(t-1)*QP.Organize.t1States) = k;
-            k = k+1;
+    UB = zeros(totalStates,boolVar+1);
+    LB = zeros(totalStates,boolVar+1);
+    UB(:,end) = QP.ub;
+    LB(:,end) = QP.lb;
+    k = 0;
+    for i = 1:1:nG
+        states = QP.Organize.States{i};
+        if QP.Organize.Dispatchable(i)
+            k = k + 1;
+            for t = 1:1:nS %move upper & lower constrain to multiply by boolean
+                UB(states+(t-1)*QP.Organize.t1States,k+(t-1)*nDG) = QP.ub(states+(t-1)*QP.Organize.t1States);
+                LB(states+(t-1)*QP.Organize.t1States,k+(t-1)*nDG) = QP.lb(states+(t-1)*QP.Organize.t1States);
+                UB(states+(t-1)*QP.Organize.t1States,end) = 0;
+                LB(states+(t-1)*QP.Organize.t1States,end) = 0;
+            end
         end
     end
 
     cvx_begin %quiet
+    cvx_solver_settings('timelimit', 3600)
+    % cvx_solver_settings('presolve', 0)
     % cvx_solver_settings( 'dumpfile', 'test' ) 
     % cvx_solver_settings( 'NumericFocus', '3' ) 
 
         variable x(totalStates)
         variable q(boolVar) binary
-        for i = 1:1:totalStates
-            C(i,1) = H(i)*x(i)^2 + f(i)*x(i);
-        end
-        for i = 1:1:totalStates%for all dispatchable gens, add constant cost
-            if i<length(disp)
-                D(i,1) = QP.constCost(disp(i))*sum(q(nS*(i-1)+1:nS*i));%q from 1 to nS*lengthdisp is boolean related to dispatchable gens,
-                %organized by gen1_t to gen1_ns, gen2_t to gen2_ns etc.
-            else
-                D(i,1) = 0;
-            end
-        end
-        E = sum(C+D);
 
-        minimize ( E )
+        C = x'*H*x + f'*x + D*q;
+
+        minimize ( C )
 
         subject to
             QP.A*x <= QP.b;%all inequality constraints
-            %add equality constraints
-            for r = 1:1:length(QP.beq)
-                if constDem_t(r)>0
-                    QP.Aeq(r,:)*x == QP.beq(r)+ constDem(r,:)*q(constDem_t(r):nS:length(disp)*nS);
-                else
-                    QP.Aeq(r,:)*x == QP.beq(r);
-                end
-            end
-
-            %add upper and lower bounds
-            for j = ic+1:1:totalStates
-                if dispStates(j)>0
-                    x(j) <= QP.ub(j)*q(dispStates(j));
-                    x(j) >= QP.lb(j)*q(dispStates(j));
-                else
-                    x(j) <= QP.ub(j);
-                    x(j) >= QP.lb(j);
-                end
-            end
+            QP.Aeq*x == QP.beq + constDem*q;
+            LB*[q;1] <= x <= UB*[q;1];
     cvx_end
 end
 if strcmp(cvx_status,'Solved')
     Feasible = 1;
-else Feasible = -1;
+else
+    Feasible = -1;
 end
 end%Ends function gurobi_opt

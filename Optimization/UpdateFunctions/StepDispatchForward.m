@@ -5,6 +5,8 @@ nS = length(Date)-1;
 dt = (24*3600) * (Date(2:end) - Date(1:end-1)); % duration of each time segment [seconds]
 if strcmp(Plant.optimoptions.method,'Planning')%assumes forecast is perfect
     DateSim = round(864000*(DateSim+Plant.optimoptions.Horizon/24))/864000;%%count forward by length of the horizon, rounded to nearest second
+    prevTime = Last24hour.Timestamp;
+    Last24hour = GetCurrentData(Last24hour.Timestamp + Plant.optimoptions.Horizon/24);
     if isfield(Plant,'Building') && ~isempty(Plant.Building)
         nB = length(Plant.Building);
         Tzone = zeros(nS+1,nB);
@@ -17,26 +19,28 @@ if strcmp(Plant.optimoptions.method,'Planning')%assumes forecast is perfect
     end
     CurrentState.Generators = Solution.Dispatch(end,:);
     CurrentState.Lines = Solution.LineFlows(end,:);
-    prevTime = Last24hour.Timestamp;
-    Last24hour = GetCurrentData(Last24hour.Timestamp + Plant.optimoptions.Horizon/24);
+    
     Plant.Design.Timestamp(Si+1:Si+nS) = Forecast.Timestamp;
     Plant.Design.GeneratorState(Si+1:Si+nS,:) = Solution.Dispatch(2:end,:);
     Plant.Design.LineFlows(Si+1:Si+nS,:) = Solution.LineFlows;
     F = fieldnames(Last24hour);
     F = F(~strcmp('Timestamp',F));
     for j = 1:1:length(F)
-        if isstruct(Forecast.(F{j}))
-            S = fieldnames(Forecast.(F{j}));
+        if isstruct(Last24hour.(F{j}))
+            S = fieldnames(Last24hour.(F{j}));
             for i = 1:1:length(S)
-                if ~isempty(Forecast.(F{j}).(S{i}))
+                if ~isempty(Last24hour.(F{j}).(S{i}))
                     Last24hour.(F{j}).(S{i}) = interp1([prevTime;Forecast.Timestamp],[Last24hour.(F{j}).(S{i}); Forecast.(F{j}).(S{i})],Last24hour.Timestamp);
                     Plant.Design.(F{j}).(S{i})(Si+1:Si+nS,:) = Forecast.(F{j}).(S{i});
                 end
             end
-        elseif ~isempty(Forecast.(F{j}))
+        elseif ~isempty(Last24hour.(F{j}))
             Last24hour.(F{j}) = interp1([prevTime;Forecast.Timestamp],[Last24hour.(F{j}); Forecast.(F{j})],Last24hour.Timestamp);
             Plant.Design.(F{j})(Si+1:Si+nS,:) = Forecast.(F{j});
         end
+    end
+    if isfield(Solution,'LBRelax')
+        Plant.Design.LBRelax(Si+1:Si+nS) = Solution.LBRelax;
     end
     if isfield(CurrentState,'Hydro')
         CurrentState.Hydro = Solution.hydroSOC(end,:);
@@ -52,22 +56,12 @@ elseif strcmp(Plant.optimoptions.method,'Dispatch') || strcmp(Plant.optimoptions
     DateSim = round(864000*(DateSim+Plant.optimoptions.Resolution/24))/864000;%% count forward 1 step, rounded to nearest second
     Data = GetCurrentData(DateSim);
     Last24hour.Timestamp = [Last24hour.Timestamp(2:end);DateSim;];
-    if isfield(Plant,'Building') && ~isempty(Plant.Building)
-        nB = length(Plant.Building);
-        Tzone = zeros(2,nB);
-        Twall = zeros(2,nB);
-        for i = 1:1:nB
-            [Tzone(:,i),Twall(:,i)] = BuildingSimulate(Plant.Building(i),Data.Weather.Tdb(1),Data.Weather.RH(1),dt(1),Data.Building.InternalGains(1,i),Forecast.Building.ExternalGains(1,i),Solution.Buildings.Cooling(1,i),Solution.Buildings.Heating(1,i),Forecast.Building.AirFlow(1,i),Forecast.Building.Damper(1,i),CurrentState.Buildings(1,i),CurrentState.Buildings(2,i));
-        end
-        CurrentState.Buildings = [Tzone(2,:);Twall(2,:);DateSim*ones(1,nB)];
-    end
     CurrentState.Generators = Solution.Dispatch(2,:);
     CurrentState.Lines = Solution.LineFlows(2,:);
     
     Plant.Dispatch.Timestamp(Si) = DateSim;
     Plant.Dispatch.GeneratorState(Si,:) = CurrentState.Generators;
     Plant.Dispatch.LineFlows(Si,:) = CurrentState.Lines;
-    Plant.Dispatch.Buildings(Si,:) = CurrentState.Buildings(1,:);
     Plant.Predicted.Timestamp(:,Si-1) = Forecast.Timestamp;
     Plant.Predicted.GenDisp(:,:,Si-1) = Solution.Dispatch(2:end,:);
     Plant.Predicted.LineFlows(:,:,Si-1) = Solution.LineFlows;
@@ -93,10 +87,23 @@ elseif strcmp(Plant.optimoptions.method,'Dispatch') || strcmp(Plant.optimoptions
             end
         end
     end
+    if isfield(Solution,'LBRelax')
+        Plant.Predicted.LBRelax(Si) = Solution.LBRelax;
+    end
+    if isfield(Plant,'Building') && ~isempty(Plant.Building)
+        nB = length(Plant.Building);
+        Tzone = zeros(2,nB);
+        Twall = zeros(2,nB);
+        for i = 1:1:nB
+            [Tzone(:,i),Twall(:,i)] = BuildingSimulate(Plant.Building(i),Data.Weather.Tdb(1),Data.Weather.RH(1),dt(1),Data.Building.InternalGains(1,i),Forecast.Building.ExternalGains(1,i),Solution.Buildings.Cooling(1,i),Solution.Buildings.Heating(1,i),Forecast.Building.AirFlow(1,i),Forecast.Building.Damper(1,i),CurrentState.Buildings(1,i),CurrentState.Buildings(2,i));
+        end
+        CurrentState.Buildings = [Tzone(2,:);Twall(2,:);DateSim*ones(1,nB)];
+        Plant.Dispatch.Buildings(Si,:) = CurrentState.Buildings(1,:);
+    end
     if isfield(CurrentState,'Hydro')
         CurrentState.Hydro = Solution.hydroSOC(1,:);
         Plant.Dispatch.hydroSOC(Si,:) = CurrentState.Hydro;
-        Plant.Predicted.hydroSOC(Si,:,:) = Solution.hydroSOC;
+        Plant.Predicted.hydroSOC(:,:,Si) = Solution.hydroSOC;
         for n = 1:1:length(Plant.subNet.Hydro.nodes)
             Plant.Dispatch.OutFlow(Si,:) = Solution.LineFlows(1,Plant.subNet.Hydro.lineNumber(n));
             Last24hour.Hydro.OutFlow(:,n) = [Last24hour.Hydro.OutFlow(2:end,n);Solution.LineFlows(1,Plant.subNet.Hydro.lineNumber(n))];
@@ -120,4 +127,4 @@ if strcmp(Plant.optimoptions.method,'Control')
         end
     end
 end
-% NumSteps = Plant.optimoptions.Interval*24/Plant.optimoptions.Resolution;
+end%Ends function StepDispatchForward

@@ -22,7 +22,7 @@ nL = sum(nLinet);
 Organize.States = cell(1,nG+nL+nB);
 Organize.Dispatchable = zeros(1,nG);
 Organize.Transmission = zeros(nL,1);
-Organize.Hydro = false(1,nG);
+Organize.Hydro = [];
 Organize.Building.r = zeros(nB,1);
 Organize.Building.req = zeros(nB,1);
 Organize.Out_vs_State = cell(1,nG+nL+nB);
@@ -48,7 +48,7 @@ QP.Aeq = LineEqualities(QP.Aeq,Organize);
 QP.A = StorageInequalities(QP.A,Organize);
 QP.A = TransmissionInequalities(QP.A,Organize);
 [QP.Aeq,QP.A,H,QP.f,Organize] = BuildingConstraints(QP.Aeq,QP.A,H,QP.f,Organize,nG,nL,nB);
-QP.A = HydroInequalities(QP.A,Organize);
+QP.Aeq = HydroEqualities(QP.Aeq,Organize);
 [QP.Aeq,QP.beq,QP.A] = SpinReserveConstraints(QP.Aeq,QP.beq,QP.A,QP.ub,Organize);
 
 %Convert to sparse form
@@ -76,24 +76,35 @@ for i = 1:1:nG
     Gen = Plant.Generator(i).QPform;
     if ~isempty(Gen.states)
         [~,fit] = size(Gen.states);% fit = 2 for generators with 2 different piecewise quadratics when Op = 'B'
-        if ismember(Plant.Generator(i).Type,{'Electric Storage';'Thermal Storage';'Hydro Storage'})
+        if isfield(Plant.Generator(i).QPform,'Stor')
             if ismember(Plant.Generator(i).Type,{'Hydro Storage'})
                 s = 1;% Storage treated as generator with 1 state
                 lb(end+1,1) = Gen.X.lb; 
                 ub(end+1,1) = Gen.X.ub; % Upper bound is MaxGenCapacity
+                if isfield(Plant.Generator(i).QPform,'S') %spill flow
+                    s = 2;
+                    lb(end+1,1) = Gen.S.lb; 
+                    ub(end+1,1) = Gen.S.ub; 
+                end
             else
-                s = 2;% Storage treated as generator with 2 states (addtl power output relative to 1st dispatch & charging penalty)
-                lb(end+1:end+2,1) = [-Gen.Ramp.b(1);0];
-                ub(end+1:end+2,1) = [Gen.Ramp.b(2);(1/Gen.Stor.ChargeEff-Gen.Stor.DischEff)*Gen.Ramp.b(2)];
+                if ~isfield(Plant.Generator(i).QPform,'Y')
+                    s = 1;% Ideal storage treated as generator with 1 states (addtl power output relative to 1st dispatch)
+                    lb(end+1,1) = -Gen.Ramp.b(1);
+                    ub(end+1,1) = Gen.Ramp.b(2);
+                else
+                    s = 2;% Storage treated as generator with 2 states (addtl power output relative to 1st dispatch & charging penalty)
+                    lb(end+1:end+2,1) = [-Gen.Ramp.b(1);0];
+                    ub(end+1:end+2,1) = [Gen.Ramp.b(2);(1/Gen.Stor.ChargeEff-Gen.Stor.DischEff)*Gen.Ramp.b(2)];
+                end
             end 
         else %dispatchable generator or utility
             states = Gen.states(1:nnz(~cellfun('isempty',Gen.states(:,fit))),fit);
-            s = length(states);%generator with multiple states
+            s = length(states);
             for k = 1:1:s
                 lb(end+1,1) = Gen.(states{k}).lb(fit);
                 ub(end+1,1) = Gen.(states{k}).ub(fit);
             end
-            if ismember(Plant.Generator(i).Type,{'Electric Generator';'CHP Generator';'Heater';'Chiller';'Absorption Chiller';})
+            if ismember(Plant.Generator(i).Type,{'Electric Generator';'CHP Generator';'Heater';'Chiller';'Absorption Chiller';'Cooling Tower';'Electrolyzer';'Hydrogen Storage';})
                 if isfield(Plant.Generator(i).QPform,'constCost') 
                      QP.constCost(i) = Plant.Generator(i).QPform.constCost;
                 end
@@ -110,14 +121,16 @@ for i = 1:1:nG
         Organize.States(i)= {xL+1:xL+s};
         if strcmp(Plant.Generator(i).Type,'Utility') && strcmp(Plant.Generator(i).Source,'Electricity') && s ==2
             Organize.Out_vs_State{1,i} = [1,-1];
-        elseif ismember(Plant.Generator(i).Type,{'Electric Storage';'Thermal Storage';'Hydro Storage'})
-            QP.organize{i} = xL+1;  %output state for storage is only SOC (Power in the case of Hydro)
+        elseif strcmp(Plant.Generator(i).Type,'AC_DC')
+            Organize.Out_vs_State{1,i} = [1,-1];%Value is thus the total transfer from AC to DC
+        elseif isfield(Plant.Generator(i).QPform,'Stor')
+            QP.organize{i} = xL+1; 
             Organize.Out_vs_State{1,i} = 1;
         else
             Organize.Out_vs_State{1,i} = ones(1,s);
         end
         if Plant.optimoptions.SpinReserve
-            include = {'Electric Generator';'CHP Generator';'Hydro Storage';};
+            include = {'Electric Generator';'CHP Generator';'Hydro Storage';'Hydrogen Generator';};
             if ismember(Plant.Generator(i).Type,include)
                 Organize.SpinReserveStates(i) = xL + s +1; %state of spinning reserve at time 1
                 lb(end+1,1) = 0;
@@ -230,11 +243,15 @@ end
 
 Organize.Equalities = zeros(nG,2);
 Organize.SpinRow = zeros(nG,1);
-include = {'Electric Generator';'CHP Generator';'Electric Storage';'Hydro Storage';};
+if ismember('Hydro',networkNames)
+    Organize.HydroInequalities = zeros(nG,1);
+end
+include = {'Electric Generator';'CHP Generator';'Hydrogen Generator';'Electric Storage';'Hydro Storage';};
 for i = 1:1:nG
     if strcmp(Plant.Generator(i).Type,'Hydro Storage')
-        %dont link the Power, spill, and outflow with an equality, will
-        %link power and outflow with inequality instead
+        Organize.Hydro(end+1) = i;
+        Organize.HydroEqualities(i) = req+1;
+        req = req+1;
     else
         %link is a field if there is more than one state and the states are linked by an inequality or an equality
         if isfield(Plant.Generator(i).QPform,'link') && isfield(Plant.Generator(i).QPform.link,'eq')
@@ -262,7 +279,7 @@ r = 0; % row index of the A matrix & b vector
 %charging penalty eqn
 Organize.Inequalities = zeros(nG,1);
 for i = 1:1:nG
-    if ismember(Plant.Generator(i).Type,{'Electric Storage';'Thermal Storage';})
+    if isfield(Plant.Generator(i).QPform,'Stor') && ~strcmp(Plant.Generator(i).Type,'Hydro Storage')
         Organize.Inequalities(i) = r+1;
         r = r+1;
     end
@@ -271,17 +288,6 @@ end
 if ismember('Electrical',networkNames) && Plant.optimoptions.SpinReserve
     Organize.SpinReserve = r+1;
     r = r+1;
-end
-
-%Inequality for Hydro
-if ismember('Hydro',networkNames)
-    Organize.HydroInequalities = zeros(nG,1);
-    for i = 1:1:nG
-        if ismember(Plant.Generator(i).Type,{'Hydro Storage'})
-            Organize.HydroInequalities(i) = r+1;
-            r = r+1;
-        end
-    end
 end
 
 %Transmission line inequalities (penalty terms)
@@ -316,34 +322,26 @@ for net = 1:1:length(networkNames)
     if strcmp(networkNames{net},'Hydro')
         %no Hydro mass balance
     else
-        if strcmp(networkNames{net},'Electrical')
-            out = 'E';
-        elseif strcmp(networkNames{net},'DistrictHeat')
-            out = 'H';
-        elseif strcmp(networkNames{net},'DistrictCool')
-            out = 'C';
-        end
+        out = Plant.subNet.(networkNames{net}).abbreviation;
         for n = 1:1:length(Plant.subNet.(networkNames{net}).nodes)
             req = Organize.Balance.(networkNames{net})(n);
             equip = Plant.subNet.(networkNames{net}).Equipment{n};
             for k = 1:1:length(equip)
-                Gen = Plant.Generator(equip(k)).QPform;
-                if ismember(Plant.Generator(equip(k)).Type,{'Hydro Storage'}) 
-                    if isfield(Plant.Generator(equip(k)).QPform.output,out)
-                        states = Organize.States{equip(k)};
-                        Aeq(req,states(1)) = Plant.Generator(equip(k)).QPform.output.(out)(1);
-                    end
-                elseif ismember(Plant.Generator(equip(k)).Type,{'Electric Storage';'Thermal Storage';}) 
-                    if isfield(Plant.Generator(equip(k)).QPform.output,out)
-                        states = Organize.States{equip(k)};
-                        Aeq(req,states(1)) = Plant.Generator(equip(k)).QPform.output.(out)(1);%additional power beyond 1st dispatch
-                        Aeq(req,states(1)+1) = -1;%charging penalty
+                i = equip(k);
+                Gen = Plant.Generator(i).QPform;
+                if isfield(Plant.Generator(i).QPform,'Stor') 
+                    if isfield(Plant.Generator(i).QPform.output,out)
+                        states = Organize.States{i};
+                        Aeq(req,states(1)) = Plant.Generator(i).QPform.output.(out)(1);%additional power beyond 1st dispatch
+                        if ~strcmp(Plant.Generator(i).Type,'Hydro Storage') && isfield(Plant.Generator(i).QPform,'Y') %has charging penalty
+                            Aeq(req,states(1)+1) = -1;%charging penalty
+                        end
                     end
                 else
-                    states = Organize.States{equip(k)};
+                    states = Organize.States{i};
                     %link is a field if there is more than one state and the states are linked by an inequality or an equality
                     if isfield(Gen,'link') && isfield(Gen.link,'eq')
-                        req2 = Organize.Equalities(equip(k),1);
+                        req2 = Organize.Equalities(i,1);
                         for j = 1:1:length(req2)
                             Aeq(req2+(j-1),states) = Gen.link.eq(j,:);
                             beq(req2+(j-1)) = Gen.link.beq(j);
@@ -356,9 +354,10 @@ for net = 1:1:length(networkNames)
                             H(states(j)) = Gen.(stateNames{j}).H(fit);
                             f(states(j)) = Gen.(stateNames{j}).f(fit);
                         end
-                        if length(Plant.Generator(equip(k)).QPform.output.(out)(1,:))>1
-                            output = Plant.Generator(equip(k)).QPform.output.(out)(:,fit);
-                        else output = Plant.Generator(equip(k)).QPform.output.(out);
+                        if length(Plant.Generator(i).QPform.output.(out)(1,:))>1
+                            output = Plant.Generator(i).QPform.output.(out)(:,fit);
+                        else
+                            output = Plant.Generator(i).QPform.output.(out);
                         end
                         Aeq(req,states) = output;
                     end
@@ -367,6 +366,9 @@ for net = 1:1:length(networkNames)
             %%any heat loss term to balance equality
             if strcmp('DistrictHeat',networkNames{net}) && Plant.optimoptions.excessHeat == 1 && Organize.HeatVented(n)~=0
                 Aeq(req,Organize.HeatVented(n)) = -1;
+            end
+            if strcmp('DistrictCool',networkNames{net}) && Plant.optimoptions.excessCool == 1 && Organize.CoolVented(n)~=0
+                Aeq(req,Organize.CoolVented(n)) = -1;
             end
         end
     end
@@ -415,7 +417,7 @@ function A = StorageInequalities(A,Organize)
 global Plant;
 nG = length(Plant.Generator);
 for i = 1:1:nG
-    if ismember(Plant.Generator(i).Type,{'Electric Storage';'Thermal Storage';})
+    if isfield(Plant.Generator(i).QPform,'Stor') && ~strcmp(Plant.Generator(i).Type,'Hydro Storage')
         states = Organize.States{i};
         r = Organize.Inequalities(i);
         A(r,states(1)) = -(1/Plant.Generator(i).QPform.Stor.ChargeEff-Plant.Generator(i).QPform.Stor.DischEff);
@@ -431,7 +433,7 @@ global Plant;
 if ismember('Electrical',fieldnames(Plant.subNet)) && Plant.optimoptions.SpinReserve
     nG = length(Plant.Generator);
     %individual spinning reserve at each time step (limited by ramp rate and peak gen capacity)
-    include = {'Electric Generator';'CHP Generator';'Hydro Storage';'Electric Storage';};
+    include = {'Electric Generator';'CHP Generator';'Hydro Storage';'Electric Storage';'Hydrogen Generator';};
     for i = 1:1:nG
         if ismember(Plant.Generator(i).Type,include)
             states = Organize.States{i};
@@ -470,7 +472,7 @@ for net = 1:1:length(networkNames)
 end
 end%Ends function TransmissionInequalities
 
-function A = HydroInequalities(A,Organize)
+function Aeq = HydroEqualities(Aeq,Organize)
 global Plant
 if isfield(Plant.subNet,'Hydro')
     nG = length(Plant.Generator);
@@ -482,19 +484,19 @@ if isfield(Plant.subNet,'Hydro')
         upriver(end+1) = {name(1:k(1)-1)}; %node names of the upriver node (origin of line segment)
         upLines(end+1) = i;
     end
-    %% inequality:  Excess Outflow > Power/(Hd*eff*84.67) - Outflow(from 1st dispatch)
+    %% equality:  AdditionalPower/(Hd*eff*84.67) + Spill Flow - Outflow = Nominal Power Flow(from 1st dispatch) 
+        %This will allow imposition of instream flow constraints later
     for n = 1:1:length(Plant.subNet.Hydro.nodes)
-        %run through the nodes in the hydro network. Generally each node would
-        %have only 1 reservior
-        equip = Plant.subNet.Hydro.Equipment{n};
+        i = Plant.subNet.Hydro.Equipment{n};
         J = upLines(strcmp(Plant.subNet.Hydro.nodes{n},upriver));%lines leaving this node, i.e. this node is the upriver node (should be at most 1)
         lineOut = Plant.subNet.Hydro.lineNumber(J);
-        for k = 1:1:length(equip)
-            if strcmp(Plant.Generator(equip(k)).Type,'Hydro Storage')
-                r = Organize.HydroInequalities(equip(k));
-                states = Organize.States{equip(k)};
-                A(r,states) = Plant.Generator(equip(k)).QPform.Stor.Power2Flow;
-                A(r,Organize.States{nG+lineOut})= -1; %Qdownriver (in excess of original solution from multi-time step),  
+        if strcmp(Plant.Generator(i).Type,'Hydro Storage')
+            req = Organize.HydroEqualities(i);
+            states = Organize.States{i};
+            Aeq(req,states(1)) = Plant.Generator(i).QPform.Stor.Power2Flow;
+            Aeq(req,Organize.States{nG+lineOut})= -1; %Qdownriver (in excess of original solution from multi-time step),  
+            if isfield(Plant.Generator(i).QPform,'S') %spill flow
+                Aeq(req,states(2)) = 1;
             end
         end
     end
@@ -506,22 +508,18 @@ global Plant
 for i = 1:1:nB
     states = Organize.States{nG+nL+i};
     %Electric equality %put demands into electrical (heating and cooling) balances
-    req = Organize.Balance.Electrical(Plant.Building(i).QPform.nodeE);
+    req = Organize.Balance.Electrical(Plant.Building(i).QPform.Electrical.subnetNode);
     Organize.Building.Electrical.req(i) = req;
     Aeq(req,states(2)) = -Plant.Building(i).QPform.H2E;% Electricity = E0 + H2E*(Heating-H0) + C2E*(Cooling-C0)
     Aeq(req,states(3)) = -Plant.Building(i).QPform.C2E;% Electricity = E0 + H2E*(Heating-H0) + C2E*(Cooling-C0)
     %Heating equality
-%     if Plant.Building(i).QPform.Heating %put into heating eqn
-        req = Organize.Balance.DistrictHeat(Plant.Building(i).QPform.nodeH);
-        Organize.Building.DistrictHeat.req(i) = req;
-        Aeq(req,states(2)) = -1;%subtract building heating needs from heating energy balance
-%     end
+    req = Organize.Balance.DistrictHeat(Plant.Building(i).QPform.DistrictHeat.subnetNode);
+    Organize.Building.DistrictHeat.req(i) = req;
+    Aeq(req,states(2)) = -1;%subtract building heating needs from heating energy balance
     %Cooling equality
-%     if Plant.Building(i).QPform.Cooling%put into cooling eqn
-        req = Organize.Balance.DistrictCool(Plant.Building(i).QPform.nodeC);
-        Organize.Building.DistrictCool.req(i) = req;
-        Aeq(req,states(3)) = -1;%subtract building cooling needs from cooling energy balance
-%     end
+    req = Organize.Balance.DistrictCool(Plant.Building(i).QPform.DistrictCool.subnetNode);
+    Organize.Building.DistrictCool.req(i) = req;
+    Aeq(req,states(3)) = -1;%subtract building cooling needs from cooling energy balance
     r = Organize.Building.r(i);
     %heating inequality % H = H0 + Hbar where H_bar>=  UA*(Ti-Tset_H) + Cap*(Ti - T(i-1))/dt where dt is in seconds
     % Done in update1Step because of dt: % A(r,states(1)) = (Plant.Building(i).QPform.UA+Plant.Building(i).QPform.Cap*dt);

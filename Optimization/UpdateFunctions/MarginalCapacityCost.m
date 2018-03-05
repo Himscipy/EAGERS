@@ -11,16 +11,14 @@ scaleCost = updateGeneratorCost(Date,Plant.Generator);
 Binary = GenDisp~=0;
 nS = length(Date)-1;
 nG = length(Plant.Generator);
-if isfield(Plant,'Building') && ~isempty(Plant.Building)
-    nB = length(Plant.Building);
-else
-    nB = 0;
-end
 MarginCost.Timestamp = Date;
 dt = (Date(2:end) - Date(1:end-1))*24;
 S= {'E';'H';'C'};
 S2 = {{'CHP Generator';'Electric Generator';};{'Heater'};{'Chiller';}};
-S3 = {'Electricity';'Heat';'Cooling';};
+if isfield(Plant.Network,'DirectCurrent')
+    S(end+1) = {'DC'};
+    S2(end+1) = {{'CHP Generator';'Electric Generator';}};
+end
 MaxOut = GenLimit(GenDisp,Binary,dt);
 for k = 1:1:length(S)
     inc = false(nG,1);
@@ -31,7 +29,6 @@ for k = 1:1:length(S)
     end
     if any(inc)
         out = S{k};
-        output = S3{k};
         MarginCost.(out).Capacity.SpinReserve = zeros(nG,nS,n);
         MarginCost.(out).Capacity.NonSpin = zeros(nG,nS,n);
         MarginCost.(out).Capacity.DemandResponse = zeros(nG,nS,n);
@@ -40,6 +37,8 @@ for k = 1:1:length(S)
         MarginCost.(out).Cost.DemandResponse = zeros(nG,nS,n);
         for i = 1:1:nG
             if inc(i)
+                S3 = fieldnames(Plant.Generator(i).Output);
+                output = S3{2}; %1st field is 'Capacity', 2nd field is primary output
                 SR = (MaxOut.(S{k})(2:end,i)- GenDisp(2:end,i))';
                 for t = 1:1:nS
                     if SR(t)>1e-4

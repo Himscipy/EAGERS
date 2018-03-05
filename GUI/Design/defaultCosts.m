@@ -6,12 +6,17 @@ end
 nG = length(Gen);
 for i = 1:1:nG
     Type = Gen(i).Type;
-    if ~strcmp(Type,'Utility') && (~isfield(Costs,'Equipment') || length(Costs.Equipment)<i || isempty(Costs.Equipment(i)))
+    if ~strcmp(Type,'Utility') && ~strcmp(Type,'AC_DC') && (~isfield(Costs,'Equipment') || length(Costs.Equipment)<i || isempty(Costs.Equipment(i)))
         Costs.Equipment(i).Name = Gen(i).Name;
-        if (strcmp(Type,'CHP Generator') || strcmp(Type,'Electric Generator')) && Gen(i).VariableStruct.isFuelCell
-            costPerkW = 3000;
-            OM = 100;
-        elseif strcmp(Type,'CHP Generator') || strcmp(Type,'Electric Generator')
+        if strcmp(Type,'CHP Generator') || strcmp(Type,'Electric Generator') || strcmp(Type,'Hydrogen Generator') 
+            if isfield(Gen(i).Output,'DirectCurrent')
+                costPerkW = 3000;
+                OM = 100;
+            else
+                costPerkW = 1000;
+                OM = 50;
+            end
+        elseif strcmp(Type,'Electrolyzer')
             costPerkW = 1000;
             OM = 50;
         elseif strcmp(Type,'Chiller') %chillers
@@ -27,6 +32,9 @@ for i = 1:1:nG
         elseif strcmp(Type,'Heater') 
             costPerkW = 100;
             OM = 3;
+        elseif strcmp(Type,'Hydrogen Storage') 
+            costPerkW = 50;
+            OM = 5;
         elseif strcmp(Type,'Thermal Storage') 
             costPerkW = 20;
             OM = 1;

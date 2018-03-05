@@ -1,7 +1,7 @@
-function Solution = cQP_Feasibility(OptimalState,Forecast,scaleCost,Date)
+function [Solution,LBrelax] = cQP_Feasibility(OptimalState,Forecast,scaleCost,Date)
 global Plant
 dt = (Date(2:end) - Date(1:end-1))*24;
-marginCost = updateMarginalCost(OptimalState,scaleCost,dt,2);
+marginCost = updateMarginalCost(OptimalState,scaleCost,dt,[]);
 QP_0 = updateMatrices(Plant.OpMatB,Date,scaleCost,marginCost,Forecast,[]); %update fit B matrices
 nS = length(dt);
 nG = length(Plant.Generator);
@@ -19,7 +19,9 @@ for i = 1:1:nG
         for j = 1:1:length(states)
             LB(i) = LB(i) + Plant.Generator(i).QPform.(states{j}).lb(2);
         end
-        Locked(OptimalState(:,i)<LB(i),i)=false;%Default to off when initial dispatch is below LB
+        %PossiblyOn is a 24 x nG matrix of when things could be on, note Locked is 25 x nG
+        Locked(OptimalState(:,i)<=LB(i),i) = false;%Default to on unless offline in initial dispatch
+        %Locked(OptimalState(:,i)<LB(i),i)=false;%Default to off when initial dispatch is below LB
         PossiblyOn(OptimalState(2:end,i)>0 & OptimalState(2:end,i)<LB(i)) = true;
     end
 end
@@ -44,13 +46,31 @@ end
 
 Feasible = 0;
 attempt = 0;
-while Feasible ~= 1 && attempt <1
+LBrelax = 1;
+
+while Feasible ~= 1 && attempt <6
+    %attempt: integer value describing the number of attempts before reaching
+    %feasibility, this determines how close components must be to their lower
+    %bound from below to be considered online
+    %n represents the percent of lower bounds 
+    %on your first try, just use the locked matrix given, then do unit
+    %commitment based on OptimalState>LB*percLB
+    percLB = [0.9, 0.75, 0.5, 0.2, 0.1, 0, -1];
+
+    if attempt>0%second try, lower limit for online threshold
+        LBrelax = percLB(attempt);
+        %only change label for unit commitment gens, and don't change the
+        %label for initial conditions
+        for i = 1:1:nG
+            if QP_0.Organize.Dispatchable(i) ==1
+                Locked(2:end,i) = (OptimalState(2:end,i)>(LB(i)*LBrelax));%Default to on unless offline in initial dispatch
+            end
+        end
+    end
     [x,Feasible] = checkFeas(QP_0,Locked);
-    %% add logic here adjusting Locked to check other conditions if it comes up infeasible
-    %PossiblyOn is a 24 x nG matrix of when things could be on, note Locked is 25 x nG
-    attempt = 1;
+    attempt = attempt+1;
 end
-%%%%
+
 
 if Feasible==1
     QP = disableGenerators(QP_0,Locked,[]);%Disable generators here
@@ -60,9 +80,24 @@ if Feasible==1
 else
     disp('error: Cannot Find Feasible Dispatch');
 end
+Solution.LBrelax = LBrelax;
 end%ends function cQP_Feasibility
 
 function [x,Feasible] = checkFeas(QP_0,Locked)
+%% this function finds a feasible solution for the cQP method
+% it is called by cQP_Feasibility
+%% inputs: QP: structure of non-sparse matrices for quadratic programming
+%Locked: boolean matrix (nS+1) x nG describing which components are online,
+%the first row should align with the CurrentState.GenDisp, because the first row is
+%the initial conditions, non-unit commitment components should always be
+%online (true, 1 classification)
+
+%% outputs: x: real valued vector of setpoints for optimal dispatch, this vector 
+%is sorted into a dispatch solution in cQP_Feasibility
+%Feasible: this is 1 if the solution is feasible
+
 QP = disableGenerators(QP_0,Locked,[]);%Disable generators here
-[x,Feasible] = callQPsolver(QP);%this is the dispatch with fit B
+[x,Feasible] = callQPsolver(QP);
+
+
 end%Ends function checkFeas

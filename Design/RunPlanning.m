@@ -1,5 +1,5 @@
 function RunPlanning
-global testSystems Plant TestData Last24hour DispatchWaitbar Virtual RealTime DateSim
+global testSystems Plant TestData DispatchWaitbar Virtual RealTime DateSim CurrentState
 Virtual = 1;
 RealTime = 0;
 handles = guihandles;
@@ -32,9 +32,7 @@ if strcmp(item,'Monthly Costs')
                 interpolateData(Plant.optimoptions.Resolution*3600,Plant.optimoptions.Interval,0.00);%create test data at correct frequency
                 STR = 'Optimizing Design Day Dispatch';
                 DispatchWaitbar=waitbar(0,STR,'Visible','on');
-                Last24hour = [];%re-load the previous 24 hours
-                TimeYesterday = linspace(DateSim-1,DateSim,ceil(24/Plant.optimoptions.Resolution)+1)';
-                Last24hour = GetHistoricalData(TimeYesterday);
+                reloadLast24hour(DateSim,Plant.optimoptions.Resolution)%re-load the previous 24 hours
                 automaticInitialCondition(GetCurrentData(DateSim)); 
                 Plant.Design.Timestamp(1) = DateSim;
                 ForecastTime = DateSim+[0;buildTimeVector(Plant.optimoptions)/24];%linspace(DateSim,DateEnd)';would need to re-do optimization matrices for this time vector
@@ -44,10 +42,13 @@ if strcmp(item,'Monthly Costs')
                     if Si == 1 || D(3) == 1  %If it is the first step, or the first of the month run the actual optimization                     
                         Forecast = updateForecast(ForecastTime(2:end));%% function that creates demand vector with time intervals coresponding to those selected
                         Solution = DispatchLoop(ForecastTime,Forecast,[]);
-                    else%otherwise just change the dates and use the preious solution
+                    else%otherwise just change the dates and use the previous solution,
                         Forecast.Timestamp = ForecastTime(2:end);
                     end                   
                     StepDispatchForward(Si,ForecastTime,Forecast,Solution);%put solution into Plant.Design
+                    if isfield(CurrentState,'Buildings')%don't acumulate error in BuildingSimulate, force warmup
+                        CurrentState.Buildings(3,:) = 0;
+                    end
                     ForecastTime = round(864000*(ForecastTime+Plant.optimoptions.Horizon/24))/864000;%%count forward by length of the horizon, rounded to nearest second
                     Si = Si + length(ForecastTime)-1;
                     waitbar(Si/NumSteps,DispatchWaitbar,strcat('Running Design Day Dispatch'));
