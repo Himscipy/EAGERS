@@ -1,6 +1,6 @@
 function updateSystemRep(handles)
 %% System representation (pushbuttons need to appear/disappear if they exist)
-global testSystems SYSINDEX
+global testSystems SYSINDEX TestData
 list = {'textGrid';'pushbuttonGrid';'textACBus';'textDCBus';'textACDC_E';...
         'pushbuttonACgen';'textACgen_E';'textACgen_H';'pushbuttonHeaterInSys';...
         'textAirHeater_H';'pushbuttonTES_Hot';'textTES_Hot_H';'pushbuttonHeatingDemands';...
@@ -24,7 +24,15 @@ end
 %   Solar Thermal
 %   TES 1
 %   Wind
-nG = checkACDC('plan');
+if ~isfield(testSystems(SYSINDEX),'Building')
+    testSystems(SYSINDEX).Building = [];
+end
+if isfield(TestData,'Demand')
+    demand_types = fieldnames(TestData.Demand);
+else 
+    demand_types = {};
+end
+[testSystems(SYSINDEX).Generator,nG] = check_ac_dc(testSystems(SYSINDEX).Generator,testSystems(SYSINDEX).Building,demand_types);
 for i = 1:1:nG
     sys = testSystems(SYSINDEX).Generator(i);
     switch sys.Type

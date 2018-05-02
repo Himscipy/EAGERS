@@ -1,16 +1,14 @@
 %% comparison for paper
-global Plant CurrentState DateSim TestData OnOff
+global Plant TestData
 load('CampusRan_2_10_18.mat');
 MIPlant = Plant;
-DateSim = Plant.Dispatch.Timestamp(1);
 TestData = [];
-loadTestData
-interpolateData(Plant.optimoptions.Resolution*3600,Plant.optimoptions.Interval,0.00);%create test data at correct frequency
+load_test_data
+TestData.RealTimeData = interpolate_data(TestData,Plant.optimoptions.Resolution*3600,0.00);%create test data at correct frequency
 %% Run non-mixed integer version from same IC
 Plant.optimoptions.MixedInteger = false;
 NumSteps = nnz(Plant.Dispatch.Timestamp)-1;
 timers = zeros(NumSteps,3); % To record times set to zeros(1,3), to not record set to [];
-reloadLast24hour(DateSim,Plant.optimoptions.Resolution)%re-load the previous 24 hours
 nG = length(Plant.Generator);
 LB = zeros(1,nG);
 for i=1:1:nG
@@ -21,21 +19,31 @@ for i=1:1:nG
         end
     end
 end
-Time = buildTimeVector(Plant.optimoptions);%% set up vector of time interval
-CurrentState.Buildings = zeros(2,0);
+if isfield(Plant,'Building') && ~isempty(Plant.Building)
+    Buildings = Plant.Building;
+else
+    Buildings = [];
+end 
+Time = build_time_vector(Plant.optimoptions);%% set up vector of time interval
 Solution.Dispatch = [];
 Si = 1;
+Date = Plant.Dispatch.Timestamp(1)+[0;Time/24];
 DispatchWaitbar=waitbar(0,'Running Dispatch','Visible','on');
 while Si<NumSteps-1
-    Date = DateSim+[0;Time/24];
-    CurrentState.Generators = MIPlant.Dispatch.GeneratorState(Si,:);   
-    OnOff = CurrentState.Generators>LB;
-    Forecast = updateForecast(Date(2:end));%% function that creates demand vector with time intervals coresponding to those selected
-    Solution = DispatchLoop(Date,Forecast,Solution);
+    for i = 1:1:nG
+        Plant.Generator(i).CurrentState = MIPlant.Dispatch.GeneratorState(Si,i);   
+        Plant.Generator(i).Status = Plant.Generator(i).CurrentState>LB(i);
+    end
+    [Forecast,Plant.Generator,Buildings] = update_forecast(Plant.Generator,Buildings,Plant.subNet,Plant.optimoptions,Date(2:end));%% function that creates demand vector with time intervals coresponding to those selected
+    Solution = dispatch_loop(Plant.Generator,Buildings,Plant.subNet,Plant.OpMatA,Plant.OpMatB,Plant.OneStep,Plant.optimoptions,Date,Forecast,Solution);
     timers(Si,:) = Solution.timers;
-    [C,~,~] = NetCostCalc(Solution.Dispatch,Date,'Dispatch');
+    [C,~,~] = net_cost(Plant.Generator,Solution.Dispatch,Date,'Dispatch');
     Plant.Predicted.Cost(Si) = sum(C);
-    Si = StepDispatchForward(Si,Date,Forecast,Solution);
+    [Si,Date,Plant.Generator,Plant.Building,Hydro] = dispatch_record(Plant.Generator,Buildings,Plant.subNet,Plant.optimoptions,TestData.RealTimeData,Si,Date,Forecast,Solution);
+    if ~isempty(Hydro)
+        nS = length(Hydro(:,1));
+        TestData.RealTimeData.Hydro.OutFlow(Si-nS+1:Si,:) = Hydro;
+    end
     waitbar(Si/NumSteps,DispatchWaitbar,strcat('Running Dispatch'));
 end
 cQPlant = Plant;
@@ -75,8 +83,8 @@ percOnOff = nnz(sameonoff)/(NumSteps*ngens);
 DemandE = MIPlant.Plant.Dispatch.Demand.E(2:NumSteps);
 Timestamp = MIPlant.Plant.Dispatch.Timestamp(2:NumSteps);
 method = 'Dispatch';
-[MICost,MImissedDem] = NetCostCalc(MIDisp,Timestamp,method);
-[cQPCost,cQPmissedDem] = NetCostCalc(cQPDisp,Timestamp,method);
+[MICost,MImissedDem] = net_cost(Plant.Generator,MIDisp,Timestamp,method);
+[cQPCost,cQPmissedDem] = net_cost(Plant.Generator,cQPDisp,Timestamp,method);
 %cost difference
 costDiff = cQPCost-MICost;
 muCost = mean(costDiff);
@@ -171,7 +179,7 @@ horizonCMI = MIPlant.Plant.Predicted.Cost(1:NumSteps-1);
 horizonCcQP = cQPlant.Plant.Predicted.Cost(1:NumSteps-1);
 horizonCcQP_noIC = zeros(NumSteps-1,1);
 for i = 1:1:NumSteps-1
-    horizonCcQP_noIC(i) = sum(NetCostCalc(cQPlant.Plant.Predicted.GenDisp(:,:,i),cQPlant.Plant.Predicted.Timestamp(:,i),method));
+    horizonCcQP_noIC(i) = sum(net_cost(Plant.Generator,cQPlant.Plant.Predicted.GenDisp(:,:,i),cQPlant.Plant.Predicted.Timestamp(:,i),method));
 end
 figure(9)
 plot(horizonCMI)

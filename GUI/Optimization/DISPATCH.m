@@ -81,12 +81,16 @@ for i = 1:length(TabText)
     end
 end
 set(handles.GenList,'Position',[1,16,40,27])
-nG = checkACDC('control');
-if isfield(Plant,'Building') && ~isempty(Plant.Building)
-    nB = length(Plant.Building);
-else
-    nB = 0;
+if ~isfield(Plant,'Building')
+    Plant.Building = [];
 end
+if isfield(TestData,'Demand')
+    demand_types = fieldnames(TestData.Demand);
+else
+    demand_types = {};
+end
+[Plant.Generator,nG] = check_ac_dc(Plant.Generator,Plant.Building,demand_types);
+nB = length(Plant.Building);
 list=cell(nG+nB,1);
 for i=1:1:nG
     list(i) = {Plant.Generator(i).Name};
@@ -282,17 +286,13 @@ if isfield(Plant,'Building') && ~isempty(Plant.Building)
     set(handles.ForecastMethod,'Visible','off');
 else
     set(handles.ForecastMethod,'Visible','on');
-    set(handles.SES, 'value', false);
+    set(handles.ARMA, 'value', false);
     set(handles.ARIMA, 'value', false);
     set(handles.NeuralNet, 'value', false);
     set(handles.Surface, 'value', false);
     set(handles.Perfect, 'value', false);
     set(handles.Building, 'value',false);
-    if strcmp(Plant.optimoptions.forecast,'SNIWPE')
-        set(handles.SES, 'value', true);
-    else
-        set(handles.(Plant.optimoptions.forecast), 'value', true);
-    end
+    set(handles.(Plant.optimoptions.forecast), 'value', true);
 end
  
 % --- Executes on button press in Switch.
@@ -733,33 +733,64 @@ set(hObject,'cdata',x)
 function sliderStartDate_Callback(hObject, eventdata, handles)
 global Plant TestData
 handles = guihandles;
-Date = TestData.Timestamp(1) + get(handles.sliderStartDate,'Value');
+date = TestData.Timestamp(1) + get(handles.sliderStartDate,'Value');
 if strcmp(Plant.optimoptions.solver,'NREL')
-    [ForecastTime,Dispatch,HistoryTime,History] = SingleOptimizationNREL(Date);
-    plotNREL(handles,ForecastTime,Dispatch,HistoryTime,History)
+    [forecast_time,Dispatch,HistoryTime,History] = SingleOptimizationNREL(date);
+    plotNREL(handles,forecast_time,Dispatch,HistoryTime,History)
 else
-    if ~isfield(Plant,'Dispatch') || isempty(Plant.Dispatch) || ~isfield(Plant.Dispatch,'Timestamp') || isempty(Plant.Dispatch.Timestamp) || min(abs(Plant.Dispatch.Timestamp-Date))>=Plant.optimoptions.Resolution/24
-        ForecastTime = Date+[0;buildTimeVector(Plant.optimoptions)/24];
+    if ~isfield(Plant,'Dispatch') || isempty(Plant.Dispatch) || ~isfield(Plant.Dispatch,'Timestamp') || isempty(Plant.Dispatch.Timestamp) || min(abs(Plant.Dispatch.Timestamp-date))>=Plant.optimoptions.Resolution/24
+        forecast_time = date+[0;build_time_vector(Plant.optimoptions)/24];
+        if ~isfield(Plant,'Building')
+            Plant.Building = [];
+        end
+        if ~isfield(Plant,'cool_tower') 
+            Plant.cool_tower = [];
+        end
+        if isfield(Plant,'Data') 
+            data = Plant.Data;
+        else
+            data = [];
+        end
+        TestData = update_test_data(TestData,data,Plant.Generator,Plant.optimoptions);
+        if ~isfield(Plant,'Dispatch') || ~isempty(Plant.Dispatch)
+            [Plant.Generator,Plant.Building,Plant.cool_tower,Plant.subNet,Plant.OpMatA,Plant.OpMatB,Plant.OneStep,~] = initialize_optimization(Plant.Generator,Plant.Building,Plant.cool_tower,Plant.Network,Plant.optimoptions,TestData);
+            TestData.RealTimeData = interpolate_data(TestData,Plant.optimoptions.Resolution*3600,0.00);%create test data at correct frequency
+            Plant.Dispatch = [];
+        elseif ~isfield(Plant.Dispatch,'Timestamp') || ~any(Plant.Dispatch.Timestamp==(forecast_time(1) - Plant.optimoptions.Resolution/24))
+            TestData.RealTimeData = interpolate_data(TestData,Plant.optimoptions.Resolution*3600,0.00);%create test data at correct frequency
+        end
+        dispatch = Plant.Dispatch;
+        freq = 1; %period of repetition (1 = 1 day)
+        res = Plant.optimoptions.Resolution/24;
+        n_o = round(freq/res)+1;
+        prev_data = get_data(TestData.RealTimeData,linspace((forecast_time(1) - res - freq),forecast_time(1)-res,n_o)',[]);
+        now_data = get_data(TestData.RealTimeData,forecast_time(1),[]);
+        if strcmp(Plant.optimoptions.forecast,'Perfect')
+            future_data = get_data(TestData.RealTimeData,forecast_time(2:end),[]);
+        else
+            future_data = [];
+        end
         if strcmp(Plant.optimoptions.solver,'ANN')
             Plant.optimoptions.solver = 'quadprog';
-            Solution = SingleOptimization(ForecastTime,[]);
+            [Solution,forecast,Plant.Generator,Plant.Building,Plant.cool_tower] = single_optimization(forecast_time,[],Plant.Generator,Plant.Building,Plant.cool_tower,Plant.optimoptions,dispatch,Plant.subNet,Plant.OpMatA,Plant.OpMatB,Plant.OneStep,TestData.HistProf,prev_data,now_data,future_data);
             Plant.optimoptions.solver = 'ANN';
         else
-            Solution = SingleOptimization(ForecastTime,[]);
+            [Solution,forecast,Plant.Generator,Plant.Building,Plant.cool_tower] = single_optimization(forecast_time,[],Plant.Generator,Plant.Building,Plant.cool_tower,Plant.optimoptions,dispatch,Plant.subNet,Plant.OpMatA,Plant.OpMatB,Plant.OneStep,TestData.HistProf,prev_data,now_data,future_data);
         end
+
         History.Dispatch = [];
         History.LineFlows = [];
         History.Buildings = [];
         History.hydroSOC = [];
         HistoryTime = [];
     else
-        Si = max((1:1:length(Plant.Dispatch.Timestamp))'.*(Plant.Dispatch.Timestamp<=Date & Plant.Dispatch.Timestamp>0)); %index preceeding current step
-        if (Plant.Dispatch.Timestamp(Si+1)>0 && (Plant.Dispatch.Timestamp(Si+1)-Date)<(Date-Plant.Dispatch.Timestamp(Si)))
+        Si = max((1:1:length(Plant.Dispatch.Timestamp))'.*(Plant.Dispatch.Timestamp<=date & Plant.Dispatch.Timestamp>0)); %index preceeding current step
+        if (Plant.Dispatch.Timestamp(Si+1)>0 && (Plant.Dispatch.Timestamp(Si+1)-date)<(date-Plant.Dispatch.Timestamp(Si)))
             Si = Si+1; %The next time step is actually closer
         elseif Plant.Predicted.Timestamp(1,Si)==0
             Si = Si - 1;
         end
-        ForecastTime = Plant.Predicted.Timestamp(:,Si);
+        forecast_time = Plant.Predicted.Timestamp(:,Si);
         Solution.Dispatch = Plant.Predicted.GenDisp(:,:,Si);
         Solution.LineFlows = Plant.Predicted.LineFlows(:,:,Si);
         Solution.Buildings.Temperature = Plant.Predicted.Buildings(:,:,Si);
@@ -771,7 +802,7 @@ else
         History.hydroSOC = Plant.Dispatch.hydroSOC(Si-backSteps:Si,:);
         HistoryTime = Plant.Dispatch.Timestamp(Si-backSteps:Si);
     end
-    plotDispatch(handles,ForecastTime,Solution,HistoryTime,History)
+    plotDispatch(handles,forecast_time,Solution,HistoryTime,History)
 end
 
 
@@ -782,41 +813,93 @@ end
 
 % --- Executes on button press in Start.
 function Start_Callback(hObject, eventdata, handles)
-global Plant Virtual RealTime mainFig TestData
+global Plant TestData  mainFig  %Virtual RealTime 
 %Virtual: Running a simulation only, set to zero when the end of the test data set is reached
-if get(handles.VirtualMode,'Value') ==1 
-    Virtual = 1;
-    RealTime = 0;
-    Plant.optimoptions.mode = 'virtual';
-elseif get(handles.ObserverMode,'Value') == 1
-    Virtual = 1;
-    RealTime = 0;
-    Plant.optimoptions.mode = 'observer';
-elseif get(handles.ControllerMode,'Value') == 1
-    Virtual = 0;
-    RealTime = 1;
-    Plant.optimoptions.mode = 'controller';
-end
+% if get(handles.VirtualMode,'Value') ==1 
+%     Virtual = 1;
+%     RealTime = 0;
+%     Plant.optimoptions.mode = 'virtual';
+% elseif get(handles.ObserverMode,'Value') == 1
+%     Virtual = 1;
+%     RealTime = 0;
+%     Plant.optimoptions.mode = 'observer';
+% elseif get(handles.ControllerMode,'Value') == 1
+%     Virtual = 0;
+%     RealTime = 1;
+%     Plant.optimoptions.mode = 'controller';
+% end
 mainFig = gcf;
 set(handles.Start,'Value',1);%reset start button
 set(handles.Stop,'Value',0);%reset stop button
 
 handles = guihandles;
-Date = TestData.Timestamp(1) + get(handles.sliderStartDate,'Value');
-if isfield(Plant.optimoptions,'CoSim') && Plant.optimoptions.CoSim
+date = TestData.Timestamp(1) + get(handles.sliderStartDate,'Value');
+if strcmp(Plant.optimoptions.solver,'NREL')
     CoSimulation(Date,handles) %send to a different function that links to energy plus co-simulation
 else
-    RunSimulation(Date,handles) 
+    if ~isfield(Plant,'Building')
+        Plant.Building = [];
+    end
+    if ~isfield(Plant,'cool_tower') 
+        Plant.cool_tower = [];
+    end
+    if isfield(Plant,'Data') 
+        data = Plant.Data;
+    else
+        data = [];
+    end
+    TestData = update_test_data(TestData,data,Plant.optimoptions);
+    num_steps = 0;
+    s_i = 1;
+    if isfield(Plant,'Dispatch') && isfield(Plant.Dispatch,'Timestamp')
+        if any(Plant.Dispatch.Timestamp)
+            s_i = nnz(Plant.Dispatch.Timestamp)-1;
+            if s_i>1 && any(abs(Plant.Dispatch.Timestamp(s_i-1:s_i) - date)<1e-7) %resuming after sucessful hitting stop button
+                num_steps = length(Plant.Dispatch.Timestamp); %number of simulation steps
+            end
+        end
+    else
+        TestData.RealTimeData = interpolate_data(TestData,Plant.optimoptions.Resolution*3600,0.00);%create test data at correct frequency
+        [Plant.Generator,Plant.Building,Plant.cool_tower,Plant.subNet,Plant.OpMatA,Plant.OpMatB,Plant.OneStep,~] = initialize_optimization(Plant.Generator,Plant.Building,Plant.cool_tower,Plant.Network,Plant.optimoptions,TestData);
+        Plant.Dispatch = [];
+    end
+    if ~isfield(Plant,'Design')
+        Plant.Design = [];
+    end
+    if ~isfield(Plant,'Predicted')
+        Plant.Predicted = [];
+    end
+    [Plant.Generator,Plant.Building,Plant.cool_tower,Plant.Design,Plant.Dispatch,Plant.Predicted] = run_simulation(date,num_steps,s_i,handles,TestData.RealTimeData,TestData.HistProf,Plant.Generator,Plant.Building,Plant.cool_tower,Plant.optimoptions,Plant.subNet,Plant.OpMatA,Plant.OpMatB,Plant.OneStep,Plant.Design,Plant.Dispatch,Plant.Predicted);
+    if isfield(Plant.Dispatch,'OutFlow')
+        TestData.RealTimeData.Hydro.OutFlow = Plant.Dispatch.OutFlow;
+    end
 end
 Stop_Callback(hObject, eventdata, handles)
 
 % --- Executes on button press in Stop.
 function Stop_Callback(hObject, eventdata, handles)
 %stops dispatch
-global DispatchWaitbar Virtual
+global DispatchWaitbar %Virtual RealTime
 set(handles.Stop,'Value',1);%reset stop button
 set(handles.Start,'Value',0);%reset start button
-Virtual = 0;
+% Virtual = 0;
+% if get(handles.ControllerMode,'Value') == 1
+%     if RealTime
+%         closePorts;
+%     end
+%     RealTime = 0;%end condition for real simulation
+%     Virtual = 0;%end condition for virtual simulation
+% 
+%     T1 = timerfind('Name', 'dispTimer') ;
+%     T2 = timerfind('Name', 'optTimer') ;
+%     T3 = timerfind('Name', 'mpcTimer') ;
+%     T4 = timerfind('Name', 'fanTimer') ;
+%     Timers = [T1,T2,T3,T4];
+%     for i = 1:1:length(Timers)
+%         stop(Timers(i));
+%         delete(Timers(i))
+%     end
+% end
 close(DispatchWaitbar)
 DispatchWaitbar=[];
 
@@ -1253,8 +1336,8 @@ function ForecastMethod_SelectionChangeFcn(hObject, eventdata, handles)
 global Plant
 % Plant.optimoptions.method = 'Control';
 switch get(eventdata.NewValue,'Tag')
-    case 'SES'
-        Plant.optimoptions.forecast = 'SNIWPE';
+    case 'ARMA'
+        Plant.optimoptions.forecast = 'arma';
     case 'ARIMA'
         Plant.optimoptions.forecast = 'ARIMA';
     case 'NeuralNet'

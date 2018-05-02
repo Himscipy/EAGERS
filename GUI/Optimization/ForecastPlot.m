@@ -1,9 +1,8 @@
 function ForecastPlot
-global Plant DateSim GENINDEX TestData
+global Plant GENINDEX TestData
 handles = guihandles;
 %find the current date
-DateSim = TestData.Timestamp(1) + get(handles.sliderDate,'Value');
-reloadLast24hour(DateSim,Plant.optimoptions.Resolution)%re-load the previous 24 hours
+Date = TestData.Timestamp(1) + get(handles.sliderDate,'Value');
       
 if isempty(GENINDEX)%plot demands
     set(handles.sliderZoom,'Visible','on')
@@ -22,22 +21,27 @@ if isempty(GENINDEX)%plot demands
     else
         lastDate = datenum([2018,1,1]);
     end
+    dt = TestData.Timestamp(2) - TestData.Timestamp(1);
     if Z == Z_max %show all data
         DateEnd = lastDate;
     elseif Z<1
-        DateEnd = min(lastDate,DateSim + 1);
+        DateEnd = min(lastDate,Date + 1);
     elseif Z<2
-        DateEnd = min(lastDate,DateSim + 7);
+        DateEnd = min(lastDate,Date + 7);
     elseif Z<3
-        DateEnd = min(lastDate,DateSim + 31);
+        DateEnd = min(lastDate,Date + 31);
     elseif Z<4
-        DateEnd = min(lastDate,DateSim + 365);
+        DateEnd = min(lastDate,Date + 365);
     end
-        
-    Forecast = updateForecast(linspace(DateSim,DateEnd)');%% function that creates demand vector with time intervals coresponding to those selected
+    if isfield(Plant,'Building') && ~isempty(Plant.Building)
+        Buildings = Plant.Building;
+    else
+        Buildings = [];
+    end  
+    Forecast = update_forecast(Plant.Generator,Buildings,Plant.subNet,Plant.optimoptions,(Date+dt:dt:DateEnd)');%% function that creates demand vector with time intervals coresponding to those selected
     if ~isfield(Plant,'Building') || isempty(Plant.Building)
         Outs =  fieldnames(Forecast.Demand);
-        Xi = nnz(TestData.Timestamp<(DateSim-1))+1;
+        Xi = nnz(TestData.Timestamp<(Date-1))+1;
         Xf = nnz(TestData.Timestamp<(DateEnd) & TestData.Timestamp>0);
         for i = 1:1:length(Outs)
             Actual.(Outs{i}) = TestData.Demand.(Outs{i})(Xi:Xf);
@@ -65,15 +69,15 @@ if isempty(GENINDEX)%plot demands
 else
     set(handles.sliderZoom,'Value',Plant.optimoptions.Horizon/24/7,'Visible','off')%hide slider
     set(handles.textHour,'Visible','off'); set(handles.textWeek,'Visible','off'); set(handles.textHorizon,'Visible','off');
-    if ~isfield(Plant,'Dispatch') || isempty(Plant.Dispatch) || ~isfield(Plant.Dispatch,'Timestamp') || isempty(Plant.Dispatch.Timestamp) || min(abs(Plant.Dispatch.Timestamp-DateSim))>=Plant.optimoptions.Resolution/24
-        ForecastTime = DateSim+[0;buildTimeVector(Plant.optimoptions)/24];%linspace(DateSim,DateEnd)';would need to re-do optimization matrices for this time vector
+    if ~isfield(Plant,'Dispatch') || isempty(Plant.Dispatch) || ~isfield(Plant.Dispatch,'Timestamp') || isempty(Plant.Dispatch.Timestamp) || min(abs(Plant.Dispatch.Timestamp-Date))>=Plant.optimoptions.Resolution/24
+        ForecastTime = Date+[0;build_time_vector(Plant.optimoptions)/24];%linspace(Date,DateEnd)';would need to re-do optimization matrices for this time vector
         Solution = SingleOptimization(ForecastTime,[]);
         Dispatch = Solution.Dispatch;
         History = [];
         HistoryTime = [];
     else
-        t = max(linspace(1,length(Plant.Dispatch.Timestamp))'.*(Plant.Dispatch.Timestamp<DateSim)); %index preceeding current step
-        if Plant.Dispatch.Timestamp(t+1)>0 && (Plant.Dispatch.Timestamp(t+1)-DateSim)<(DateSim-Plant.Dispatch.Timestamp(t))
+        t = max(linspace(1,length(Plant.Dispatch.Timestamp))'.*(Plant.Dispatch.Timestamp<Date)); %index preceeding current step
+        if Plant.Dispatch.Timestamp(t+1)>0 && (Plant.Dispatch.Timestamp(t+1)-Date)<(Date-Plant.Dispatch.Timestamp(t))
             t = t+1; %The next time step is actually closer
         end
         ForecastTime = Plant.Predicted.Timestamp(t,:)';
@@ -84,9 +88,9 @@ else
     end
     Forecast = Dispatch(:,GENINDEX);
     History = History(:,GENINDEX);
-    if isfield(Plant.Data,'Dispatch') && any((Plant.Data.Timestamp>0)&(Plant.Data.Timestamp<=DateSim)) && any((Plant.Data.Timestamp>0)&(Plant.Data.Timestamp>=(DateSim + get(handles.sliderZoom,'Value')*7)))
-        Xi = nnz(Plant.Data.Timestamp<DateSim);
-        Xf = nnz(Plant.Data.Timestamp<(DateSim + get(handles.sliderZoom,'Value')*7));
+    if isfield(Plant.Data,'Dispatch') && any((Plant.Data.Timestamp>0)&(Plant.Data.Timestamp<=Date)) && any((Plant.Data.Timestamp>0)&(Plant.Data.Timestamp>=(Date + get(handles.sliderZoom,'Value')*7)))
+        Xi = nnz(Plant.Data.Timestamp<Date);
+        Xf = nnz(Plant.Data.Timestamp<(Date + get(handles.sliderZoom,'Value')*7));
         Actual = Plant.Data.Dispatch(Xi:Xf,GENINDEX);
         ActualTime = Plant.Data.Timestamp(Xi:Xf);
     else

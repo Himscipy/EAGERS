@@ -1,6 +1,6 @@
 function plotDispatch(handles,ForecastTime,Solution,HistoryTime,History)
 %% plot dispatch into GUI, with historical operation
-global Plant CurrentState
+global Plant
 if isfield(handles,'LegendDeleteProxy')%2013 matlab
 %     delete(handles.LegendColorbarLayout)
 %     delete(handles.LegendDeleteProxy)
@@ -83,7 +83,7 @@ StorageState = 0*Data;
 for i = 1:1:nG
     if strcmp(Plant.Generator(i).Type,'Hydro Storage')
         StoragePower(:,i) =  Data(:,i);
-        StorageState(1,i) = CurrentState.Hydro(1,i);
+        StorageState(1,i) = Plant.Generator(i).CurrentState(2);
         if isempty(History.hydroSOC)
             StorageState(2:end,i) = Solution.hydroSOC(:,i);
         else
@@ -130,7 +130,11 @@ while isfield(handles,strcat('ResultPlot',num2str(nPlot+1)))
                 name(i) = {Plant.Building(i).Name};
             end
             if isempty(History.Buildings)
-                Data = [CurrentState.Buildings(1,:);Solution.Buildings.Temperature]*9/5+32;
+                B_state = zeros(1,nB);
+                for i = 1:1:nB
+                    B_state(i) = Plant.Building(i).Tzone;
+                end
+                Data = [B_state;Solution.Buildings.Temperature]*9/5+32;
             else
                 Data = [History.Buildings;Solution.Buildings.Temperature]*9/5+32;
             end

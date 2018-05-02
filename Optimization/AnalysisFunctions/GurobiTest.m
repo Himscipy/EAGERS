@@ -1,26 +1,41 @@
 function [SolutionGurobi,Solution_mcQP,Solution_cQP, fitADispatch, tsim] = GurobiTest(Date)
-global Plant DateSim CurrentState
-loadTestData
-DateSim = Date;
-Date = Date+[0;buildTimeVector(Plant.optimoptions)/24];
-if ~isfield(Plant,'subNet') || isempty(Plant.subNet)
-    initializeOptimization
+global Plant TestData
+load_test_data
+Date = Date+[0;build_time_vector(Plant.optimoptions)/24];
+
+if ~isfield(Plant,'Building')
+    Plant.Building = [];
 end
-loadTestData
+if ~isfield(Plant,'cool_tower') 
+    Plant.cool_tower = [];
+end
+if isfield(Plant,'Data') 
+    data = Plant.Data;
+else
+    data = [];
+end
+if ~isfield(Plant,'subNet') || isempty(Plant.subNet)
+    [TestData,Plant.Generator,Plant.Building,Plant.cool_tower,Plant.subNet,Plant.OpMatA,Plant.OpMatB,Plant.OneStep,Plant.Online] = initialize_optimization(Plant.Generator,Plant.Building,Plant.cool_tower,Plant.Network,Plant.optimoptions,data,TestData);
+end
+Buildings = Plant.Building;
+cool_tower = Plant.cool_tower;
+
 tsim = zeros(1,5);
-reloadLast24hour(DateSim,Plant.optimoptions.Resolution)%re-load the previous 24 hours
-interpolateData(Plant.optimoptions.Resolution*3600,Plant.optimoptions.Horizon/24,0.00);%create test data at correct frequency
-Data = GetCurrentData(DateSim); 
-automaticInitialCondition(Data);
-Forecast = updateForecast(Date(2:end));
+
+TestData.RealTimeData = interpolate_data(TestData,Plant.optimoptions.Resolution*3600,0.00);%create test data at correct frequency
+Plant.Generator = automatic_ic(Plant.Generator,Buildings,cool_tower,Plant.subNet,Date,Plant.OneStep,Plant.optimoptions);% set the initial conditions
+[Forecast,Plant.Generator,Buildings] = update_forecast(Plant.Generator,Buildings,cool_tower,Plant.subNet,Plant.optimoptions,Date(2:end));
 dt = (Date(2:end) - Date(1:end-1))*24;
 nG = length(Plant.Generator);
 nS = length(Date)-1;
-scaleCost = updateGeneratorCost(Date(2:end),Plant.Generator); %% All feedstock costs were assumed to be 1 when building matrices 
-PredictDispatch = ones(length(Date),1)*CurrentState.Generators;
-marginCost = updateMarginalCost(PredictDispatch,scaleCost,dt,[]);
+scaleCost = update_cost(Date(2:end),Plant.Generator); %% All feedstock costs were assumed to be 1 when building matrices 
+PredictDispatch = zeros(length(Date),nG);
+for i = 1:1:nG
+    PredictDispatch(:,i) = Plant.Generator(i).CurrentState;
+end
+marginCost = update_mc(Plant.Generator,PredictDispatch,scaleCost,dt,[]);
 Plant.optimoptions.MixedInteger = true;
-QP = updateMatrices(Plant.OpMatA,Date,scaleCost,marginCost,Forecast,[]);
+QP = update_matrices(Plant.Generator,Buildings,cool_tower,Plant.subNet,Plant.optimoptions,Plant.OpMatA,Date,scaleCost,marginCost,Forecast,[]);
 %% Step 1 Determine initial dispatch
 Locked = true(nS+1,nG);
 for i = 1:1:nG
@@ -29,10 +44,10 @@ for i = 1:1:nG
     end
 end
 tic
-QP = disableGenerators(QP,Locked,[]);%Disable generators here
-[x,Feasible] = callQPsolver(QP);
+QP = disable_generators(QP,Locked,[]);%Disable generators here
+[x,Feasible] = call_solver(QP);
 if Feasible == 1
-    Solution = sortSolution(x,QP);
+    Solution = sort_solution(x,QP);
 end
 tsim(1,2) = toc;
 if ~(Feasible==1)%% hopefully not here
@@ -43,18 +58,18 @@ fitADispatch = Solution.Dispatch;
 
 %% Step 2:  dispatch step by step
 tic
-OptimalState = StepByStepDispatch(Forecast,scaleCost,dt,Solution.Dispatch);
+OptimalState = dispatch_step(Plant.Generator,Buildings,cool_tower,Plant.subNet,Plant.optimoptions,Plant.OneStep,Date(1),Forecast,scaleCost,dt,Solution.Dispatch);
 clear mex
 tsim(1,2) = toc;
 %% Start with optimal dispatch, and check if feasible
 tic
-marginCost = updateMarginalCost(OptimalState,scaleCost,dt,[]);
-QP_0 = updateMatrices(Plant.OpMatB,Date,scaleCost,marginCost,Forecast,[]); %update fit B matrices
-Locked = CheckRampRates(QP_0,Locked,OptimalState,dt);
-QP = disableGenerators(QP_0,Locked,[]);%Disable generators here
-[x,Feasible] = callQPsolver(QP);%this is the dispatch with fit B
+marginCost = update_mc(Plant.Generator,OptimalState,scaleCost,dt,[]);
+QP_0 = update_matrices(Plant.Generator,Buildings,cool_tower,Plant.subNet,Plant.optimoptions,Plant.OpMatB,Date,scaleCost,marginCost,Forecast,[]); %update fit B matrices
+Locked = verify_ramping(Plant.Generator,Plant.subNet,QP_0,Locked,OptimalState,dt);
+QP = disable_generators(QP_0,Locked,[]);%Disable generators here
+[x,Feasible] = call_solver(QP);%this is the dispatch with fit B
 if Feasible == 1
-    Solution_mcQP = sortSolution(x,QP);
+    Solution_mcQP = sort_solution(x,QP);
 else
     Solution_mcQP = [];
 end
@@ -62,9 +77,12 @@ tsim(1,4) = toc;
 
 
 %% Run Gurobi
-PredictDispatch = ones(length(Date),1)*CurrentState.Generators;
-marginCost = updateMarginalCost(PredictDispatch,scaleCost,dt,[]);
-QP = updateMatrices(Plant.OpMatB,Date,scaleCost,marginCost,Forecast,[]);
+PredictDispatch = zeros(length(Date),nG);
+for i = 1:1:nG
+    PredictDispatch(:,i) = Plant.Generator(i).CurrentState;
+end
+marginCost = update_mc(Plant.Generator,PredictDispatch,scaleCost,dt,[]);
+QP = update_matrices(Plant.Generator,Buildings,cool_tower,Plant.subNet,Plant.optimoptions,Plant.OpMatB,Date,scaleCost,marginCost,Forecast,[]);
 QP.constCost = dt*QP.constCost.*scaleCost;
 nG = length(Plant.Generator);
 
@@ -80,7 +98,7 @@ end
 tic
 x = gurobi_opt(QP);
 if ~any(isnan(x))
-    SolutionGurobi = sortSolution(x,QP);
+    SolutionGurobi = sort_solution(x,QP);
 else 
     SolutionGurobi = [];
 end
@@ -89,13 +107,15 @@ tsim(1,1) = toc;
 
 %% run cQP 
 tic
-[Solution_cQP,LBrelax] = cQP_Feasibility(Solution.Dispatch,Forecast,scaleCost,Date);
+marginCost = update_mc(Plant.Generator,Solution1.Dispatch,scaleCost,dt,[]);
+QP_0 = update_matrices(Plant.Generator,Buildings,cool_tower,Plant.subNet,Plant.optimoptions,Plant.OpMatB,Date,scaleCost,marginCost,Forecast,[]); %update fit B matrices
+[Solution_cQP,LBrelax]= cqp_method(Plant.Generator,QP_0,Solution.Dispatch,Date);
 tsim(1,5) = toc;
 
 
 %% compare costs
 if ~isempty(Solution_cQP)
-    [Cost,Eimbalance,Himbalance] = NetCostCalc(Solution_cQP.Dispatch,Date,'Dispatch');
+    [Cost,Eimbalance,Himbalance] = net_cost(Plant.Generator,Solution_cQP.Dispatch,Date,'Dispatch');
     Solution_cQP.Cost = Cost;
     Solution_cQP.Eimbalance = Eimbalance;
     Solution_cQP.Himbalance = Himbalance;
@@ -103,14 +123,14 @@ if ~isempty(Solution_cQP)
 end
 
 if ~isempty(Solution_mcQP)
-    [Cost,Eimbalance,Himbalance] = NetCostCalc(Solution_mcQP.Dispatch,Date,'Dispatch');
+    [Cost,Eimbalance,Himbalance] = net_cost(Plant.Generator,Solution_mcQP.Dispatch,Date,'Dispatch');
     Solution_mcQP.Cost = Cost;
     Solution_mcQP.Eimbalance = Eimbalance;
     Solution_mcQP.Himbalance = Himbalance;
 end
 
 if ~isempty(SolutionGurobi)
-    [Cost,Eimbalance,Himbalance] = NetCostCalc(SolutionGurobi.Dispatch,Date,'Dispatch');
+    [Cost,Eimbalance,Himbalance] = net_cost(Plant.Generator,SolutionGurobi.Dispatch,Date,'Dispatch');
     SolutionGurobi.Cost = Cost;
     SolutionGurobi.Eimbalance = Eimbalance;
     SolutionGurobi.Himbalance = Himbalance;

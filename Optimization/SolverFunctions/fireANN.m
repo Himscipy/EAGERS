@@ -33,12 +33,11 @@ function Locked = fireANN(PrevDisp,Forecast,scaleCost,training)
 % Last Updated 2/21/2018 by Nadia Panossian
 %%
 
-global Plant DateSim CurrentState Model_dir
+global Plant Model_dir TestData
 global lockedNet lockederror %these are created in this function and used in each subsequent step
-global Last24hour
 
 %% initialize crucial values
-Time = buildTimeVector(Plant.optimoptions);%% set up dt vector of time interval length
+Time = build_time_vector(Plant.optimoptions);%% set up dt vector of time interval length
 dt = [Time - [0; Time(1:end-1)]]';
 nG = length(Plant.Generator);
 nS = length(Time);
@@ -84,22 +83,20 @@ if training %train the first time through
         PlantTrain = load(fullfile(Model_dir,filename));        
     else
         %save current conditions
-        DateSim1 = DateSim;
-        Last24hour1 = Last24hour;
-        CS1 = CurrentState;
+        Gen = Plant.Generator;
+        Build = Plant.Building;
         Plant.optimoptions.solver = 'quadprog';
         
         %run through a year for training
         disp('Running Simulation for Training Examples')
-        RunSimulation(DateSim,[])
+        RunSimulation(TestData.Timestamp(1),[])
         PlantTrain = Plant;
         
         %reset values back to pre-training vals
-        DateSim = DateSim1;
-        Last24hour = Last24hour1;
         Plant.optimoptions.solver = 'ANN';
         Plant.optimoptions.forecast = forecastMethod;
-        CurrentState = CS1;
+        Plant.Generator = Gen;
+        Plant.Building = Build;
     end
     
     if isfield(PlantTrain, 'Plant')

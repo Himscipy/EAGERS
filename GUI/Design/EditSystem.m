@@ -206,7 +206,7 @@ switch Gen.Type
             'Visible','on');
 
         plotGenEfficiency(Gen,handles)
-        secondOrderResponse(Gen,handles);
+        ss_response(Gen,handles);
 
     case 'Solar'
         createText(handles,'Location',[66 32 14 1.75],'textEdit1',12,'normal');

@@ -1,5 +1,5 @@
 function  ThresholdSet(GenDisp,dt)
-global Plant Threshold LB OnOff DateSim 
+global Plant Threshold  DateSim 
  %% find threshold for any generators on/off at next step
  %% this is run in the Dipatchloop
 IC = GenDisp(1,:);
@@ -10,19 +10,23 @@ Organize = Plant.Threshold.Organize;
 
 Outs = fieldnames(QPall);
 [n,nG] = size(QPall.(Outs{1}).organize);
+OnOff = true(1,nG);
+for i = 1:1:nG
+    OnOff(i) = Plant.Generator(i).Status;
+end
 n = n-1; %remove IC
 dt = dt/n;
 Time = linspace(1,n,n)*dt;
 TurnOff = zeros(1,nG)+n;
 TurnOn = zeros(1,nG)+n;
-scaleCost = updateGeneratorCost(Time/24+DateSim); %% All feedstock costs were assumed to be 1 when building matrices 
+scaleCost = update_cost(Time/24+DateSim); %% All feedstock costs were assumed to be 1 when building matrices 
 a = linspace(1,0,n+1)';
 PredictDispatch = a*IC + (1-a)*EC;
 % OriginalOptions = Plant.optimoptions;%in order for marginal cost to calculate correctly, you need to change the way time is done, but then change it back for everything else
 % Plant.optimoptions.Horizon = Time(end);
 % Plant.optimoptions.Resolution = dt;
 % Plant.optimoptions.tspacing = 'constant';
-marginCost = updateMarginalCost(PredictDispatch,scaleCost,Time);%the dispatch is whatever has been dispatched so far, except for the initial condition.
+marginCost = update_mc(Plant.Generator,PredictDispatch,scaleCost,Time);%the dispatch is whatever has been dispatched so far, except for the initial condition.
 % Plant.optimoptions = OriginalOptions;
 [QPall,Forecast] = updateMatrices(QPall,Organize,IC,Time,scaleCost,marginCost,EC);
 %% Need to create range for forecast to be off by

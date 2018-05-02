@@ -11,7 +11,6 @@ if isempty(strfind(p,dir1))% && isempty(strfind(p,'Projects'))
                     fullfile(Model_dir,'Data','TestData');
                     fullfile(Model_dir,'Data','TrainedNeuralNetworks');
                     fullfile(Model_dir,'Design');
-                    fullfile(Model_dir,'Design','BuildingModeling');
                     fullfile(Model_dir,'Emissions');
                     fullfile(Model_dir,'GUI');
                     fullfile(Model_dir,'GUI','Design');
@@ -24,6 +23,7 @@ if isempty(strfind(p,dir1))% && isempty(strfind(p,'Projects'))
                     fullfile(Model_dir,'Optimization');
                     fullfile(Model_dir,'Optimization','AnalysisFunctions');
                     fullfile(Model_dir,'Optimization','BasicFunctions');
+                    fullfile(Model_dir,'Optimization','BuildingModeling');
                     fullfile(Model_dir,'Optimization','Communication');
                     fullfile(Model_dir,'Optimization','Forecasting');
                     fullfile(Model_dir,'Optimization','NRELmethod');
