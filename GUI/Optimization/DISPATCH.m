@@ -848,7 +848,7 @@ else
     else
         data = [];
     end
-    TestData = update_test_data(TestData,data,Plant.optimoptions);
+    TestData = update_test_data(TestData,data,Plant.Generator,Plant.optimoptions);
     num_steps = 0;
     s_i = 1;
     if isfield(Plant,'Dispatch') && isfield(Plant.Dispatch,'Timestamp')
